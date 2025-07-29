@@ -1,0 +1,74 @@
+# Copyright 2025 ByteDance Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+import cupy as cp
+import pyscf
+from gpu4pyscf.scf import hf
+from xqc.pyscf import jk
+
+#atom = 'molecules/h2o.xyz'
+#atom = 'molecules/020_Vitamin_C.xyz'
+#atom = 'molecules/052_Cetirizine.xyz'
+#atom = 'molecules/valinomycin.xyz'
+atom = 'molecules/gly30.xyz'
+basis = 'def2-tzvpp'#'6-31gs'
+count = 1
+
+'''
+mol = pyscf.M(atom=atom, basis=basis, output=f'gpu4pyscf_{basis}.log', verbose=5, cart=1)
+mf = hf.RHF(mol)
+mf.verbose = 4
+e_tot = mf.kernel()
+start = cp.cuda.Event()
+end = cp.cuda.Event()
+start.record()
+for i in range(count):
+    mf = hf.RHF(mol)
+    mf.verbose = 4
+    e_tot = mf.kernel()
+end.record()
+end.synchronize()
+elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
+print(f"Time with GPU4PySCF, {elapsed_time_ms/count} ms")
+print(e_tot)
+'''
+
+dtype = cp.float32
+mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}.log', verbose=4, cart=1)
+start = cp.cuda.Event()
+end = cp.cuda.Event()
+start.record()
+get_jk = jk.generate_jk_kernel(dtype=dtype)
+end.record()
+end.synchronize()
+elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
+print(f"Compilation time, {elapsed_time_ms/count} ms")
+
+mf_jit = hf.RHF(mol)
+mf_jit.get_jk = get_jk # Overwrite PySCF get_jk function
+e_tot = mf_jit.kernel()
+start = cp.cuda.Event()
+end = cp.cuda.Event()
+start.record()
+for i in range(count):
+    get_jk = jk.generate_jk_kernel(dtype=dtype)
+    mf_jit = hf.RHF(mol)
+    mf_jit.get_jk = get_jk
+    e_tot = mf_jit.kernel()
+end.record()
+end.synchronize()
+elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
+print(f"Time with xQC, {elapsed_time_ms/count} ms")
+print(e_tot)
