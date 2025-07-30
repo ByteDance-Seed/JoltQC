@@ -1,9 +1,35 @@
-# xQC
+<div align="center">
+ 👋 Hi, everyone! 
+    <br>
+    We are <b>ByteDance Seed team.</b>
+</div>
 
-**xQC** is a JIT-compiled GPU backend for executing key quantum chemistry algorithms with high performance. It is not intended to be a complete quantum chemistry package, but rather a collection of standalone, optimized CUDA kernels designed specifically for quantum chemistry workloads.
+<p align="center">
+  You can get to know us better through the following channels👇
+  <br>
+  <a href="https://seed.bytedance.com/">
+    <img src="https://img.shields.io/badge/Website-%231e37ff?style=for-the-badge&logo=bytedance&logoColor=white"></a>
+  <a href="https://github.com/user-attachments/assets/5793e67c-79bb-4a59-811a-fcc7ed510bd4">
+    <img src="https://img.shields.io/badge/WeChat-07C160?style=for-the-badge&logo=wechat&logoColor=white"></a>
+ <a href="https://www.xiaohongshu.com/user/profile/668e7e15000000000303157d?xsec_token=ABl2-aqekpytY6A8TuxjrwnZskU-6BsMRE_ufQQaSAvjc%3D&xsec_source=pc_search">
+    <img src="https://img.shields.io/badge/Xiaohongshu-%23FF2442?style=for-the-badge&logo=xiaohongshu&logoColor=white"></a>
+  <a href="https://www.zhihu.com/org/dou-bao-da-mo-xing-tuan-dui/">
+    <img src="https://img.shields.io/badge/zhihu-%230084FF?style=for-the-badge&logo=zhihu&logoColor=white"></a>
+</p>
+
+![seed logo](https://github.com/user-attachments/assets/c42e675e-497c-4508-8bb9-093ad4d1f216)
+
+# xQC: a JIT-compiled GPU backend for quantum chemistry algorithms
+<p align="center">
+  <a href="https://opensource.org/licenses/Apache-2.0">
+    <img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
+</p>
 
 > ⚠️ **Experimental Project**  
 > This project is under active development and may change significantly. Use at your own risk.
+
+## Overview
+xQC is not intended to be a complete quantum chemistry package, but rather a collection of standalone, optimized CUDA kernels designed specifically for quantum chemistry workloads. Please see [GPU4PySCF installation instructions](https://github.com/pyscf/gpu4pyscf) for full capabilities of quantum chemistry calculations.
 
 ## Key Features
 
@@ -12,20 +38,15 @@
 - Python interface via [GPU4PySCF](https://github.com/pyscf/gpu4pyscf)
 - Minimal runtime dependencies when used standalone
 
-> The kernels are designed to be **self-contained**.  
-> Python bindings for use with PySCF are provided via GPU4PySCF.  
-> While xQC itself does **not** rely on the CUDA toolkit, additional dependencies are required when used with GPU4PySCF.  
-> See [GPU4PySCF installation instructions](https://github.com/pyscf/gpu4pyscf) for full setup.
-
----
-
 ## Recommendations
 
 - Use **PySCF/GPU4PySCF** for general-purpose workflows; xQC is a JIT backend
 - NVIDIA **Ampere or newer** GPUs are recommended
 - **Newer CUDA versions** (e.g., CUDA 12+) improve JIT compilation speed
 
----
+## Installation
+
+coming soon when it is available on github.
 
 ## Python Interface
 
@@ -79,3 +100,7 @@ If you use this project in your research, please cite:
       url={https://arxiv.org/abs/2507.09772}, 
 }
 ```
+
+## About [ByteDance Seed Team](https://seed.bytedance.com/)
+
+Founded in 2023, ByteDance Seed Team is dedicated to crafting the industry's most advanced AI foundation models. The team aspires to become a world-class research team and make significant contributions to the advancement of science and society.
