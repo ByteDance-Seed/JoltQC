@@ -16,6 +16,7 @@
 */
 
 // Portions of this file adapted from GPU4PySCF v1.4 (https://github.com/pyscf/gpu4pyscf)
+// Copyright 2025 PySCF developer.
 // Licensed under the Apache License, Version 2.0.
 
 typedef unsigned long uint64_t;

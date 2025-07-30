@@ -44,10 +44,6 @@ PTR_BAS_COORD = 7
 GROUP_SIZE = 256
 NPRIM_MAX = 16
 
-# TODO: Three more kernels 
-# get_j, 
-# get_k, 
-
 def generate_jk_kernel(dtype=np.float64):
     cutoff_fp32 = 1e100
     def get_jk(mol, dm, hermi=0, vhfopt=None,
