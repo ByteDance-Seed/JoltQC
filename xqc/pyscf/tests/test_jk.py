@@ -48,9 +48,9 @@ H    D
         H  -0.757    4.   -0.4696
         H   0.757    4.   -0.4696
         ''',
-        basis=basis, #'def2-tzvpp', #'ccpvdz',
+        basis='def2-tzvpp', #'ccpvdz',
+        output='/dev/null',
         unit='B', cart=1)
-
 
 def tearDownModule():
     global mol
@@ -59,6 +59,29 @@ def tearDownModule():
 
 
 class KnownValues(unittest.TestCase):
+    def test_jk_sph(self):
+        mol_sph = pyscf.M(
+            atom = '''
+            H  -0.757    4.   -0.4696
+            H   0.757    4.   -0.4696
+            ''',
+            basis='def2-tzvpp', #'ccpvdz',
+            unit='B', cart=0, output='/dev/null')
+        np.random.seed(9)
+        nao = mol_sph.nao
+        dm = np.random.rand(nao, nao)
+        dm = dm.dot(dm.T)
+        
+        get_jk_jit = jk.generate_jk_kernel(dtype=np.float64)
+        vj, vk = get_jk_jit(mol_sph, dm, hermi=1)
+        vj1 = vj.get()
+        vk1 = vk.get()
+        ref = get_jk(mol_sph, dm, hermi=1)
+        print('vj diff with double precision:', abs(vj1 - ref[0]).max())
+        print('vk diff with double precision:', abs(vk1 - ref[1]).max())
+        assert abs(vj1 - ref[0]).max() < 1e-7
+        assert abs(vk1 - ref[1]).max() < 1e-7
+
     def test_jk_double(self):
         np.random.seed(9)
         nao = mol.nao
@@ -141,7 +164,7 @@ class KnownValues(unittest.TestCase):
         H   0.757    4.   -0.4696
         ''',
         basis='def2-tzvpp',
-        unit='B', cart=1)
+        unit='B', cart=1, output='/dev/null')
 
         mol_with_omega.omega = omega
 
@@ -155,6 +178,29 @@ class KnownValues(unittest.TestCase):
         vj1 = vj.get()
         vk1 = vk.get()
         ref = get_jk(mol_with_omega, dm, hermi=1, omega=omega)
+
+        assert abs(vj1 - ref[0]).max() < 1e-7
+        assert abs(vk1 - ref[1]).max() < 1e-7
+
+    def test_jk_screening(self):
+        mol_apart = pyscf.M(
+            atom = '''
+        H  -0.757    4.   -0.4696
+        H   100.757    4.   -0.4696
+        ''',
+            basis='def2-tzvpp',
+            unit='B', cart=1, output='/dev/null')
+
+        np.random.seed(9)
+        nao = mol_apart.nao
+        dm = np.random.rand(nao, nao)
+        dm = dm.dot(dm.T)
+        
+        get_jk_jit = jk.generate_jk_kernel(dtype=np.float64)
+        vj, vk = get_jk_jit(mol_apart, dm, hermi=1)
+        vj1 = vj.get()
+        vk1 = vk.get()
+        ref = get_jk(mol_apart, dm, hermi=1)
 
         assert abs(vj1 - ref[0]).max() < 1e-7
         assert abs(vk1 - ref[1]).max() < 1e-7

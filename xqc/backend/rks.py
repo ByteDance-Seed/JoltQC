@@ -13,6 +13,9 @@
 # limitations under the License.
 #
 
+'''
+Generate kernels for incremental DFT
+'''
 
 import numpy as np
 import cupy as cp
@@ -29,7 +32,10 @@ with open(f'{code_path}/dft_scripts/eval_rho.cu', 'r') as f:
 
 def gen_rho_kernel(ang, nprim, dtype, ndim=1, print_log=False):
     """
-    ndim: 1, 4, or 5 for LDA, GGA, mGGA respectively
+    ndim: 
+        1: LDA
+        4: GGA 
+        5: mGGA
     """
     if dtype == np.float64:
         dtype_cuda = 'double'
@@ -82,7 +88,10 @@ with open(f'{code_path}/dft_scripts/eval_vxc.cu', 'r') as f:
 
 def gen_vxc_kernel(ang, nprim, dtype, ndim=1, print_log=False):
     """
-    ndim: 1, 4, or 5 for LDA, GGA, mGGA respectively
+    ndim: 
+        1: LDA
+        4: GGA 
+        5: mGGA
     """
     if dtype == np.float64:
         dtype_cuda = 'double'
@@ -134,8 +143,42 @@ with open(f'{code_path}/dft_scripts/estimate_log_aovalue.cu', 'r') as f:
     estimate_aovalue_script = f.read()
 
 def estimate_log_aovalue(grid_coords, coords, coeffs, exps, angs, nprims, log_cutoff=-36.8):
-    """
-    Estimate the log value of aovalue for each grid block
+    """Estimate the maximum log-value of atomic orbitals on grid blocks, 256 grids per block.
+
+    This function performs a pre-screening step to identify which atomic
+    orbital shells are significant on different blocks of the integration grid.
+    For each block of grids, it computes the maximum value of each shell and
+    compares it to a cutoff to build a list of significant shells.
+
+    Parameters
+    ----------
+    grid_coords : cp.ndarray
+        Grid coordinates, shape (3, ngrids).
+    coords : cp.ndarray
+        Shell coordinates, shape (nbas, 3).
+    coeffs : cp.ndarray
+        Coefficients of primitive Gaussians.
+    exps : cp.ndarray
+        Exponents of primitive Gaussians.
+    angs : cp.ndarray
+        Angular momentum for each shell.
+    nprims : cp.ndarray
+        Number of primitives for each shell.
+    log_cutoff : float, optional
+        Logarithm of the cutoff value for screening. Shells with a maximum
+        log-value below this on a grid block are ignored. Default is -36.8.
+
+    Returns
+    -------
+    log_aovalue : cp.ndarray
+        A (nblocks, nbas) array containing the maximum log-value of each
+        shell on each grid block.
+    nnz_indices : cp.ndarray
+        A (nblocks, nbas) array. For each block, it contains the indices
+        of shells that are considered significant (non-zero).
+    nnz_per_block : cp.ndarray
+        A (nblocks,) array with the count of significant shells for each
+        grid block.
     """
     grid_coords = cp.asarray(grid_coords, dtype=np.float32)
     coords = cp.asarray(coords, dtype=np.float32)
@@ -147,6 +190,8 @@ def estimate_log_aovalue(grid_coords, coords, coeffs, exps, angs, nprims, log_cu
     nbas = coords.shape[0]
     nblocks = ngrids//256
     log_aovalue = cp.empty((nblocks, nbas), dtype=np.float32)
+    #log_aovalue = cp.zeros((nblocks, nbas), dtype=np.float32)
+
     nnz_indices = cp.empty((nblocks, nbas), dtype=np.int32)
     nnz_per_block = cp.empty((nblocks), dtype=np.int32)
     mod = cp.RawModule(code=estimate_aovalue_script, options=compile_options)

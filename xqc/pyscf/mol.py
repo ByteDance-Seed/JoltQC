@@ -22,32 +22,10 @@ __all__ = ['format_bas_cache']
 NPRIM_MAX = 16
 PTR_BAS_COORD = 7
 
-def _scale_sp_ctr_coeff(mol):
-    """
-    Scale the spherical and cartesian coefficients of the basis functions.
-
-    Args:
-        mol (pyscf.gto.Mole): The pyscf Mole object.
-
-    Returns:
-        numpy.ndarray: The scaled environment array.
-    """
-    # Match normalization factors of s, p functions in libcint
-    _env = mol._env.copy()
-    ls = mol._bas[:,gto.ANG_OF]
-    ptr, idx = np.unique(mol._bas[:,gto.PTR_COEFF], return_index=True)
-    ptr = ptr[ls[idx] < 2]
-    idx = idx[ls[idx] < 2]
-    fac = ((ls[idx]*2+1) / (4*np.pi)) ** .5
-    nprim = mol._bas[idx,gto.NPRIM_OF]
-    nctr = mol._bas[idx,gto.NCTR_OF]
-    for p, n, f in zip(ptr, nprim*nctr, fac):
-        _env[p:p+n] *= f
-    return _env
 
 def format_bas_cache(sorted_mol, dtype=np.float64):
     """
-    Format the basis cache used in XQC.
+    Format the basis cache used in xQC.
     coords:    [nbas, 3]
     coeffs:    [nbas, nprim_max]
     exponents: [nbas, nprim_max]
@@ -56,7 +34,7 @@ def format_bas_cache(sorted_mol, dtype=np.float64):
     angs:      [nbas]
 
     Args:
-        sorted_mol (pyscf.gto.Mole): The sorted pyscf Mole object.
+        sorted_mol (pyscf.gto.Mole): The sorted pyscf Mole object. Must be decontracted.
         dtype (numpy.dtype, optional): The data type of the arrays. Defaults to np.float64.
 
     Returns:
@@ -64,7 +42,6 @@ def format_bas_cache(sorted_mol, dtype=np.float64):
     """
     _bas = sorted_mol._bas
     _env = sorted_mol._env
-    _env = _scale_sp_ctr_coeff(sorted_mol)
     coord_ptr = _bas[:, PTR_BAS_COORD]
     nbas = _bas.shape[0]
     coords = cp.empty([nbas, 3], dtype=dtype, order='C')
@@ -80,9 +57,15 @@ def format_bas_cache(sorted_mol, dtype=np.float64):
         exp_ptr = _bas[i, gto.PTR_EXP]
         coeff_ptr = _bas[i, gto.PTR_COEFF]
         nprim = _bas[i, gto.NPRIM_OF]
+        nctr = _bas[i, gto.NCTR_OF]
         ang = _bas[i, gto.ANG_OF]
-        coeffs[i,:nprim] = _env[coeff_ptr:coeff_ptr+nprim]
-        exponents[i,:nprim] = _env[exp_ptr:exp_ptr+nprim]
+        coeff = _env[coeff_ptr:coeff_ptr+nprim*nctr].copy()
+        # Apply normalization factor, being consistent with libcint
+        if ang < 2:
+            fac = ((2*ang + 1) / (4.0 * np.pi))**.5
+            coeff *= fac
+        coeffs[i,:nprim] = coeff
+        exponents[i,:nprim] = _env[exp_ptr:exp_ptr+nprim*nctr]
         nprims[i] = nprim
         angs[i] = ang
     coeffs = cp.asarray(coeffs)

@@ -55,7 +55,6 @@ end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Compilation time, {elapsed_time_ms/count} ms")
-
 mf_jit = hf.RHF(mol)
 mf_jit.get_jk = get_jk # Overwrite PySCF get_jk function
 e_tot = mf_jit.kernel()

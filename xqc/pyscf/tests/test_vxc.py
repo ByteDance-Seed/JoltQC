@@ -19,7 +19,6 @@ import numpy as np
 import pyscf
 import cupy as cp
 from pyscf import lib, gto
-from pyscf.scf.hf import get_jk
 from gpu4pyscf.scf.jk import _VHFOpt
 from gpu4pyscf import dft
 from gpu4pyscf.dft.rks import initialize_grids
@@ -53,7 +52,7 @@ H    F
         H   0.757    4.   -0.4696
         ''',
         basis=basis, #'def2-tzvpp', #'ccpvdz',
-        unit='B', cart=1)
+        unit='B', cart=1, output='/dev/null')
     mol.build()
     mf = dft.KS(mol, xc='b3lyp')
     mf.grids.level = 3
@@ -169,7 +168,7 @@ class KnownValues(unittest.TestCase):
         H   10.757    4.   -0.4696
         ''',
         basis='sto3g', #'def2-tzvpp', #'ccpvdz',
-        unit='B', cart=1)
+        unit='B', cart=1, output='/dev/null')
         mol.build()
 
         _vhfopt = _VHFOpt(mol)
@@ -196,5 +195,5 @@ class KnownValues(unittest.TestCase):
         assert (log_maxval.T - log_ao_gpu).min() > -1e-5
 
 if __name__ == "__main__":
-    print("Full Tests for DFT Kernels")
+    print("Full Tests for rho and Vxc Kernels")
     unittest.main()

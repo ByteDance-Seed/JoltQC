@@ -13,6 +13,10 @@
 # limitations under the License.
 #
 
+'''
+1qnt algorithm for JK calculations
+'''
+
 import cupy as cp
 import numpy as np
 from xqc.backend.util import generate_lookup_table
@@ -31,7 +35,7 @@ def create_scheme(ang, frags=None, do_j=True, do_k=True,
                   max_shared_memory=shm_size, 
                   max_gout=128, max_threads=256, dtype=np.double):
     """
-    Create a scheme for 1QNT kernel.
+    Create a scheme for 1QnT kernel.
 
     Args:
         ang (tuple): Angular momentum of the kernel.
@@ -101,10 +105,10 @@ def create_scheme(ang, frags=None, do_j=True, do_k=True,
     nt = int(np.prod(nthreads))
     nthreads_per_sq = 1 << (nt-1).bit_length()
     nsq_per_block = max_threads // nthreads_per_sq
-    smem_stride = nsq_per_block # reduce bank conflict?
+    smem_stride = nsq_per_block | 1 # reduce bank conflict
     while smem_per_quartet * smem_stride * dtype_size > max_dynamic_sm:
         nsq_per_block >>= 1
-        smem_stride = nsq_per_block
+        smem_stride = nsq_per_block | 1
         if nsq_per_block == 0:
             raise RuntimeError('Shared memory is not enough')
 
