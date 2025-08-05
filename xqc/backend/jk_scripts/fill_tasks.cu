@@ -60,17 +60,9 @@ void fill_jk_tasks(int4 *shl_quartet_idx, int *batch_head, const int nbas,
     const int ksh1 = ksh0 + TILE;
     const int lsh1 = lsh0 + TILE;
 
-    //const float tile_q_ij = tile_q_cond[tile_ij];
-    //const float tile_q_kl = tile_q_cond[tile_kl];
-
-    //if (tile_q_ij + tile_q_kl < cutoff_a) {
-    //    active = false;
-    //}
-
     constexpr int mask_size = (TILE*TILE*TILE*TILE) / 64;
     uint64_t mask_bits[mask_size] = {0};
 
-    //bool mask[TILE*TILE*TILE*TILE] = {false};
     int count = 0;
     if (active){
         for (int i = 0; i < TILE; ++i){
@@ -110,7 +102,6 @@ void fill_jk_tasks(int4 *shl_quartet_idx, int *batch_head, const int nbas,
                             if (!selected) selected |= (d_ij > d_cutoff_a) && (d_ij <= d_cutoff_b);
                             if (!selected) selected |= (d_kl > d_cutoff_a) && (d_kl <= d_cutoff_b);
                         }
-                        //mask[i*TILE*TILE*TILE + j*TILE*TILE + k*TILE + l] = selected;
                         if (selected){
                             uint64_t idx = i*TILE*TILE*TILE + j*TILE*TILE + k*TILE + l;
                             uint64_t word = idx >> 6; // divide 64

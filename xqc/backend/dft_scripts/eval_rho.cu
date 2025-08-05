@@ -46,8 +46,8 @@ void eval_rho(
     const int* __restrict__ nnz_j,
     const int nbas_j,
     const float log_cutoff,
-    const int ngrids)
-{
+    const int ngrids){
+    
     constexpr int nfi = (li+1)*(li+2)/2;
     constexpr int nfj = (lj+1)*(lj+2)/2;
     const int grid_id = blockIdx.x * nthreads + threadIdx.x;
@@ -58,15 +58,6 @@ void eval_rho(
     const int nnzj = nnz_j[block_id];
     if (nnzi == 0 || nnzj == 0) return;
 
-    //__shared__ int nnz_indices_i_smem[256];
-    //__shared__ float log_maxval_i_smem[256];
-    //int tid = threadIdx.x;
-    //if (tid < nnzi){
-    //    nnz_indices_i_smem[tid] = nnz_indices_i[tid + block_id * nbas_i];
-    //    log_maxval_i_smem[tid] = log_maxval_i[tid + block_id * nbas_i];
-    //}
-    //__syncthreads();
-
     DataType gx[3];
     gx[0] = grid_coords[grid_id           ];
     gx[1] = grid_coords[grid_id +   ngrids];
@@ -74,7 +65,6 @@ void eval_rho(
 
     // ndim = 1 for LDA, 4 for GGA, 5 for mGGA
     DataType rho_reg[ndim] = {zero};
-    __shared__ DataType dm_smem[nfi*nfj];
     for (int jsh_nz = 0; jsh_nz < nnzj; jsh_nz++){
         const int jsh = nnz_indices_j[jsh_nz + block_id * nbas_j];
         const float log_aoj = log_maxval_j[jsh_nz + block_id * nbas_j];

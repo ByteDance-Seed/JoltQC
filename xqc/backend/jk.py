@@ -13,6 +13,10 @@
 # limitations under the License.
 #
 
+'''
+Generate JK kernel, wrap up 1q1t and 1qnt algorithms
+'''
+
 import os
 import threading
 import numpy as np
@@ -25,6 +29,7 @@ __all__ = ['gen_jk_kernel']
 kernel_registry = {}
 cache_lock = threading.Lock()
 
+# Default fragmentation scheme, support FP32 and FP64 only
 script_dir = os.path.dirname(__file__)
 file_path = os.path.join(script_dir, 'data/optimal_scheme_fp32.json')
 with open(file_path, 'r') as f:
@@ -37,6 +42,10 @@ with open(file_path, 'r') as f:
 def gen_jk_kernel(angulars, nprimitives, dtype=np.double,
                   n_dm=1, do_j=True, do_k=True, omega=None,
                   frags=None, print_log=False):
+    """ Router function for generating JK kernels. 
+    If frags = [-1]:      use 1q1t algorithm
+    If frags = [x,x,x,x]: use 1qnt algorithm
+    """
     
     key = (angulars, nprimitives, dtype, n_dm)
     if key in kernel_registry:
@@ -104,3 +113,4 @@ if __name__ == "__main__":
     cmd += ['-arch=sm_80', '-ptx', 'tmp.cu', '-o', 'tmp.ptx'] 
     print(cmd)
     subprocess.run(cmd, capture_output=True, text=True)
+    

@@ -13,6 +13,10 @@
 # limitations under the License.
 #
 
+# Portions of this file adapted from GPU4PySCF (https://github.com/pyscf/gpu4pyscf)
+# Copyright 2025 PySCF developer.
+# Licensed under the Apache License, Version 2.0.
+
 '''
 Generate JK kernels for PySCF
 '''
@@ -22,8 +26,7 @@ import numpy as np
 import cupy as cp
 from collections import Counter
 from pyscf import lib
-from gpu4pyscf.lib.cupy_helper import condense, transpose_sum
-from gpu4pyscf.__config__ import num_devices
+from xqc.backend.linalg_helper import inplace_add_transpose, max_block_pooling
 from gpu4pyscf.lib import logger
 from gpu4pyscf.scf import jk
 from xqc.backend.jk_tasks import generate_fill_tasks_kernel
@@ -45,7 +48,9 @@ GROUP_SIZE = 256
 NPRIM_MAX = 16
 
 def generate_jk_kernel(dtype=np.float64):
+    # TODO: mixed-precision
     cutoff_fp32 = 1e100
+    _cache = {}
     def get_jk(mol, dm, hermi=0, vhfopt=None,
             with_j=True, with_k=True, omega=None, verbose=None):
         '''
@@ -62,8 +67,11 @@ def generate_jk_kernel(dtype=np.float64):
         else:
             assert vhfopt.tile == TILE
 
-        bas_cache = format_bas_cache(_vhfopt.sorted_mol, dtype=dtype)
-        coords, coeffs, exponents, ao_loc, _, _ = bas_cache
+        sorted_mol = _vhfopt.sorted_mol
+        if 'mol' not in _cache or _cache['mol'] is not sorted_mol:
+            _cache['mol'] = sorted_mol
+            _cache['bas_cache'] = format_bas_cache(sorted_mol, dtype=dtype)
+        coords, coeffs, exponents, ao_loc, _, _ = _cache['bas_cache']
 
         uniq_l_ctr = _vhfopt.uniq_l_ctr
         uniq_l = uniq_l_ctr[:,0]
@@ -80,8 +88,8 @@ def generate_jk_kernel(dtype=np.float64):
         log.debug(f"Compute J/K matrices with do_j={with_j} and do_k={with_k}, omega={omega}")
         t0 = log.init_timer()
         
-        sorted_mol = _vhfopt.sorted_mol
-        nbas = np.int32(sorted_mol.nbas)
+        nbas = coords.shape[0]
+        nbas = np.int32(nbas)
         nao_orig = _vhfopt.mol.nao
         
         dm = cp.asarray(dm, order='C')
@@ -90,10 +98,9 @@ def generate_jk_kernel(dtype=np.float64):
         #:dms = cp.einsum('pi,nij,qj->npq', vhfopt.coeff, dms, vhfopt.coeff)
         dms = _vhfopt.apply_coeff_C_mat_CT(dms)
 
-        device_id = cp.cuda.device.get_device_id()
         stream = cp.cuda.stream.get_current_stream()
         
-        dm_cond = condense('absmax', dms, ao_loc)
+        dm_cond = max_block_pooling(dms, ao_loc)
         dms = cp.asarray(dms, dtype=dtype) # transfer to current device
         if hermi == 0:
             # Wrap the triu contribution to tril
@@ -117,26 +124,25 @@ def generate_jk_kernel(dtype=np.float64):
         cutoff_a = log_cutoff_fp64 - log_max_dm
         cutoff_b = log_cutoff_fp32 - log_max_dm
         cutoff_range = [cutoff_a, cutoff_b]
-        tile_mappings = _make_tril_tile_mappings(l_ctr_bas_loc, tile_q_cond, cutoff_range)
+        tile_pairs = make_tile_pairs(l_ctr_bas_loc, tile_q_cond, cutoff_range)
         info = cp.empty(2, dtype=np.uint32)
-        t1 = log.timer_debug1(f'q_cond and dm_cond on Device {device_id}', *t0)
+        t1 = log.timer_debug1(f'q_cond and dm_cond', *t0)
         
         _, _, gen_tasks_fun = generate_fill_tasks_kernel(do_j=with_j, do_k=with_k, tile=TILE)
         t1 = log.timer_debug1(f'Generate tasks kernel', *t1)
         timing_counter = Counter()
         kern_counts = 0
         quartet_list = cp.empty((QUEUE_DEPTH), dtype=int4_dtype)
-        tasks = [(i,j,k,l)
-                    for i in range(n_groups)
-                    for j in range(i+1)
-                    for k in range(i+1)
-                    for l in range(k+1)]
+        tasks = [(i,j,k,l) for i in range(n_groups)
+                            for j in range(i+1)
+                            for k in range(i+1)
+                            for l in range(k+1)]
 
         with stream:
             for task in tasks[::-1]:
                 i, j, k, l = task
-                tile_ij_mapping = tile_mappings[i,j]
-                tile_kl_mapping = tile_mappings[k,l]
+                tile_ij = tile_pairs[i,j]
+                tile_kl = tile_pairs[k,l]
 
                 li, ip = uniq_l_ctr[i]
                 lj, jp = uniq_l_ctr[j]
@@ -145,8 +151,8 @@ def generate_jk_kernel(dtype=np.float64):
                 angs = (li, lj, lk, ll)
                 nprim = (ip, jp, kp, lp)
 
-                ntile_ij = tile_ij_mapping.size
-                ntile_kl = tile_kl_mapping.size
+                ntile_ij = tile_ij.size
+                ntile_kl = tile_kl.size
                 if ntile_kl == 0 or ntile_ij == 0:
                     continue
                 ntasks = 0
@@ -162,7 +168,7 @@ def generate_jk_kernel(dtype=np.float64):
                         # Create a task list containing significant quartets
                         gen_tasks_fun(
                             quartet_list, info, nbas, 
-                            tile_ij_mapping[t_ij0:t_ij1], tile_kl_mapping[t_kl0:t_kl1],
+                            tile_ij[t_ij0:t_ij1], tile_kl[t_kl0:t_kl1],
                             _vhfopt.q_cond, log_dm_cond,
                             log_cutoff_fp64, log_cutoff_fp32)
                         kern_counts += 1
@@ -179,11 +185,9 @@ def generate_jk_kernel(dtype=np.float64):
                 if log.verbose >= logger.DEBUG2:
                     stream.synchronize()
                     llll = f'({l_symb[i]}{l_symb[j]}|{l_symb[k]}{l_symb[l]})'
-                    msg = f'proc {llll}/({ip}{jp}{kp}{lp}), tasks = {ntasks} on Dev{device_id}'
+                    msg = f'proc {llll}/({ip}{jp}{kp}{lp}), tasks = {ntasks}'
                     t1, t1p = log.timer_debug1(msg, *t1), t1
                     timing_counter[llll] += t1[1] - t1p[1]
-                if num_devices > 1:
-                    stream.synchronize()
         
         stream.synchronize()
         if with_j:
@@ -194,7 +198,7 @@ def generate_jk_kernel(dtype=np.float64):
                 vj += vjT.transpose(0,2,1)
         if with_k:
             if hermi == 1:
-                vk = transpose_sum(vk)
+                vk = inplace_add_transpose(vk)
             else:
                 vk, vkT = vk[:n_dm//2], vk[n_dm//2:]
                 vk += vkT.transpose(0,2,1)
@@ -205,7 +209,7 @@ def generate_jk_kernel(dtype=np.float64):
                 log.debug1('%s wall time %.2f', llll, t)
 
         if with_j:
-            vj = transpose_sum(vj)
+            vj = inplace_add_transpose(vj)
 
         h_shls = _vhfopt.h_shls
         if h_shls:
@@ -222,22 +226,19 @@ def generate_jk_kernel(dtype=np.float64):
         return vj, vk
     return get_jk
 
-def _make_tril_tile_mappings(l_ctr_bas_loc, tile_q_cond, cutoff, tile=TILE):
-    ''' Make tile mappings for the lower triangle of the J/K matrix
+def make_tile_pairs(l_ctr_bas_loc, tile_q_cond, cutoff, tile=TILE):
+    ''' Make tile pairs with GTO pairing screening and symmetry
         Filter out the tiles that are not in the cutoff range [cutoff[0], cutoff[1]]
     '''
     assert len(cutoff) == 2
     n_groups = len(l_ctr_bas_loc) - 1
     ntiles = tile_q_cond.shape[0]
-    tile_mappings = {}
+    tile_pairs = {}
+    tile_loc = l_ctr_bas_loc // tile
     for i in range(n_groups):
-        ish0, ish1 = l_ctr_bas_loc[i], l_ctr_bas_loc[i+1]
-        i0 = ish0 // tile
-        i1 = ish1 // tile
-        for j in range(i+1):    
-            jsh0, jsh1 = l_ctr_bas_loc[j], l_ctr_bas_loc[j+1]
-            j0 = jsh0 // tile
-            j1 = jsh1 // tile
+        i0, i1 = tile_loc[i], tile_loc[i+1]
+        for j in range(i+1):
+            j0, j1 = tile_loc[j], tile_loc[j+1]
             sub_tile_q = tile_q_cond[i0:i1,j0:j1]
             mask = sub_tile_q > cutoff[0]
             mask &= sub_tile_q <= cutoff[1]
@@ -246,5 +247,5 @@ def _make_tril_tile_mappings(l_ctr_bas_loc, tile_q_cond, cutoff, tile=TILE):
             t_ij = (cp.arange(i0, i1, dtype=np.int32)[:,None] * ntiles +
                     cp.arange(j0, j1, dtype=np.int32))
             idx = cp.argsort(sub_tile_q[mask])[::-1]
-            tile_mappings[i,j] = t_ij[mask][idx]
-    return tile_mappings
+            tile_pairs[i,j] = t_ij[mask][idx]
+    return tile_pairs

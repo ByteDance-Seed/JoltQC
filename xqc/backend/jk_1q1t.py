@@ -13,6 +13,10 @@
 # limitations under the License.
 #
 
+'''
+1q1t algorithm for JK calculations
+'''
+
 import cupy as cp
 import numpy as np
 from xqc.backend.util import generate_lookup_table

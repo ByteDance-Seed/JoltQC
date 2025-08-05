@@ -64,7 +64,8 @@ def generate_fragments(ang, max_threads = 256):
                     nthreads = (nf + fragments - 1) // fragments
                     if np.prod(nthreads) > max_threads:
                         continue
-                    if np.prod(nthreads) < 4:
+                    # at least 3 threads for each quartet
+                    if np.prod(nthreads) < 3:
                         continue
                     yield fragments
 
@@ -110,7 +111,7 @@ def update_frags(i,j,k,l,dtype_str):
     uniq_l_ctr = opt.uniq_l_ctr
     l_ctr_bas_loc = opt.l_ctr_offsets
     cutoff = np.asarray([-30, 100])
-    tile_mappings = jk._make_tril_tile_mappings(l_ctr_bas_loc, tile_q_cond, cutoff)
+    tile_pairs = jk.make_tile_pairs(l_ctr_bas_loc, tile_q_cond, cutoff)
     nao = mol.nao
     dms = cp.empty([nao,nao])
 
@@ -120,8 +121,8 @@ def update_frags(i,j,k,l,dtype_str):
     bas_cache = format_bas_cache(opt.sorted_mol, dtype=dtype)
     coords, coeffs, exponents, ao_loc, _, _ = bas_cache
 
-    tile_ij_mapping = tile_mappings[i,j][:256]
-    tile_kl_mapping = tile_mappings[k,l][:256]
+    tile_ij_mapping = tile_pairs[i,j][:256]
+    tile_kl_mapping = tile_pairs[k,l][:256]
     
     li, ip = uniq_l_ctr[i]
     lj, jp = uniq_l_ctr[j]

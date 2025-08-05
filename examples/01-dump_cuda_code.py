@@ -27,13 +27,13 @@ from xqc.backend.jk_1qnt import gen_kernel
 #from xqc.backend.jk_1q1t import gen_kernel
 
 # angular momentum
-li, lj, lk, ll = 2, 2, 2, 2
+li, lj, lk, ll = 3, 3, 1, 1
 
 # number of primitives
 npi, npj, npk, npl = 1, 1, 1, 1
 
 # fragmentation for 1QnT algorithm
-frags = (6,3,1,3)
+frags = (10,10,1,1)
 
 total_time = 0
 start = time.perf_counter()

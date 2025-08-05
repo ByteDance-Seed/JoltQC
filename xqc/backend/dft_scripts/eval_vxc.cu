@@ -74,8 +74,8 @@ void eval_vxc(
     const int* __restrict__ nnz_j,
     const int nbas_j,
     float log_cutoff,
-    const int ngrids)
-{
+    const int ngrids) {
+    
     constexpr int nfi = (li+1)*(li+2)/2;
     constexpr int nfj = (lj+1)*(lj+2)/2;
     const int grid_id = blockIdx.x * blockDim.x + threadIdx.x;

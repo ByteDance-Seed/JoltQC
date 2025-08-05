@@ -13,6 +13,10 @@
 # limitations under the License.
 #
 
+'''
+Generate the task queue for JK calculations
+The task is screened with Schwartz inequality and density matrix screening
+'''
 
 import cupy as cp
 from xqc.backend.cuda_scripts import fill_tasks_code

@@ -67,7 +67,7 @@ void rys_jk(const int nbas,
     constexpr int tstride_k = fragl;
     constexpr int tstride_j = fragl * fragk;
     constexpr int tstride_i = fragl * fragk * fragj;
-    constexpr int gout_size = fragi*fragj*fragk*fragl;
+    constexpr int frag_size = fragi*fragj*fragk*fragl;
 
     const int t_i = (ty % nti);
     const int t_j = (ty / nti % ntj);
@@ -75,7 +75,7 @@ void rys_jk(const int nbas,
     const int t_l = (ty / (nti*ntj*ntk));
 
     const int tid = threadIdx.y * blockDim.x + threadIdx.x;
-    constexpr int gx_stride = nsq_per_block;
+    constexpr int gx_stride = nsq_per_block | 1; // reduce bank conflict
     constexpr int g_stride = 3 * gx_stride;
 
     // shape of g, (gsize, 3, nsq_per_block)
@@ -124,7 +124,7 @@ void rys_jk(const int nbas,
     const DataType rlrk[3] = {rkl0, rkl1, rkl2};
     const DataType rr_kl = rlrk[0]*rlrk[0] + rlrk[1]*rlrk[1] + rlrk[2]*rlrk[2];
 
-    DataType gout[gout_size] = {0.0};
+    DataType integral_frag[frag_size] = {0.0};
     for (int kp = 0; kp < npk; kp++)
     for (int lp = 0; lp < npl; lp++){
         const int ksh_kp = kp + ksh*nprim_max;
@@ -339,7 +339,7 @@ void rys_jk(const int nbas,
                         const uint32_t ij_y    = (addr_ij >> 10) & 0x3FF;      // next 10 bits
                         const uint32_t ij_z    = (addr_ij >> 20) & 0x3FF;      // next 10 bits
                         
-                        int gout_off = reg_i * tstride_i + reg_j * tstride_j;
+                        int integral_off = reg_i * tstride_i + reg_j * tstride_j;
                         for (int reg_k = 0; reg_k < fragk; reg_k++){
                             const int kl_off = reg_k * nfl + idx_off;
                             for (int reg_l = 0; reg_l < fragl; reg_l++){
@@ -347,9 +347,9 @@ void rys_jk(const int nbas,
                                 const int addrx = ij_x * g_stride + kl_idx[kl];
                                 const int addry = ij_y * g_stride + kl_idy[kl];
                                 const int addrz = ij_z * g_stride + kl_idz[kl];
-                                gout[gout_off + reg_l*tstride_l] += g[addrx] * g[addry] * g[addrz];
+                                integral_frag[integral_off + reg_l*tstride_l] += g[addrx] * g[addry] * g[addrz];
                             }
-                            gout_off += tstride_k;
+                            integral_off += tstride_k;
                         }
                     }
                 }
@@ -365,7 +365,7 @@ void rys_jk(const int nbas,
     const int l0 = ao_loc[lsh];
 
     DataType *smem = shared_memory + tx;
-    constexpr int smem_stride = nsq_per_block;
+    constexpr int smem_stride = nsq_per_block | 1;
     for (int i_dm = 0; i_dm < n_dm; ++i_dm) {
         // ijkl, ij -> kl
         constexpr int ntij = nti*ntj;
@@ -382,7 +382,7 @@ void rys_jk(const int nbas,
                     int off = i * tstride_i + j * tstride_j;
                     for (int k = 0; k < fragk; k++){
                         for (int l = 0; l < fragl; l++){
-                            vj_lk[l + k*fragl] += gout[off + l*tstride_l] * dm_ij;
+                            vj_lk[l + k*fragl] += integral_frag[off + l*tstride_l] * dm_ij;
                         }
                         off += tstride_k;
                     }
@@ -412,10 +412,7 @@ void rys_jk(const int nbas,
             const int vj_offset = l0*nao + k0;
             double *vj_ptr = vj + vj_offset;
             constexpr int stride = nfkl * smem_stride;
-            constexpr int nt = (nfkl + nthreads_per_sq - 1) / nthreads_per_sq;
-            for (int t = 0; t < nt; t++){
-                const int kl = ty + t * nthreads_per_sq;
-                if (kl >= nfkl) break;
+            for (int kl = ty; kl < nfkl; kl += nthreads_per_sq){
                 DataType vj_tmp = 0.0;
                 const int off = kl * smem_stride;
                 for (int m = 0; m < ntij; m++){
@@ -427,7 +424,7 @@ void rys_jk(const int nbas,
                 atomicAdd(vj_ptr + offset, (double)vj_tmp);
             }
         }
-        
+
         // ijkl, kl -> ij
         constexpr int ntkl = ntk*ntl;
         if constexpr(ntkl > 1) __syncthreads();
@@ -450,12 +447,12 @@ void rys_jk(const int nbas,
             for (int i = 0; i < fragi; i++){
             for (int j = 0; j < fragj; j++){
                 DataType vj_ji = zero;
-                int gout_off = i * tstride_i + j * tstride_j;
+                int integral_off = i * tstride_i + j * tstride_j;
                 for (int l = 0; l < fragl; l++){
                     for (int k = 0; k < fragk; k++){
-                        vj_ji += gout[gout_off + k*tstride_k] * dm_kl_cache[k + l*fragk];
+                        vj_ji += integral_frag[integral_off + k*tstride_k] * dm_kl_cache[k + l*fragk];
                     }
-                    gout_off += tstride_l;
+                    integral_off += tstride_l;
                 }
 
                 if constexpr(ntkl > 1){
@@ -473,10 +470,7 @@ void rys_jk(const int nbas,
             const int vj_offset = j0*nao + i0;
             double *vj_ptr = vj + vj_offset;
             constexpr int stride = nfij * smem_stride;
-            constexpr int nt = (nfij + nthreads_per_sq - 1) / nthreads_per_sq;
-            for (int t = 0; t < nt; t++){
-                const int ij = ty + t * nthreads_per_sq;
-                if (ij >= nfij) break;
+            for (int ij = ty; ij < nfij; ij += nthreads_per_sq){
                 DataType vj_tmp = 0.0;
                 const int off = ij * smem_stride;
                 for (int m = 0; m < ntkl; m++){
@@ -488,7 +482,7 @@ void rys_jk(const int nbas,
                 atomicAdd(vj_ptr + offset, (double)vj_tmp);
             }
         }
-        
+
         // ijkl, jl -> ik
         constexpr int ntjl = ntj*ntl;
         if constexpr(ntjl > 1) __syncthreads();
@@ -512,12 +506,12 @@ void rys_jk(const int nbas,
             for (int i = 0; i < fragi; i++){
                 for (int k = 0; k < fragk; k++){
                     DataType vk_ik = zero;
-                    int gout_off = i * tstride_i + k * tstride_k;
+                    int integral_off = i * tstride_i + k * tstride_k;
                     for (int j = 0; j < fragj; j++){
                         for (int l = 0; l < fragl; l++){
-                            vk_ik += gout[gout_off + l*tstride_l] * dm_jl_cache[l + j*fragl];
+                            vk_ik += integral_frag[integral_off + l*tstride_l] * dm_jl_cache[l + j*fragl];
                         }
-                        gout_off += tstride_j;
+                        integral_off += tstride_j;
                     }
 
                     if constexpr (ntjl > 1){
@@ -535,11 +529,8 @@ void rys_jk(const int nbas,
             constexpr int stride = nfik * smem_stride;
             const int vk_offset = i0*nao + k0;
             double *vk_ptr = vk + vk_offset;
-            constexpr int nt = (nfik + nthreads_per_sq - 1) / nthreads_per_sq;
             __syncthreads();
-            for (int t = 0; t < nt; t++){
-                const int ik = ty + t * nthreads_per_sq;
-                if (ik >= nfik) break;
+            for (int ik = ty; ik < nfik; ik+=nthreads_per_sq){
                 DataType vk_tmp = 0.0;
                 const int off = ik * smem_stride;
                 for (int m = 0; m < ntjl; m++){
@@ -575,12 +566,12 @@ void rys_jk(const int nbas,
             for (int i = 0; i < fragi; i++){
                 for (int l = 0; l < fragl; l++){
                     DataType vk_il = 0.0;
-                    int gout_off = i * tstride_i + l * tstride_l;
+                    int integral_off = i * tstride_i + l * tstride_l;
                     for (int j = 0; j < fragj; j++){
                         for (int k = 0; k < fragk; k++){
-                            vk_il += gout[gout_off + k*tstride_k] * dm_jk_cache[k + j*fragk];
+                            vk_il += integral_frag[integral_off + k*tstride_k] * dm_jk_cache[k + j*fragk];
                         }
-                        gout_off += tstride_j;
+                        integral_off += tstride_j;
                     }
 
                     if constexpr (ntjk > 1){
@@ -598,10 +589,7 @@ void rys_jk(const int nbas,
             __syncthreads();
             const int vk_offset = i0*nao + l0;
             double *vk_ptr = vk + vk_offset;
-            constexpr int nt = (nfil + nthreads_per_sq - 1) / nthreads_per_sq;
-            for (int t = 0; t < nt; t++){
-                const int il = ty + t * nthreads_per_sq;
-                if (il >= nfil) break;
+            for (int il = ty; il < nfil; il += nthreads_per_sq){
                 DataType vk_tmp = 0.0;
                 constexpr int stride = nfil * smem_stride;
                 const int off = il * smem_stride;
@@ -614,7 +602,7 @@ void rys_jk(const int nbas,
                 atomicAdd(vk_ptr + offset, (double)vk_tmp);
             }
         }
-        
+
         // ijkl, il -> jk
         constexpr int ntil = nti*ntl;
         if constexpr(ntil > 1) __syncthreads();
@@ -637,12 +625,12 @@ void rys_jk(const int nbas,
             for (int j = 0; j < fragj; j++){
                 for (int k = 0; k < fragk; k++){
                     DataType vk_jk = zero;
-                    int gout_off = j * tstride_j + k * tstride_k;
+                    int integral_off = j * tstride_j + k * tstride_k;
                     for (int i = 0; i < fragi; i++){
                         for (int l = 0; l < fragl; l++){
-                            vk_jk += gout[gout_off + l*tstride_l] * dm_il_cache[l + i*fragl];
+                            vk_jk += integral_frag[integral_off + l*tstride_l] * dm_il_cache[l + i*fragl];
                         }
-                        gout_off += tstride_i;
+                        integral_off += tstride_i;
                     }
                     if constexpr(ntil > 1){
                         const int jk = j * nfk + k;
@@ -659,10 +647,7 @@ void rys_jk(const int nbas,
             const int vk_offset = j0*nao + k0;
             double *vk_ptr = vk + vk_offset;
             constexpr int stride = nfjk * smem_stride;
-            constexpr int nt = (nfjk + nthreads_per_sq - 1) / nthreads_per_sq;
-            for (int t = 0; t < nt; t++){
-                const int jk = ty + t * nthreads_per_sq;
-                if (jk >= nfjk) break;
+            for (int jk = ty; jk < nfjk; jk += nthreads_per_sq){
                 DataType vk_tmp = 0.0;
                 const int off = jk * smem_stride;
                 for (int m = 0; m < ntil; m++){
@@ -689,12 +674,12 @@ void rys_jk(const int nbas,
                 for (int k = 0; k < fragk; k++){
                     const int offset = i*nao + k;
                     DataType dm_ik = __ldg(dm_ptr + offset);
-                    int off = i * tstride_i + k * tstride_k;
+                    int integral_off = i * tstride_i + k * tstride_k;
                     for (int j = 0; j < fragj; j++){
                         for (int l = 0; l < fragl; l++){
-                            vk_jl[l + j*fragl] += gout[off + l*tstride_l] * dm_ik;
+                            vk_jl[l + j*fragl] += integral_frag[integral_off + l*tstride_l] * dm_ik;
                         }
-                        off += tstride_j;
+                        integral_off += tstride_j;
                     }
                 }
             }
@@ -720,10 +705,7 @@ void rys_jk(const int nbas,
             const int vk_offset = j0*nao + l0;
             double *vk_ptr = vk + vk_offset;
             constexpr int stride = nfjl * smem_stride;
-            constexpr int nt = (nfjl + nthreads_per_sq - 1) / nthreads_per_sq;
-            for (int t = 0; t < nt; t++){
-                const int jl = ty + t * nthreads_per_sq;
-                if (jl >= nfjl) break;
+            for (int jl = ty; jl < nfjl; jl+=nthreads_per_sq){
                 DataType vk_tmp = 0.0;
                 const int off = jl * smem_stride;
                 for (int m = 0; m < ntik; m++){

@@ -19,45 +19,47 @@ import cupyx
 LMAX = 4
 
 def iter_cart_xyz(n):
+    """Generates Cartesian exponents (lx, ly, lz) for a given angular momentum.
+
+    Args:
+        n (int): The total angular momentum.
+
+    Returns:
+        np.ndarray: An array of shape ((n+1)*(n+2)//2, 3) with all
+                    (lx, ly, lz) combinations such that lx + ly + lz = n.
+    """
     xyz = [(x, y, n-x-y)
             for x in reversed(range(n+1))
             for y in reversed(range(n+1-x))]
     return np.array(xyz)
 
 def pack3int(idx):
-    ''' Store in (x,y,z) as ONE integer
-    '''
+    """Packs three 10-bit integers into a single 32-bit integer.
+
+    This is used to store Cartesian exponents (x, y, z) in a compact format
+    for efficient lookup in CUDA kernels. Each of x, y, and z must be in
+    the range [0, 1023].
+
+    Args:
+        idx (np.ndarray): A (3, N) array of integers to be packed.
+
+    Returns:
+        int or np.ndarray: The packed integer(s).
+    """
     return (idx[0] & 0x3FF) | ((idx[1] & 0x3FF) << 10) | ((idx[2] & 0x3FF) << 20)
 
 def unpack3int(idx):
+    """Unpacks a 32-bit integer into three 10-bit integers.
+
+    This is the inverse operation of pack3int.
+
+    Args:
+        idx (int): The packed integer.
+
+    Returns:
+        tuple[int, int, int]: The unpacked (x, y, z) integers.
+    """
     return idx & 0x3FF, (idx >> 10) & 0x3FF, (idx >> 20) & 0x3FF
-
-def g_pair_idx(ij_inc=None):
-    dat = []
-    xyz = [iter_cart_xyz(li) for li in range(LMAX+1)]
-    for li in range(LMAX+1):
-        for lj in range(LMAX+1):
-            li1 = li + 1
-            idx = (xyz[lj][:,None] * li1 + xyz[li]).transpose(2,0,1)
-            idx = pack3int(idx)
-            dat.append(idx.ravel())
-    g_idx = np.hstack(dat).astype(np.int32)
-    offsets = np.cumsum([0] + [x.size for x in dat]).astype(np.int32)
-    offsets = offsets[:-1]
-    g_idx_pinned = cupyx.empty_like_pinned(g_idx)
-    g_idx_pinned[:] = g_idx
-    offsets_pinned = cupyx.empty_like_pinned(offsets)
-    offsets_pinned[:] = offsets
-    return g_idx_pinned, offsets_pinned
-
-g_idx, offsets = g_pair_idx()
-
-def get_ij_pair(li,lj):
-    li1 = li + 1
-    xyz = [iter_cart_xyz(li) for li in range(LMAX+1)]
-    idx = (xyz[lj][:,None] * li1 + xyz[li]).transpose(2,0,1)
-    idx = pack3int(idx)
-    return idx
 
 shell_idx = {}
 for li in range(LMAX+1):
@@ -66,6 +68,19 @@ for li in range(LMAX+1):
     shell_idx[li] = ixyz
     
 def generate_lookup_table(li, lj, lk, ll):
+    """Generates C++ code for basis function index lookup tables.
+
+    These tables are intended to be used as `__device__` constants in CUDA
+    kernels for mapping multi-dimensional indices to a flat layout, which is
+    useful for ERI (electron repulsion integral) calculations.
+
+    Args:
+        li, lj, lk, ll (int): Angular momenta for the four shells (i, j, k, l).
+
+    Returns:
+        str: A string containing the C++ code for the lookup tables.
+    """
+        
     nfi = (li+1)*(li+2)//2
     nfj = (lj+1)*(lj+2)//2
     nfk = (lk+1)*(lk+2)//2

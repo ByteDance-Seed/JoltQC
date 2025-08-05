@@ -108,6 +108,8 @@ mol.verbose = 4
 end.record()
 end.synchronize()
 xqc_time_ms = cp.cuda.get_elapsed_time(start, end)
+
+print("Benchmark with FP64")
 print(f"Time with xQC, {xqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/xqc_time_ms}")
 vxc_diff = vxc_pyscf - vxc
@@ -127,6 +129,8 @@ mol.verbose = 4
 end.record()
 end.synchronize()
 xqc_time_ms = cp.cuda.get_elapsed_time(start, end)
+
+print("Benchmark with FP32")
 print(f"Time with xQC, {xqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/xqc_time_ms}")
 vxc_diff = vxc_pyscf - vxc

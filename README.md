@@ -34,9 +34,9 @@ xQC is not intended to be a complete quantum chemistry package, but rather a col
 ## Key Features
 
 - High-performance GPU kernels for quantum chemistry
-- JIT compilation to reduce dependency on the CUDA toolkit
+- Completely JIT compilation, without any pre-compiled kernels
+- Support FP64 and FP32
 - Python interface via [GPU4PySCF](https://github.com/pyscf/gpu4pyscf)
-- Minimal runtime dependencies when used standalone
 
 ## Recommendations
 
