@@ -2,5 +2,3 @@ numpy==2.2.6
 pyscf==2.9.0
 cupy-cuda12x==13.4.1
 cutensor-cu12==2.2.0
-gpu4pyscf-cuda12x==1.4.1
-gpu4pyscf-libxc-cuda12x==0.5
