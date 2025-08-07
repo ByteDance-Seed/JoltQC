@@ -1,4 +1,4 @@
-If you use the geometries of molecules, please cite the corresponding reference
+Due to the concern of the copyright, we do not redistribute the xyz files of testing molecules from other literatures. If you use the geometries of molecules, please download the files from SI and cite the corresponding reference.
 | molecule | reference |
 | -------- | --------- |
 | 020_Vitamin_C.xyz | https://doi.org/10.1063/5.0060146 |
