@@ -78,6 +78,7 @@ void eval_vxc(
     
     constexpr int nfi = (li+1)*(li+2)/2;
     constexpr int nfj = (lj+1)*(lj+2)/2;
+    constexpr int nfij = nfi*nfj;
     const int grid_id = blockIdx.x * blockDim.x + threadIdx.x;
     const int block_id = blockIdx.x;
     const int grid_blocks = ngrids / nthreads;
@@ -113,11 +114,12 @@ void eval_vxc(
     //float log_max_wv0 = log_max_wv0_smem[0];
     log_cutoff -= log_max_wv0_smem[0];
 
-    __shared__ DataType vxc_smem[num_warps * nfi * nfj];
+    __shared__ DataType vxc_smem[num_warps * nfij];
 
     for (int jsh_nz = 0; jsh_nz < nnzj; jsh_nz++){
-        const float log_aoj = log_maxval_j[jsh_nz + block_id * nbas_j];
-        const int jsh = nnz_indices_j[jsh_nz + block_id * nbas_j];
+        const int offset = jsh_nz + block_id * nbas_j;
+        const float log_aoj = log_maxval_j[offset];
+        const int jsh = nnz_indices_j[offset];
 
         const DataType gjx = gx[0] - __ldg(shell_coords + 3*jsh);
         const DataType gjy = gx[1] - __ldg(shell_coords + 3*jsh + 1);
@@ -261,7 +263,7 @@ void eval_vxc(
                         }
                         vxc_ij = warp_reduce(vxc_ij);
                         if (lane == 0){
-                            vxc_smem[(i + j * nfi) + warp_id * nfi*nfj] = vxc_ij;
+                            vxc_smem[(i + j * nfi) + warp_id * nfij] = vxc_ij;
                         }
                     }
                 }
@@ -269,12 +271,11 @@ void eval_vxc(
             __syncthreads();
 
             const DataType fac = (ish == jsh) ? half : one;
-
             // Block reduction
-            for (int ij = threadIdx.x; ij < nfi*nfj; ij+=nthreads){
+            for (int ij = threadIdx.x; ij < nfij; ij+=nthreads){
                 DataType vxc_ij = zero;
                 for (int k = 0; k < num_warps; k++){
-                    vxc_ij += vxc_smem[ij + k * nfi*nfj];
+                    vxc_ij += vxc_smem[ij + k * nfij];
                 }
                 vxc_ij = fac * vxc_ij;
                 const int i = ij % nfi;

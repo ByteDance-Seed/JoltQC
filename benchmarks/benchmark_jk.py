@@ -69,10 +69,10 @@ O    P
 #      0.2700058226E+00      1
 ''')
 
-atom = 'molecules/h2o.xyz'
+#atom = 'molecules/h2o.xyz'
 #atom = 'molecules/gly30.xyz'
 #atom = 'molecules/ubiquitin.xyz'
-#atom = 'molecules/020_Vitamin_C.xyz'
+atom = 'molecules/020_Vitamin_C.xyz'
 #atom = 'molecules/052_Cetirizine.xyz'
 
 n_dm = 1
@@ -108,14 +108,15 @@ gpu4pyscf_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Time with GPU4PySCF, {gpu4pyscf_time_ms}")
 
 ###### xQC / FP64 #######
-get_jk = jk.generate_jk_kernel(dtype=cp.float64)
 # Warm up
 for i in range(n_warmup):
+    get_jk = jk.generate_jk_kernel(mol, dtype=cp.float64)
     vj_jit, vk_jit = get_jk(mol, dm, hermi=1)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mol.verbose = 4
+get_jk = jk.generate_jk_kernel(mol, dtype=cp.float64)
 vj_jit, vk_jit = get_jk(mol, dm, hermi=1)
 mol.verbose = 4
 end.record()
@@ -127,14 +128,15 @@ print('vj diff:', cp.linalg.norm(vj - vj_jit))
 print('vk diff:', cp.linalg.norm(vk - vk_jit))
 
 ###### xQC / FP32 #######
-get_jk = jk.generate_jk_kernel(dtype=cp.float32)
 # Warm up
 for i in range(n_warmup):
+    get_jk = jk.generate_jk_kernel(dtype=cp.float32)
     vj_jit, vk_jit = get_jk(mol, dm, hermi=1)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mol.verbose = 4
+get_jk = jk.generate_jk_kernel(dtype=cp.float32)
 vj_jit, vk_jit = get_jk(mol, dm, hermi=1)
 mol.verbose = 4
 end.record()

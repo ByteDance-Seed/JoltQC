@@ -26,8 +26,6 @@ void estimate_log_aovalue(
     const float* __restrict__ shell_coords,
     const float* __restrict__ coeffs,
     const float* __restrict__ exps,
-    const int* __restrict__ angs,
-    const int* __restrict__ nprims,
     const int nbas,
     float* __restrict__ log_maxval,
     int * __restrict__ nnz_idx,
@@ -57,8 +55,6 @@ void estimate_log_aovalue(
         float bas_x = shell_coords[3*ish];
         float bas_y = shell_coords[3*ish + 1];
         float bas_z = shell_coords[3*ish + 2];
-        const int nprim = nprims[ish];
-        const int ang = angs[ish];
         float coeffs_reg[nprim_max], exps_reg[nprim_max];
         for (int ip = 0; ip < nprim; ip++){
             const int offset = nprim_max * ish + ip;

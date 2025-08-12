@@ -50,7 +50,7 @@ mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}.log', verbose=4, cart
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
-get_jk = jk.generate_jk_kernel(dtype=dtype)
+get_jk = jk.generate_jk_kernel(mol, dtype=dtype)
 end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
@@ -62,7 +62,7 @@ start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 for i in range(count):
-    get_jk = jk.generate_jk_kernel(dtype=dtype)
+    get_jk = jk.generate_jk_kernel(mol, dtype=dtype)
     mf_jit = hf.RHF(mol)
     mf_jit.get_jk = get_jk
     e_tot = mf_jit.kernel()
