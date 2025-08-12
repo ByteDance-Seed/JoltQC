@@ -23,8 +23,9 @@ from gpu4pyscf.scf.jk import _VHFOpt
 from gpu4pyscf import dft
 from gpu4pyscf.dft.rks import initialize_grids
 from xqc.pyscf import rks
-from xqc.pyscf.jk import format_bas_cache
+#from xqc.pyscf.jk import format_bas_cache
 from xqc.backend.rks import estimate_log_aovalue
+from xqc.pyscf.mol import format_bas_cache, create_sorted_basis
 
 def setUpModule():
     global mol, grids, ni
@@ -181,12 +182,13 @@ class KnownValues(unittest.TestCase):
         dm = dm.dot(dm.T)
 
         grid_coords = cp.asarray(grids.coords.T, order='C')
-        coords, coeffs, exps, ao_loc, nprims, angs = format_bas_cache(sorted_mol, dtype=np.float32)
+        bas_cache, _, _, _ = create_sorted_basis(mol, alignment=1, dtype=np.float32)
+        coeffs, exps, coords, angs, nprims = bas_cache
         ao_gpu = ni.eval_ao(sorted_mol, grids.coords, deriv=0, transpose=False)
         
-        angs = cp.asarray(angs)
-        nprims = cp.asarray(nprims)
-        sparsity = estimate_log_aovalue(grid_coords, coords, coeffs, exps, angs, nprims)
+        ang = angs[0]
+        nprim = nprims[0]
+        sparsity = estimate_log_aovalue(grid_coords, coords, coeffs, exps, ang, nprim)
         log_maxval, _, _ = sparsity
         ao_gpu_max = cp.max(ao_gpu.reshape(nao, -1, 256), axis=-1)
         log_ao_gpu = cp.log(cp.abs(ao_gpu_max))

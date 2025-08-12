@@ -23,17 +23,17 @@ from xqc.pyscf.rks import build_grids
 
 #atom = 'molecules/h2o.xyz'
 #atom = 'molecules/020_Vitamin_C.xyz'
-atom = 'molecules/052_Cetirizine.xyz'
-#atom = 'molecules/valinomycin.xyz'
+#atom = 'molecules/052_Cetirizine.xyz'
+atom = 'molecules/valinomycin.xyz'
 #atom = 'molecules/gly30.xyz'
 #atom = 'molecules/ubiquitin.xyz'
 
-basis = 'def2-tzvpp'
+basis = 'def2-tzvpd'
 xc = 'wb97m-v'
 xctype = 'mGGA'
 count = 1
 
-mol = pyscf.M(atom=atom, basis=basis, output=f'gpu4pyscf-{basis}.log', verbose=4, cart=1)
+mol = pyscf.M(atom=atom, basis=basis, output=f'gpu4pyscf-{basis}.log', verbose=4)
 mf = dft.RKS(mol, xc=xc)
 mf.verbose = 4
 e_tot = mf.kernel()
@@ -53,7 +53,7 @@ print(f"Time with GPU4PySCF, {elapsed_time_ms/count} ms")
 print(f'Total energy by GPU4PySCF, {e_tot}')
 mf = None
 
-mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}.log', verbose=4, cart=1)
+mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}.log', verbose=4)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
@@ -68,7 +68,7 @@ mf_jit.verbose = 4
 mf_jit.grids.atom_grid = (99, 590)
 mf_jit.grids.build = MethodType(build_grids, mf_jit.grids)
 mf_jit._numint.nr_rks = MethodType(nr_rks, mf_jit._numint)
-mf_jit.get_jk = jk.generate_jk_kernel(dtype=cp.float64)
+mf_jit.get_jk = jk.generate_jk_kernel(mol, dtype=cp.float64)
 e_tot = mf_jit.kernel()
 print(f'Total energy by xQC (warmup), {e_tot}')
 
@@ -78,11 +78,11 @@ start.record()
 for i in range(count):
     nr_rks = rks.generate_rks_kernel(mol, dtype=cp.float64, xc_type=xctype)
     mf_jit = dft.RKS(mol, xc=xc)
-    mf_jit.verbose = 4
+    mf_jit.verbose = 6
     mf_jit.grids.atom_grid = (99, 590)
     mf_jit.grids.build = MethodType(build_grids, mf_jit.grids)
     mf_jit._numint.nr_rks = MethodType(nr_rks, mf_jit._numint)
-    mf_jit.get_jk = jk.generate_jk_kernel(dtype=cp.float64)    
+    mf_jit.get_jk = jk.generate_jk_kernel(mol, dtype=cp.float64)
     e_tot = mf_jit.kernel()
 end.record()
 end.synchronize()

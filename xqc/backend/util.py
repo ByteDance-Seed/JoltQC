@@ -14,7 +14,7 @@
 #
 
 import numpy as np
-import cupyx
+import cupy as cp
 
 LMAX = 4
 

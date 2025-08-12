@@ -142,7 +142,7 @@ local memory: {kernel.local_size_bytes:4d} Bytes')
 with open(f'{code_path}/dft_scripts/estimate_log_aovalue.cu', 'r') as f:
     estimate_aovalue_script = f.read()
 
-def estimate_log_aovalue(grid_coords, coords, coeffs, exps, angs, nprims, log_cutoff=-36.8):
+def estimate_log_aovalue(grid_coords, coords, coeffs, exps, ang, nprim, log_cutoff=-36.8):
     """Estimate the maximum log-value of atomic orbitals on grid blocks, 256 grids per block.
 
     This function performs a pre-screening step to identify which atomic
@@ -160,9 +160,9 @@ def estimate_log_aovalue(grid_coords, coords, coeffs, exps, angs, nprims, log_cu
         Coefficients of primitive Gaussians.
     exps : cp.ndarray
         Exponents of primitive Gaussians.
-    angs : cp.ndarray
+    ang : int
         Angular momentum for each shell.
-    nprims : cp.ndarray
+    nprim : int
         Number of primitives for each shell.
     log_cutoff : float, optional
         Logarithm of the cutoff value for screening. Shells with a maximum
@@ -190,17 +190,21 @@ def estimate_log_aovalue(grid_coords, coords, coeffs, exps, angs, nprims, log_cu
     nbas = coords.shape[0]
     nblocks = ngrids//256
     log_aovalue = cp.empty((nblocks, nbas), dtype=np.float32)
-    #log_aovalue = cp.zeros((nblocks, nbas), dtype=np.float32)
 
     nnz_indices = cp.empty((nblocks, nbas), dtype=np.int32)
     nnz_per_block = cp.empty((nblocks), dtype=np.int32)
-    mod = cp.RawModule(code=estimate_aovalue_script, options=compile_options)
+    macro = f'''
+constexpr int ang = {ang};
+constexpr int nprim = {nprim};
+'''
+    script = macro + estimate_aovalue_script
+    mod = cp.RawModule(code=script, options=compile_options)
     kernel = mod.get_function('estimate_log_aovalue')
     kernel(
         (ngrids//nthreads,),
         (nthreads,),
         (grid_coords, ngrids, 
-         coords, coeffs, exps, angs, nprims, nbas, 
+         coords, coeffs, exps, nbas, 
          log_aovalue, nnz_indices, nnz_per_block, 
          np.float32(log_cutoff)),
     )

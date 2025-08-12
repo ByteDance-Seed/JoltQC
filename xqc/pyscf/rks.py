@@ -21,27 +21,70 @@
 Generate DFT kernels for PySCF
 '''
 
-import numpy as np
 import math
+import time
+import logging
+import numpy as np
 import cupy as cp
-from gpu4pyscf.scf.jk import _VHFOpt
-from gpu4pyscf.lib import logger
-from gpu4pyscf.dft.gen_grid import arg_group_grids
+from pyscf.dft.gen_grid import GROUP_BOUNDARY_PENALTY
 from xqc.backend.linalg_helper import max_block_pooling, inplace_add_transpose
-from xqc.pyscf.mol import format_bas_cache
+from xqc.pyscf.mol import create_sorted_basis
 from xqc.backend.rks import gen_rho_kernel, gen_vxc_kernel, estimate_log_aovalue
+from xqc.backend.cart2sph import mol2cart, cart2mol
 
 __all__ = ['build_grids', 'generate_rks_kernel']
 
 rho_vxc_cutoff = 1e-13
+GROUP_BOX_SIZE = 3.0
 LMAX = 4
 
+logger = logging.getLogger(__name__)
+
+def arg_group_grids(mol, coords, box_size=GROUP_BOX_SIZE):
+    """
+    Parition the entire space into small boxes according to the input box_size.
+    Group the grids against these boxes.
+    """
+    atom_coords = mol.atom_coords()
+    boundary = [atom_coords.min(axis=0) - GROUP_BOUNDARY_PENALTY,
+                atom_coords.max(axis=0) + GROUP_BOUNDARY_PENALTY]
+    # how many boxes inside the boundary
+    boxes = ((boundary[1] - boundary[0]) * (1./box_size)).round().astype(int)
+    tot_boxes = np.prod(boxes + 2)
+    logger.debug(mol, 'tot_boxes %d, boxes in each direction %s', tot_boxes, boxes)
+    # box_size is the length of each edge of the box
+    box_size = cp.asarray((boundary[1] - boundary[0]) / boxes)
+    frac_coords = (coords - cp.asarray(boundary[0])) * (1./box_size)
+    box_ids = cp.floor(frac_coords).astype(int)
+    box_ids[box_ids<-1] = -1
+    box_ids[box_ids[:,0] > boxes[0], 0] = boxes[0]
+    box_ids[box_ids[:,1] > boxes[1], 1] = boxes[1]
+    box_ids[box_ids[:,2] > boxes[2], 2] = boxes[2]
+
+    boxes *= 2 # for safety
+    box_id = box_ids[:,0] + box_ids[:,1] * boxes[0] + box_ids[:,2] * boxes[0] * boxes[1]
+    return cp.argsort(box_id)
+
 def build_grids(grids, mol=None, with_non0tab=False, sort_grids=True, **kwargs):
+    """
+    Build grids for DFT. Copied from GPU4PySCF with different sorting algorithm.
+
+    Parameters
+    ----------
+    grids : Grid
+        PySCF Grid object.
+    mol : Mole, optional
+        PySCF Mole object.
+    with_non0tab : bool, optional
+        Whether to generate non-zero tab.
+    sort_grids : bool, optional
+        Whether to sort grids.
+    """
     if mol is None: mol = grids.mol
-    if grids.verbose >= logger.WARN:
+    if grids.verbose >= 5:
         grids.check_sanity()
-    log = logger.new_logger(grids)
-    t0 = log.init_timer()
+
+    cputime_start  = time.perf_counter()
     atom_grids_tab = grids.gen_atomic_grids(
         mol, grids.atom_grid, grids.radi_method, grids.level, grids.prune, **kwargs)
     grids.coords, grids.weights = grids.get_partition(
@@ -58,12 +101,12 @@ def build_grids(grids, mol=None, with_non0tab=False, sort_grids=True, **kwargs):
     grids.atm_idx = atm_idx
     grids.quadrature_weights = quadrature_weights
 
-    t0 = log.timer_debug1('generating atomic grids', *t0)
+    logger.debug(f'generating atomic grids {time.perf_counter() - cputime_start}')
     ngrids = grids.coords.shape[0]
     alignment = grids.alignment
     if alignment > 1:
         padding = (ngrids + alignment - 1) // alignment * alignment - ngrids
-        log.debug('Padding %d grids', padding)
+        logger.debug(f'Padding %d grids {padding}')
         if padding > 0:
             grids.coords = cp.vstack([grids.coords, cp.full((padding, 3), 1e-4)])
             grids.weights = cp.hstack([grids.weights, cp.zeros(padding)])
@@ -76,20 +119,39 @@ def build_grids(grids, mol=None, with_non0tab=False, sort_grids=True, **kwargs):
         grids.weights = grids.weights[idx]
         grids.quadrature_weights = grids.quadrature_weights[idx]
         grids.atm_idx = grids.atm_idx[idx]
-        t0 = log.timer_debug1('sorting grids', *t0)
+        logger.debug(f'sorting grids {time.perf_counter() - cputime_start}')
 
     if with_non0tab:
         raise RuntimeError('with_non0tab is not supported yet')
     else:
         grids.screen_index = grids.non0tab = None
-    log.info('tot grids = %d', len(grids.weights))
+    logger.info(f'tot grids = {len(grids.weights)}')
 
     grids._non0ao_idx = None
     return grids
 
-def generate_rks_kernel(mol, dtype=np.float64, xc_type='LDA'):
-    rho_fun, vxc_fun = generate_dft_kernel(mol, dtype, xc_type)
-    _cache = {}
+def generate_rks_kernel(mol, dtype=np.float64, xc_type='LDA', rho_vxc_cutoff = rho_vxc_cutoff):
+    #rho_fun, vxc_fun = generate_dft_kernel(mol, dtype, xc_type)
+    xc_type = xc_type.upper()
+    if xc_type == 'LDA':
+        ndim = 1
+    elif xc_type == 'GGA':
+        ndim = 4
+    elif xc_type == 'MGGA':
+        ndim = 5
+    else:
+        raise ValueError(f'Unknown xc_type: {xc_type}')
+    
+    log_cutoff = math.log(rho_vxc_cutoff)
+    bas_cache, bas_mapping, _, group_info = create_sorted_basis(mol, alignment=1, dtype=dtype)
+    coeffs, exps, coords, angs, nprims = bas_cache
+    ao_loc = np.concatenate(([0], np.cumsum((angs+1)*(angs+2)//2)))
+    nao = ao_loc[-1]
+    nbas = nprims.shape[0]
+    ao_loc = cp.asarray(ao_loc, dtype=np.int32)
+    group_key, group_offset = group_info
+
+    _cache = {'dm_prev': 0, 'rho_prev': 0, 'wv_prev': 0, 'vxcmat_prev': 0}
     def rks_fun(ni, mol, grids, xc_code, dm, max_memory=2000, verbose=None):
         """ rks kernel for PySCF, with incremental DFT implementation
         
@@ -107,13 +169,7 @@ def generate_rks_kernel(mol, dtype=np.float64, xc_type='LDA'):
             excsum: exchange correlation energy
             vxcmat: vxc matrix
         """
-        if 'mol' not in _cache or _cache['mol'] != mol:
-            _cache['mol'] = mol
-            _cache['dm_prev'] = 0
-            _cache['rho_prev'] = 0
-            _cache['wv_prev'] = 0
-            _cache['vxcmat_prev'] = 0
-            
+         
         dm_prev = _cache['dm_prev']
         rho_prev = _cache['rho_prev']
         wv_prev = _cache['wv_prev']
@@ -144,66 +200,39 @@ def generate_rks_kernel(mol, dtype=np.float64, xc_type='LDA'):
         _cache['rho_prev'] = rho
         _cache['wv_prev'] = wv
         _cache['vxcmat_prev'] = vxcmat.copy()
-        return nelec, excsum, vxcmat[0]
-    return rks_fun
+        return nelec, excsum, vxcmat
 
-def generate_dft_kernel(mol, dtype=np.float64, xc_type='LDA', cutoff=rho_vxc_cutoff):
-    xc_type = xc_type.upper()
-    if xc_type == 'LDA':
-        ndim = 1
-    elif xc_type == 'GGA':
-        ndim = 4
-    elif xc_type == 'MGGA':
-        ndim = 5
-    else:
-        raise ValueError(f'Unknown xc_type: {xc_type}')
-    
-    # TODO: Remove the data structure
-    _vhfopt = _VHFOpt(mol)
-    _vhfopt.dtype = dtype
-    _vhfopt.tile = 1
-    _vhfopt.build()
-    sorted_mol = _vhfopt.sorted_mol
-    uniq_l_ctr = _vhfopt.uniq_l_ctr
-    l_ctr_bas_loc = _vhfopt.l_ctr_offsets
-    bas_cache = format_bas_cache(_vhfopt.sorted_mol, dtype=dtype)
-
-    nao = sorted_mol.nao
-    coords, coeffs, exps, ao_loc, nprims, angs = bas_cache
-    nbas = nprims.shape[0]
-    log_cutoff = math.log(cutoff)
-    
     def rho_fun(ni, mol, dm, grids, max_memory=2000, verbose=None):
         ngrids = grids.coords.shape[0]
-        grid_coords = cp.asarray(grids.coords.T, dtype=dtype, order='C')        
-        rho = cp.zeros((ndim, ngrids), dtype=np.float64)
-        dm = _vhfopt.apply_coeff_C_mat_CT(dm)
+        grid_coords = cp.asarray(grids.coords.T, dtype=dtype, order='C')
+        dm = mol2cart(dm, angs, ao_loc, bas_mapping, mol)
         dm_cond = max_block_pooling(dm, ao_loc)
         dm_cond = cp.asarray(dm_cond, dtype=np.float32)
         log_dm_shell = cp.log(cp.abs(dm_cond) + 1e-200)
         log_dm = cp.max(log_dm_shell).item()
         log_ao_cutoff = log_cutoff - log_dm # ao.T * dm * ao < cutoff
-        n_groups = len(l_ctr_bas_loc) - 1
+        n_groups = len(group_offset) - 1
         
         # Estimate the value of AO on grids, construct the sparsity
         ao_sparsity = {}
         for i in range(n_groups):
-            ish0, ish1 = l_ctr_bas_loc[i], l_ctr_bas_loc[i+1]
+            ish0, ish1 = group_offset[i], group_offset[i+1]
             x = coords[ish0:ish1]
             c = coeffs[ish0:ish1]
             e = exps[ish0:ish1]
-            a = angs[ish0:ish1]
-            n = nprims[ish0:ish1]
+            a = angs[ish0].item()
+            n = nprims[ish0].item()
             s = estimate_log_aovalue(grid_coords, x, c, e, a, n, log_cutoff=log_ao_cutoff)
             log_maxval, indices, nnz = s
             indices += ish0
             ao_sparsity[i] = (log_maxval, indices, nnz)
 
+        rho = cp.zeros((ndim, ngrids), dtype=np.float64)
         dm = cp.asarray(dm, dtype=dtype)
         for i in range(n_groups):
             for j in range(i, n_groups):
-                li, ip = uniq_l_ctr[i]
-                lj, jp = uniq_l_ctr[j]
+                li, ip = group_key[i]
+                lj, jp = group_key[j]
                 ang = (li,lj)
                 nprim = (ip, jp)
                 script, mod, fun = gen_rho_kernel(ang, nprim, dtype, ndim)
@@ -230,17 +259,17 @@ def generate_dft_kernel(mol, dtype=np.float64, xc_type='LDA', cutoff=rho_vxc_cut
         wv_max = wv_max * ngrids_per_atom # roughly integrate(wv * ao.T * ao) < cutoff
         log_wv_max = math.log(wv_max)
         log_ao_cutoff = log_cutoff - log_wv_max
-        n_groups = len(l_ctr_bas_loc) - 1
+        n_groups = len(group_offset) - 1
         
         # Estimate the value of AO on grids, construct the sparsity
         ao_sparsity = {}
         for i in range(n_groups):
-            ish0, ish1 = l_ctr_bas_loc[i], l_ctr_bas_loc[i+1]
+            ish0, ish1 = group_offset[i], group_offset[i+1]
             x = coords[ish0:ish1]
             c = coeffs[ish0:ish1]
             e = exps[ish0:ish1]
-            a = angs[ish0:ish1]
-            n = nprims[ish0:ish1]
+            a = angs[ish0].item()
+            n = nprims[ish0].item()
             s = estimate_log_aovalue(grid_coords, x, c, e, a, n, log_cutoff=log_ao_cutoff)
             log_maxval, indices, nnz = s
             indices += ish0
@@ -249,8 +278,8 @@ def generate_dft_kernel(mol, dtype=np.float64, xc_type='LDA', cutoff=rho_vxc_cut
         wv = cp.asarray(wv, dtype=dtype)
         for i in range(n_groups):
             for j in range(i, n_groups):
-                li, ip = uniq_l_ctr[i]
-                lj, jp = uniq_l_ctr[j]
+                li, ip = group_key[i]
+                lj, jp = group_key[j]
                 ang = (li,lj)
                 nprim = (ip, jp)
                 script, mod, fun = gen_vxc_kernel(ang, nprim, dtype, ndim)
@@ -267,10 +296,10 @@ def generate_dft_kernel(mol, dtype=np.float64, xc_type='LDA', cutoff=rho_vxc_cut
                     np.float32(log_cutoff), ngrids
                 )
 
-        vxc = _vhfopt.apply_coeff_CT_mat_C(vxc)
+        vxc = cart2mol(vxc, angs, ao_loc, bas_mapping, mol)
         vxc = inplace_add_transpose(vxc)
-        return vxc
-    return rho_fun, vxc_fun
+        return vxc[0]
+    return rks_fun
 
 def create_tasks(l_ctr_bas_loc, ovlp, cutoff=rho_vxc_cutoff):
     n_groups = len(l_ctr_bas_loc) - 1

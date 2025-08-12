@@ -66,8 +66,9 @@ void eval_rho(
     // ndim = 1 for LDA, 4 for GGA, 5 for mGGA
     DataType rho_reg[ndim] = {zero};
     for (int jsh_nz = 0; jsh_nz < nnzj; jsh_nz++){
-        const int jsh = nnz_indices_j[jsh_nz + block_id * nbas_j];
-        const float log_aoj = log_maxval_j[jsh_nz + block_id * nbas_j];
+        const int offset = jsh_nz + block_id * nbas_j;
+        const int jsh = nnz_indices_j[offset];
+        const float log_aoj = log_maxval_j[offset];
 
         const DataType gjx = gx[0] - __ldg(shell_coords + 3*jsh);
         const DataType gjy = gx[1] - __ldg(shell_coords + 3*jsh + 1);
@@ -134,11 +135,8 @@ void eval_rho(
             const int offset = ish_nz + block_id * nbas_i;
             const int ish = nnz_indices_i[offset];
             const float log_aoi = log_maxval_i[offset];
-            //const int ish = nnz_indices_i_smem[ish_nz];
-            //const float log_aoi = log_maxval_i_smem[ish_nz];
             const float log_rho_est = log_aoi + log_aoj + log_dm_shell[ish+jsh*nbas];
             if (log_rho_est < log_cutoff || ish > jsh) continue;
-            // if (log_rho_est < log_cutoff ) continue;
 
             const DataType gix = gx[0] - __ldg(shell_coords + 3*ish);
             const DataType giy = gx[1] - __ldg(shell_coords + 3*ish + 1);

@@ -39,14 +39,14 @@ O    D
 #atom = 'molecules/h2o.xyz'
 #atom = 'molecules/gly30.xyz'
 #atom = 'molecules/ubiquitin.xyz'
-atom = 'molecules/020_Vitamin_C.xyz'
-#atom = 'molecules/052_Cetirizine.xyz'
+#atom = 'molecules/020_Vitamin_C.xyz'
+atom = 'molecules/052_Cetirizine.xyz'
 
 n_warmup = 3
 deriv = 1
 xctype = 'GGA'
 mol = pyscf.M(atom=atom,
-              basis='def2-qzvpp', 
+              basis='def2-tzvpp', 
               output='pyscf_test.log',
               verbose=4,
               spin=None,
