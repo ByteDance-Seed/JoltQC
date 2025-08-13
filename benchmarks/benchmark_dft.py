@@ -22,9 +22,9 @@ from xqc.pyscf import jk, rks
 from xqc.pyscf.rks import build_grids
 
 #atom = 'molecules/h2o.xyz'
-#atom = 'molecules/020_Vitamin_C.xyz'
+atom = 'molecules/020_Vitamin_C.xyz'
 #atom = 'molecules/052_Cetirizine.xyz'
-atom = 'molecules/valinomycin.xyz'
+#atom = 'molecules/valinomycin.xyz'
 #atom = 'molecules/gly30.xyz'
 #atom = 'molecules/ubiquitin.xyz'
 
@@ -57,7 +57,7 @@ mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}.log', verbose=4)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
-nr_rks = rks.generate_rks_kernel(mol, dtype=cp.float64, xc_type=xctype)
+nr_rks = rks.generate_nr_rks(mol, dtype=cp.float64)
 end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
@@ -76,7 +76,7 @@ start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 for i in range(count):
-    nr_rks = rks.generate_rks_kernel(mol, dtype=cp.float64, xc_type=xctype)
+    nr_rks = rks.generate_nr_rks(mol, dtype=cp.float64)
     mf_jit = dft.RKS(mol, xc=xc)
     mf_jit.verbose = 6
     mf_jit.grids.atom_grid = (99, 590)

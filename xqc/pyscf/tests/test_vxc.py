@@ -75,7 +75,7 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
         
-        rho_kern, vxc_kern = rks.generate_dft_kernel(mol, dtype=np.float64, xc_type='LDA')
+        _, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, dtype=np.float64, xc_type='LDA')
         rho = rho_kern(None, mol, dm, grids)
         
         ao_gpu = ni.eval_ao(mol, grids.coords, deriv=0, transpose=False)
@@ -97,7 +97,7 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
         
-        rho_kern, vxc_kern = rks.generate_dft_kernel(mol, dtype=np.float32, xc_type='LDA')
+        _, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, dtype=np.float32, xc_type='LDA')
         rho = rho_kern(None, mol, dm, grids)
         
         ao_gpu = ni.eval_ao(mol, grids.coords, deriv=0, transpose=False)
@@ -118,7 +118,7 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
         
-        rho_kern, vxc_kern = rks.generate_dft_kernel(mol, dtype=np.float64, xc_type='GGA')
+        _, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, dtype=np.float64, xc_type='GGA')
         rho = rho_kern(None, mol, dm, grids)
 
         ao_gpu = ni.eval_ao(mol, grids.coords, deriv=1, transpose=False)
@@ -142,7 +142,7 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
         
-        rho_kern, vxc_kern = rks.generate_dft_kernel(mol, dtype=np.float64, xc_type='MGGA')
+        _, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, dtype=np.float64, xc_type='MGGA')
         rho = rho_kern(None, mol, dm, grids)
 
         ao_gpu = ni.eval_ao(mol, grids.coords, deriv=1, transpose=False)

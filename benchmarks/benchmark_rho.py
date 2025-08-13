@@ -16,6 +16,7 @@
 import cupy as cp
 import pyscf
 from pyscf import gto
+from pyscf.dft import libxc
 from gpu4pyscf import scf, dft
 from xqc.pyscf import rks
 from xqc.pyscf.rks import build_grids
@@ -44,14 +45,14 @@ atom = 'molecules/052_Cetirizine.xyz'
 
 n_warmup = 3
 deriv = 1
-xctype = 'GGA'
+xc = 'b3lyp'
 mol = pyscf.M(atom=atom,
               basis='def2-tzvpp', 
               output='pyscf_test.log',
               verbose=4,
               spin=None,
               cart=1)
-mf = dft.KS(mol, xc='b3lyp')
+mf = dft.KS(mol, xc=xc)
 mf.grids.level = 2
 #mf.grids.atom_grid = (99, 590)
 
@@ -62,6 +63,7 @@ mf.grids.build = MethodType(build_grids, mf.grids)
 grids = mf.grids
 grids.build(sort_grids=True)
 ni = mf._numint
+xctype = libxc.xc_type(xc)
 
 # warm up
 for i in range(n_warmup):
@@ -83,15 +85,15 @@ print(f"Time with GPU4PySCF, {gpu4pyscf_time_ms}")
 #rho_pyscf = 0
 
 ###### xQC / FP64 #######
-rho_kern, vxc_kern = rks.generate_dft_kernel(mol, dtype=cp.float64, xc_type=xctype)
+_, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, dtype=cp.float64)
 # Warm up
 for i in range(n_warmup):
-    rho = rho_kern(None, mol, dm, grids)
+    rho = rho_kern(None, mol, grids, xc, dm)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mol.verbose = 4
-rho_xqc = rho_kern(None, mol, dm, grids)
+rho_xqc = rho_kern(None, mol, grids, xc, dm)
 mol.verbose = 4
 end.record()
 end.synchronize()
@@ -105,15 +107,15 @@ print('rho[0] diff:', cp.linalg.norm(rho_diff[0]))
 print('rho[1:4] diff:', cp.linalg.norm(rho_diff[1:]))
 
 ###### xQC / FP32 #######
-rho_kern, vxc_kern = rks.generate_dft_kernel(mol, dtype=cp.float32, xc_type=xctype)
+_, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, dtype=cp.float32)
 # Warm up
 for i in range(n_warmup):
-    rho_xqc = rho_kern(None, mol, dm, grids)
+    rho_xqc = rho_kern(None, mol, grids, xc, dm)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mol.verbose = 4
-rho_xqc = rho_kern(None, mol, dm, grids)
+rho_xqc = rho_kern(None, mol, grids, xc, dm)
 mol.verbose = 4
 end.record()
 end.synchronize()

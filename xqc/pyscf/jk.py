@@ -64,6 +64,8 @@ def generate_jk_kernel(mol, dtype=np.float64):
     q_matrix[padding_mask, :] = -100
     q_matrix[:, padding_mask] = -100  # set the Q matrix for padded basis to -100
     q_matrix = cp.asarray(q_matrix, dtype=np.float32)
+
+    logger = lib.logger.Logger(mol, mol.verbose)
     def get_jk(mol_ref, dm, hermi=0, vhfopt=None,
             with_j=True, with_k=True, omega=None, verbose=None):
         '''
@@ -171,7 +173,7 @@ def generate_jk_kernel(mol, dtype=np.float64):
                 
                 # Setup events for timing the critical kernels
                 start = end = None
-                if logger.level > logging.INFO:
+                if logger.verbose > logging.INFO:
                     start = cp.cuda.Event()
                     end = cp.cuda.Event()
                     start.record()
@@ -199,7 +201,7 @@ def generate_jk_kernel(mol, dtype=np.float64):
                         kern_counts += 1
                         ntasks += n_quartets
                         
-                if logger.level > logging.INFO:
+                if logger.verbose > lib.logger.INFO:
                     stream.synchronize()
                     end.record()
                     end.synchronize()
@@ -236,7 +238,7 @@ def generate_jk_kernel(mol, dtype=np.float64):
             vk = cart2mol(vk, angs0, ao_loc, bmap, mol)
             vk = vk.reshape(dm.shape)
         
-        if logger.level >= logging.DEBUG:
+        if logger.verbose >= lib.logger.DEBUG:
             logger.debug('kernel launches %d', kern_counts)
             for llll, t in timing_counter.items():
                 logger.debug('%s wall time %.2f', llll, t)

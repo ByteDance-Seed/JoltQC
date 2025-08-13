@@ -35,7 +35,7 @@ mf.conv_tol = 1e-10
 mf.max_cycle = 50
 
 # Overwrite PySCF get_jk function
-mf.get_jk = jk.generate_jk_kernel(dtype=np.float64) 
+mf.get_jk = jk.generate_jk_kernel(mol) 
 e_tot = mf.kernel()
 print('total energy with double precision:', e_tot)
 
@@ -45,6 +45,6 @@ mf.verbose = 1
 mf.conv_tol = 1e-10
 mf.max_cycle = 50
 
-mf.get_jk = jk.generate_jk_kernel(dtype=np.float32)
+mf.get_jk = jk.generate_jk_kernel(mol, dtype=np.float32)
 e_tot = mf.kernel()
 print('total energy with single precision:', e_tot)

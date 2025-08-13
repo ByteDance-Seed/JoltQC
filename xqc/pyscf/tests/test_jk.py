@@ -72,11 +72,12 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
         
-        get_jk_jit = jk.generate_jk_kernel(mol, dtype=np.float64)
+        get_jk_jit = jk.generate_jk_kernel(mol_sph, dtype=np.float64)
         vj, vk = get_jk_jit(mol_sph, dm, hermi=1)
         vj1 = vj.get()
         vk1 = vk.get()
         ref = get_jk(mol_sph, dm, hermi=1)
+        mol_sph.stdout.close()
         print('vj diff with double precision:', abs(vj1 - ref[0]).max())
         print('vk diff with double precision:', abs(vk1 - ref[1]).max())
         assert abs(vj1 - ref[0]).max() < 1e-7
@@ -178,7 +179,7 @@ class KnownValues(unittest.TestCase):
         vj1 = vj.get()
         vk1 = vk.get()
         ref = get_jk(mol_with_omega, dm, hermi=1, omega=omega)
-
+        mol_with_omega.stdout.close()
         assert abs(vj1 - ref[0]).max() < 1e-7
         assert abs(vk1 - ref[1]).max() < 1e-7
 
@@ -196,12 +197,12 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
         
-        get_jk_jit = jk.generate_jk_kernel(mol, dtype=np.float64)
+        get_jk_jit = jk.generate_jk_kernel(mol_apart, dtype=np.float64)
         vj, vk = get_jk_jit(mol_apart, dm, hermi=1)
         vj1 = vj.get()
         vk1 = vk.get()
         ref = get_jk(mol_apart, dm, hermi=1)
-
+        mol_apart.stdout.close()
         assert abs(vj1 - ref[0]).max() < 1e-7
         assert abs(vk1 - ref[1]).max() < 1e-7
 

@@ -55,7 +55,7 @@ mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}.log', verbose=4, cart
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
-nr_rks = rks.generate_rks_kernel(mol, dtype=cp.float64, xc_type=xctype)
+nr_rks = rks.generate_nr_rks(mol, dtype=cp.float64)
 end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
@@ -71,7 +71,7 @@ start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 for i in range(count):
-    nr_rks = rks.generate_rks_kernel(mol, dtype=cp.float64, xc_type=xctype)
+    nr_rks = rks.generate_nr_rks(mol, dtype=cp.float64)
     mf_jit = dft.RKS(mol, xc=xc).density_fit()
     mf_jit.verbose = 6
     mf_jit.grids.atom_grid = (99, 590)
