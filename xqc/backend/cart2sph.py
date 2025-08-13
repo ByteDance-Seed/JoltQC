@@ -45,6 +45,9 @@ def cart2sph(dm_cart, angs, cart_offset, sph_offset, nao_sph, out=None):
         The spherical density matrix.
     """
     assert dm_cart.flags['C_CONTIGUOUS']
+    if dm_cart.ndim == 2:
+        dm_cart = dm_cart[None]
+    ndms = dm_cart.shape[0]
     cart_offset = cp.asarray(cart_offset, dtype=cp.int32)
     sph_offset = cp.asarray(sph_offset, dtype=cp.int32)
     buf = cp.empty_like(dm_cart, order='C')
@@ -71,7 +74,7 @@ def cart2sph(dm_cart, angs, cart_offset, sph_offset, nao_sph, out=None):
         kernel(blocks, threads, args)
 
     if out is None:
-        dm_sph = cp.empty((nao_sph, nao_sph), order='C')
+        dm_sph = cp.empty((ndms, nao_sph, nao_sph), order='C')
     else:
         dm_sph = out
 
@@ -108,13 +111,15 @@ def sph2cart(dm_sph, angs, sph_offset, cart_offset, nao_cart, out=None):
         The cartesian density matrix.
     """
     assert dm_sph.flags['C_CONTIGUOUS']
-
+    if dm_sph.ndim == 2:
+        dm_sph = dm_sph[None]
+    ndms = dm_sph.shape[0]
     nao_sph = dm_sph.shape[-1]
     nao_cart = cart_offset[-1].item()
 
     cart_offset = cp.asarray(cart_offset, dtype=cp.int32)
     sph_offset = cp.asarray(sph_offset, dtype=cp.int32)
-    buf = cp.empty((nao_cart, nao_cart), order='C')
+    buf = cp.empty((ndms, nao_cart, nao_cart), order='C')
     
     diff = angs[1:] != angs[:-1]
     offsets = np.concatenate(([0], np.nonzero(diff)[0] + 1, [angs.size]))
@@ -138,7 +143,7 @@ def sph2cart(dm_sph, angs, sph_offset, cart_offset, nao_cart, out=None):
         kernel(blocks, threads, args)
     
     if out is None:
-        dm_cart = cp.empty((nao_cart, nao_cart), order='C')
+        dm_cart = cp.empty((ndms, nao_cart, nao_cart), order='C')
     else:
         dm_cart = out
 

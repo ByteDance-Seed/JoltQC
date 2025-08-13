@@ -45,12 +45,12 @@ mf.conv_tol = 1e-10
 mf.max_cycle = 50
 
 # Generate a Vxc function, which is compatiable with PySCF
-nr_rks = rks.generate_rks_kernel(mol, dtype=np.float64, xc_type='mGGA')
+nr_rks = rks.generate_nr_rks(mol)
 from types import MethodType
 mf._numint.nr_rks = MethodType(nr_rks, mf._numint)
 
 # Generate a JK function, which is compatiable with PySCF
-mf.get_jk = jk.generate_jk_kernel(dtype=np.float64)
+mf.get_jk = jk.generate_jk_kernel(mol)
 e_xqc = mf.kernel()
 
 print('total energy with pyscf:', e_pyscf)

@@ -23,9 +23,10 @@ Generate DFT kernels for PySCF
 
 import math
 import time
-import logging
 import numpy as np
 import cupy as cp
+from pyscf import lib
+from pyscf.dft import libxc
 from pyscf.dft.gen_grid import GROUP_BOUNDARY_PENALTY
 from xqc.backend.linalg_helper import max_block_pooling, inplace_add_transpose
 from xqc.pyscf.mol import create_sorted_basis
@@ -37,6 +38,31 @@ __all__ = ['build_grids', 'generate_rks_kernel']
 rho_vxc_cutoff = 1e-13
 GROUP_BOX_SIZE = 3.0
 LMAX = 4
+DIM_BY_XC = {"LDA": 1, "GGA": 4, "MGGA": 5}
+
+def arg_group_grids(mol, coords, box_size=GROUP_BOX_SIZE):
+    """
+    Parition the entire space into small boxes according to the input box_size.
+    Group the grids against these boxes.
+    """
+    atom_coords = mol.atom_coords()
+    boundary = [atom_coords.min(axis=0) - GROUP_BOUNDARY_PENALTY,
+                atom_coords.max(axis=0) + GROUP_BOUNDARY_PENALTY]
+    # how many boxes inside the boundary
+    boxes = ((boundary[1] - boundary[0]) * (1./box_size)).round().astype(int)
+    
+    # box_size is the length of each edge of the box
+    box_size = cp.asarray((boundary[1] - boundary[0]) / boxes)
+    frac_coords = (coords - cp.asarray(boundary[0])) * (1./box_size)
+    box_ids = cp.floor(frac_coords).astype(int)
+    box_ids[box_ids<-1] = -1
+    box_ids[box_ids[:,0] > boxes[0], 0] = boxes[0]
+    box_ids[box_ids[:,1] > boxes[1], 1] = boxes[1]
+    box_ids[box_ids[:,2] > boxes[2], 2] = boxes[2]
+
+    boxes *= 2 # for safety
+    box_id = box_ids[:,0] + box_ids[:,1] * boxes[0] + box_ids[:,2] * boxes[0] * boxes[1]
+    return cp.argsort(box_id)
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +109,7 @@ def build_grids(grids, mol=None, with_non0tab=False, sort_grids=True, **kwargs):
     if mol is None: mol = grids.mol
     if grids.verbose >= 5:
         grids.check_sanity()
+    logger = lib.logger.new_logger(mol, grids.verbose)
 
     cputime_start  = time.perf_counter()
     atom_grids_tab = grids.gen_atomic_grids(
@@ -130,18 +157,13 @@ def build_grids(grids, mol=None, with_non0tab=False, sort_grids=True, **kwargs):
     grids._non0ao_idx = None
     return grids
 
-def generate_rks_kernel(mol, dtype=np.float64, xc_type='LDA', rho_vxc_cutoff = rho_vxc_cutoff):
-    #rho_fun, vxc_fun = generate_dft_kernel(mol, dtype, xc_type)
-    xc_type = xc_type.upper()
-    if xc_type == 'LDA':
-        ndim = 1
-    elif xc_type == 'GGA':
-        ndim = 4
-    elif xc_type == 'MGGA':
-        ndim = 5
-    else:
-        raise ValueError(f'Unknown xc_type: {xc_type}')
-    
+def generate_nr_rks(mol, dtype=np.float64):
+    rks_fun, rho_fun, vxc_fun = generate_rks_kernel(mol, dtype=dtype)
+    return rks_fun
+
+def generate_rks_kernel(mol, dtype=np.float64, rho_vxc_cutoff = rho_vxc_cutoff):    
+    logger = lib.logger.Logger(mol, mol.verbose)
+
     log_cutoff = math.log(rho_vxc_cutoff)
     bas_cache, bas_mapping, _, group_info = create_sorted_basis(mol, alignment=1, dtype=dtype)
     coeffs, exps, coords, angs, nprims = bas_cache
@@ -169,20 +191,20 @@ def generate_rks_kernel(mol, dtype=np.float64, xc_type='LDA', rho_vxc_cutoff = r
             excsum: exchange correlation energy
             vxcmat: vxc matrix
         """
-         
+        
         dm_prev = _cache['dm_prev']
         rho_prev = _cache['rho_prev']
         wv_prev = _cache['wv_prev']
         vxcmat_prev = _cache['vxcmat_prev']
-
+    
         # Evaluate rho on grids for given density matrix
-        xctype = ni._xc_type(xc_code)
         weights = grids.weights
         dm_diff = dm - dm_prev
-        rho_diff = rho_fun(None, mol, dm_diff, grids)
+        rho_diff = rho_fun(ni, mol, grids, xc_code, dm_diff)
         rho = rho_prev + rho_diff
 
         # Evaluate vxc on grids via libxc
+        xctype = libxc.xc_type(xc_code)
         exc, vxc = ni.eval_xc_eff(xc_code, rho, deriv=1, xctype=xctype)[:2]
 
         # Integrate vxc on grids
@@ -193,7 +215,7 @@ def generate_rks_kernel(mol, dtype=np.float64, xc_type='LDA', rho_vxc_cutoff = r
         nelec = float(den.sum())
         wv = vxc * weights
         wv_diff = wv - wv_prev
-        vxcmat_diff = vxc_fun(None, mol, wv_diff, grids)
+        vxcmat_diff = vxc_fun(None, mol, grids, xc_code, wv_diff)
         vxcmat = vxcmat_prev + vxcmat_diff
 
         _cache['dm_prev'] = dm.copy()
@@ -202,7 +224,7 @@ def generate_rks_kernel(mol, dtype=np.float64, xc_type='LDA', rho_vxc_cutoff = r
         _cache['vxcmat_prev'] = vxcmat.copy()
         return nelec, excsum, vxcmat
 
-    def rho_fun(ni, mol, dm, grids, max_memory=2000, verbose=None):
+    def rho_fun(ni, mol, grids, xc_code, dm, max_memory=2000, verbose=None):
         ngrids = grids.coords.shape[0]
         grid_coords = cp.asarray(grids.coords.T, dtype=dtype, order='C')
         dm = mol2cart(dm, angs, ao_loc, bas_mapping, mol)
@@ -212,7 +234,10 @@ def generate_rks_kernel(mol, dtype=np.float64, xc_type='LDA', rho_vxc_cutoff = r
         log_dm = cp.max(log_dm_shell).item()
         log_ao_cutoff = log_cutoff - log_dm # ao.T * dm * ao < cutoff
         n_groups = len(group_offset) - 1
-        
+        xctype = libxc.xc_type(xc_code)
+        xctype = xctype.upper()
+        ndim = DIM_BY_XC[xctype]
+
         # Estimate the value of AO on grids, construct the sparsity
         ao_sparsity = {}
         for i in range(n_groups):
@@ -250,7 +275,7 @@ def generate_rks_kernel(mol, dtype=np.float64, xc_type='LDA', rho_vxc_cutoff = r
                 )
         return rho
 
-    def vxc_fun(ni, mol, wv, grids, max_memory=None, verbose=None):
+    def vxc_fun(ni, mol, grids, xc_code, wv, max_memory=None, verbose=None):
         ngrids = grids.coords.shape[0]
         grid_coords = cp.asarray(grids.coords.T, dtype=dtype, order='C')
         vxc = cp.zeros([1, nao, nao], dtype=np.float64)
@@ -260,7 +285,10 @@ def generate_rks_kernel(mol, dtype=np.float64, xc_type='LDA', rho_vxc_cutoff = r
         log_wv_max = math.log(wv_max)
         log_ao_cutoff = log_cutoff - log_wv_max
         n_groups = len(group_offset) - 1
-        
+        xctype = libxc.xc_type(xc_code)
+        xctype = xctype.upper()
+        ndim = DIM_BY_XC[xctype]
+
         # Estimate the value of AO on grids, construct the sparsity
         ao_sparsity = {}
         for i in range(n_groups):
@@ -299,7 +327,7 @@ def generate_rks_kernel(mol, dtype=np.float64, xc_type='LDA', rho_vxc_cutoff = r
         vxc = cart2mol(vxc, angs, ao_loc, bas_mapping, mol)
         vxc = inplace_add_transpose(vxc)
         return vxc[0]
-    return rks_fun
+    return rks_fun, rho_fun, vxc_fun
 
 def create_tasks(l_ctr_bas_loc, ovlp, cutoff=rho_vxc_cutoff):
     n_groups = len(l_ctr_bas_loc) - 1

@@ -44,14 +44,14 @@ atom = 'molecules/020_Vitamin_C.xyz'
 
 n_warmup = 3
 deriv = 1
-xctype = 'GGA'
+xc = 'b3lyp'
 mol = pyscf.M(atom=atom,
               basis='def2-tzvpp', 
               output='pyscf_test.log',
               verbose=4,
               spin=None,
               cart=1)
-mf = dft.KS(mol, xc='b3lyp')
+mf = dft.KS(mol, xc=xc)
 mf.grids.level = 2
 
 dm = mf.get_init_guess()
@@ -95,15 +95,15 @@ gpu4pyscf_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Time with GPU4PySCF, {gpu4pyscf_time_ms}")
 
 ###### xQC / FP64 #######
-rho_kern, vxc_kern = rks.generate_dft_kernel(mol, dtype=np.float64, xc_type=xctype)
+_, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, dtype=np.float64)
 # Warm up
 for i in range(n_warmup):
-    vxc = vxc_kern(None, mol, wv, grids)
+    vxc = vxc_kern(None, mol, grids, xc, wv)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mol.verbose = 4
-vxc = vxc_kern(None, mol, wv, grids)
+vxc = vxc_kern(None, mol, grids, xc, wv)
 mol.verbose = 4
 end.record()
 end.synchronize()
@@ -116,15 +116,15 @@ vxc_diff = vxc_pyscf - vxc
 print('vxc diff:', cp.linalg.norm(vxc_diff))
 
 ###### xQC / FP32 #######
-rho_kern, vxc_kern = rks.generate_dft_kernel(mol, dtype=np.float32, xc_type=xctype)
+_, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, dtype=np.float32)
 # Warm up
 for i in range(n_warmup):
-    vxc = vxc_kern(None, mol, wv, grids)
+    vxc = vxc_kern(None, mol, grids, xc, wv)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mol.verbose = 4
-vxc = vxc_kern(None, mol, wv, grids)
+vxc = vxc_kern(None, mol, grids, xc, wv)
 mol.verbose = 4
 end.record()
 end.synchronize()
