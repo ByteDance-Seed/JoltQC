@@ -29,7 +29,7 @@ from pyscf import lib
 from pyscf.dft import libxc
 from pyscf.dft.gen_grid import GROUP_BOUNDARY_PENALTY
 from xqc.backend.linalg_helper import max_block_pooling, inplace_add_transpose
-from xqc.pyscf.mol import create_sorted_basis
+from xqc.pyscf.mol import sort_group_basis
 from xqc.backend.rks import gen_rho_kernel, gen_vxc_kernel, estimate_log_aovalue
 from xqc.backend.cart2sph import mol2cart, cart2mol
 
@@ -64,7 +64,6 @@ def arg_group_grids(mol, coords, box_size=GROUP_BOX_SIZE):
     box_id = box_ids[:,0] + box_ids[:,1] * boxes[0] + box_ids[:,2] * boxes[0] * boxes[1]
     return cp.argsort(box_id)
 
-logger = logging.getLogger(__name__)
 
 def arg_group_grids(mol, coords, box_size=GROUP_BOX_SIZE):
     """
@@ -76,8 +75,7 @@ def arg_group_grids(mol, coords, box_size=GROUP_BOX_SIZE):
                 atom_coords.max(axis=0) + GROUP_BOUNDARY_PENALTY]
     # how many boxes inside the boundary
     boxes = ((boundary[1] - boundary[0]) * (1./box_size)).round().astype(int)
-    tot_boxes = np.prod(boxes + 2)
-    logger.debug(mol, 'tot_boxes %d, boxes in each direction %s', tot_boxes, boxes)
+    
     # box_size is the length of each edge of the box
     box_size = cp.asarray((boundary[1] - boundary[0]) / boxes)
     frac_coords = (coords - cp.asarray(boundary[0])) * (1./box_size)
@@ -162,10 +160,8 @@ def generate_nr_rks(mol, dtype=np.float64):
     return rks_fun
 
 def generate_rks_kernel(mol, dtype=np.float64, rho_vxc_cutoff = rho_vxc_cutoff):    
-    logger = lib.logger.Logger(mol, mol.verbose)
-
     log_cutoff = math.log(rho_vxc_cutoff)
-    bas_cache, bas_mapping, _, group_info = create_sorted_basis(mol, alignment=1, dtype=dtype)
+    bas_cache, bas_mapping, _, group_info = sort_group_basis(mol, alignment=1, dtype=dtype)
     coeffs, exps, coords, angs, nprims = bas_cache
     ao_loc = np.concatenate(([0], np.cumsum((angs+1)*(angs+2)//2)))
     nao = ao_loc[-1]
@@ -196,15 +192,16 @@ def generate_rks_kernel(mol, dtype=np.float64, rho_vxc_cutoff = rho_vxc_cutoff):
         rho_prev = _cache['rho_prev']
         wv_prev = _cache['wv_prev']
         vxcmat_prev = _cache['vxcmat_prev']
-    
+
+        xctype = libxc.xc_type(xc_code)
+
         # Evaluate rho on grids for given density matrix
         weights = grids.weights
         dm_diff = dm - dm_prev
-        rho_diff = rho_fun(ni, mol, grids, xc_code, dm_diff)
+        rho_diff = rho_fun(ni, mol, grids, xctype, dm_diff)
         rho = rho_prev + rho_diff
 
         # Evaluate vxc on grids via libxc
-        xctype = libxc.xc_type(xc_code)
         exc, vxc = ni.eval_xc_eff(xc_code, rho, deriv=1, xctype=xctype)[:2]
 
         # Integrate vxc on grids
@@ -215,7 +212,7 @@ def generate_rks_kernel(mol, dtype=np.float64, rho_vxc_cutoff = rho_vxc_cutoff):
         nelec = float(den.sum())
         wv = vxc * weights
         wv_diff = wv - wv_prev
-        vxcmat_diff = vxc_fun(None, mol, grids, xc_code, wv_diff)
+        vxcmat_diff = vxc_fun(None, mol, grids, xctype, wv_diff)
         vxcmat = vxcmat_prev + vxcmat_diff
 
         _cache['dm_prev'] = dm.copy()
@@ -224,7 +221,7 @@ def generate_rks_kernel(mol, dtype=np.float64, rho_vxc_cutoff = rho_vxc_cutoff):
         _cache['vxcmat_prev'] = vxcmat.copy()
         return nelec, excsum, vxcmat
 
-    def rho_fun(ni, mol, grids, xc_code, dm, max_memory=2000, verbose=None):
+    def rho_fun(ni, mol, grids, xctype, dm, max_memory=2000, verbose=None):
         ngrids = grids.coords.shape[0]
         grid_coords = cp.asarray(grids.coords.T, dtype=dtype, order='C')
         dm = mol2cart(dm, angs, ao_loc, bas_mapping, mol)
@@ -234,7 +231,6 @@ def generate_rks_kernel(mol, dtype=np.float64, rho_vxc_cutoff = rho_vxc_cutoff):
         log_dm = cp.max(log_dm_shell).item()
         log_ao_cutoff = log_cutoff - log_dm # ao.T * dm * ao < cutoff
         n_groups = len(group_offset) - 1
-        xctype = libxc.xc_type(xc_code)
         xctype = xctype.upper()
         ndim = DIM_BY_XC[xctype]
 
@@ -275,7 +271,7 @@ def generate_rks_kernel(mol, dtype=np.float64, rho_vxc_cutoff = rho_vxc_cutoff):
                 )
         return rho
 
-    def vxc_fun(ni, mol, grids, xc_code, wv, max_memory=None, verbose=None):
+    def vxc_fun(ni, mol, grids, xctype, wv, max_memory=None, verbose=None):
         ngrids = grids.coords.shape[0]
         grid_coords = cp.asarray(grids.coords.T, dtype=dtype, order='C')
         vxc = cp.zeros([1, nao, nao], dtype=np.float64)
@@ -285,7 +281,6 @@ def generate_rks_kernel(mol, dtype=np.float64, rho_vxc_cutoff = rho_vxc_cutoff):
         log_wv_max = math.log(wv_max)
         log_ao_cutoff = log_cutoff - log_wv_max
         n_groups = len(group_offset) - 1
-        xctype = libxc.xc_type(xc_code)
         xctype = xctype.upper()
         ndim = DIM_BY_XC[xctype]
 

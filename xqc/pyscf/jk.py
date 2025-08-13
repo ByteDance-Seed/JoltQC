@@ -32,7 +32,7 @@ from xqc.backend.linalg_helper import inplace_add_transpose, max_block_pooling
 from xqc.backend.jk_tasks import generate_fill_tasks_kernel
 from xqc.backend.jk import gen_jk_kernel
 from xqc.backend.cart2sph import mol2cart, cart2mol
-from xqc.pyscf.mol import compute_q_matrix, create_sorted_basis
+from xqc.pyscf.mol import compute_q_matrix, sort_group_basis
 
 __all__ = [
     'get_jk', 'get_j',
@@ -54,7 +54,7 @@ def generate_jk_kernel(mol, dtype=np.float64):
     # TODO: mixed-precision
     cutoff_fp32 = 1e100
     direct_scf_tol = 1e-13  # TODO: use the parameter in mf object
-    bas_cache, bas_mapping, padding_mask, group_info = create_sorted_basis(mol, alignment=TILE, dtype=dtype)
+    bas_cache, bas_mapping, padding_mask, group_info = sort_group_basis(mol, alignment=TILE, dtype=dtype)
     
     # TODO: Q matrix for short-range
     q_matrix = compute_q_matrix(mol)

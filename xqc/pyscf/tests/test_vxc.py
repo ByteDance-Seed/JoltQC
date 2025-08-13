@@ -23,9 +23,8 @@ from gpu4pyscf.scf.jk import _VHFOpt
 from gpu4pyscf import dft
 from gpu4pyscf.dft.rks import initialize_grids
 from xqc.pyscf import rks
-#from xqc.pyscf.jk import format_bas_cache
 from xqc.backend.rks import estimate_log_aovalue
-from xqc.pyscf.mol import format_bas_cache, create_sorted_basis
+from xqc.pyscf.mol import sort_group_basis
 
 def setUpModule():
     global mol, grids, ni
@@ -74,9 +73,10 @@ class KnownValues(unittest.TestCase):
         nao = mol.nao
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
-        
-        _, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, dtype=np.float64, xc_type='LDA')
-        rho = rho_kern(None, mol, dm, grids)
+        xctype = 'LDA'
+
+        _, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, dtype=np.float64)
+        rho = rho_kern(None, mol, grids, xctype, dm)
         
         ao_gpu = ni.eval_ao(mol, grids.coords, deriv=0, transpose=False)
         rho_pyscf = ni.eval_rho(mol, ao_gpu, dm, xctype='LDA')
@@ -86,7 +86,7 @@ class KnownValues(unittest.TestCase):
         ngrids = grids.coords.shape[0]
         wv = cp.asarray(np.random.rand(ngrids))
 
-        vxc = vxc_kern(None, mol, wv, grids)
+        vxc = vxc_kern(None, mol, grids, xctype, wv)
         aow = ao_gpu * wv
         vxc_pyscf = ao_gpu.dot(aow.T)
         assert abs(vxc - vxc_pyscf).max() < 1e-7
@@ -96,18 +96,19 @@ class KnownValues(unittest.TestCase):
         nao = mol.nao
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
-        
-        _, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, dtype=np.float32, xc_type='LDA')
-        rho = rho_kern(None, mol, dm, grids)
+        xctype = 'LDA'
+
+        _, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, dtype=np.float32)
+        rho = rho_kern(None, mol, grids, xctype, dm)
         
         ao_gpu = ni.eval_ao(mol, grids.coords, deriv=0, transpose=False)
-        rho_pyscf = ni.eval_rho(mol, ao_gpu, dm, xctype='LDA')
+        rho_pyscf = ni.eval_rho(mol, ao_gpu, dm, xctype=xctype)
         assert abs(rho - rho_pyscf).max() < 1e-3
 
         ngrids = grids.coords.shape[0]
         wv = cp.asarray(np.random.rand(ngrids))
 
-        vxc = vxc_kern(None, mol, wv, grids)
+        vxc = vxc_kern(None, mol, grids, xctype, wv)
         aow = ao_gpu * wv
         vxc_pyscf = ao_gpu.dot(aow.T)
         assert abs(vxc - vxc_pyscf).max() < 1e-3
@@ -117,18 +118,19 @@ class KnownValues(unittest.TestCase):
         nao = mol.nao
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
-        
-        _, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, dtype=np.float64, xc_type='GGA')
-        rho = rho_kern(None, mol, dm, grids)
+        xctype = 'GGA'
+
+        _, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, dtype=np.float64)
+        rho = rho_kern(None, mol, grids, xctype, dm)
 
         ao_gpu = ni.eval_ao(mol, grids.coords, deriv=1, transpose=False)
-        rho_pyscf = ni.eval_rho(mol, ao_gpu, dm, xctype='GGA')
+        rho_pyscf = ni.eval_rho(mol, ao_gpu, dm, xctype=xctype)
         assert abs(rho - rho_pyscf).max() < 1e-7
 
         ngrids = grids.coords.shape[0]
         wv = cp.asarray(np.random.rand(4, ngrids))
 
-        vxc = vxc_kern(None, mol, wv, grids)
+        vxc = vxc_kern(None, mol, grids, xctype, wv)
 
         wv[0] *= .5
         aow = cp.einsum('nip,np->ip', ao_gpu, wv)
@@ -141,9 +143,10 @@ class KnownValues(unittest.TestCase):
         nao = mol.nao
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
-        
-        _, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, dtype=np.float64, xc_type='MGGA')
-        rho = rho_kern(None, mol, dm, grids)
+        xctype = 'MGGA'
+
+        _, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, dtype=np.float64)
+        rho = rho_kern(None, mol, grids, xctype, dm)
 
         ao_gpu = ni.eval_ao(mol, grids.coords, deriv=1, transpose=False)
         rho_pyscf = ni.eval_rho(mol, ao_gpu, dm, xctype='MGGA')
@@ -151,7 +154,7 @@ class KnownValues(unittest.TestCase):
 
         ngrids = grids.coords.shape[0]
         wv = cp.asarray(np.random.rand(5, ngrids))
-        vxc = vxc_kern(None, mol, wv, grids)
+        vxc = vxc_kern(None, mol, grids, xctype, wv)
         
         from gpu4pyscf.dft.numint import _tau_dot, _scale_ao
         wv[[0,4]] *= .5
@@ -182,7 +185,7 @@ class KnownValues(unittest.TestCase):
         dm = dm.dot(dm.T)
 
         grid_coords = cp.asarray(grids.coords.T, order='C')
-        bas_cache, _, _, _ = create_sorted_basis(mol, alignment=1, dtype=np.float32)
+        bas_cache, _, _, _ = sort_group_basis(mol, alignment=1, dtype=np.float32)
         coeffs, exps, coords, angs, nprims = bas_cache
         ao_gpu = ni.eval_ao(sorted_mol, grids.coords, deriv=0, transpose=False)
         

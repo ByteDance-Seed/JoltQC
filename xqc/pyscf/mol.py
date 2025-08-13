@@ -82,7 +82,23 @@ def format_bas_cache(sorted_mol, dtype=np.float64):
     bas_cache = (coords, coeffs, exponents, ao_loc, nprims, angs)
     return bas_cache
 
-def create_sorted_basis(mol, alignment=4, dtype=np.float64):
+def sort_group_basis(mol, alignment=4, dtype=np.float64):
+    """
+    Sort and group basis by angular momentum and number of primitives.
+
+    Args:
+        mol (pyscf.gto.Mole): The pyscf Mole object. Must be decontracted.
+        alignment (int, optional): The alignment of each basis group. Defaults to 4.
+        dtype (numpy.dtype, optional): The data type of the arrays. Defaults to np.float64.
+    Returns:
+        tuple: A tuple containing the sorted and grouped basis cache.
+            (basis_info, basis_map, basis_mask, group_info)
+
+        basis_info := (coeffs, exponents, coords, angs, nprims)
+        basis_map := basis_info -> mol._bas
+        basis_mask := padding mask for basis_info
+        group_info := (group_key, group_offset)
+    """
     _bas = mol._bas
     _env = mol._env
     _atm = mol._atm
@@ -185,12 +201,12 @@ def create_sorted_basis(mol, alignment=4, dtype=np.float64):
     coords = cp.asarray(coords)
 
     # Store info at basis level
-    bas_cache = (coeffs, exponents, coords, angs, nprims)
+    bas_info = (coeffs, exponents, coords, angs, nprims)
     
     group_key = np.asarray(group_key)
     group_offset = np.asarray(group_offset)
     
-    return bas_cache, bas_id, pad_id, (group_key, group_offset)
+    return bas_info, bas_id, pad_id, (group_key, group_offset)
 
 def compute_q_matrix(mol):
     """ 
@@ -222,4 +238,4 @@ if __name__ == '__main__':
     mol.basis = 'cc-pvdz'
     mol.build()
 
-    create_sorted_basis(mol)
+    sort_group_basis(mol)
