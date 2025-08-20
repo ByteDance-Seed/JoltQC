@@ -36,7 +36,7 @@ void rys_jk(const int nbas,
         double* vj, 
         double* vk,
         const DataType omega,
-        const int4* __restrict__ shl_quartet_idx, 
+        const ushort4* __restrict__ shl_quartet_idx, 
         const int ntasks)
 {
     if (ntasks == 0) return;
@@ -101,13 +101,17 @@ void rys_jk(const int nbas,
         kl_idz[kl] = kl_z * g_stride + 2*gx_stride;
     }
 
-    const int4 sq = shl_quartet_idx[task_id];
     const bool active = (task_id < ntasks);
-    const int ish = active ? sq.x : 0;
-    const int jsh = active ? sq.y : 0;
-    const int ksh = active ? sq.z : 0;
-    const int lsh = active ? sq.w : 0;
-
+    ushort4 sq = {0,0,0,0};
+    if (active) {
+        sq = shl_quartet_idx[task_id];
+    }
+    
+    const int ish = (int)sq.x;
+    const int jsh = (int)sq.y;
+    const int ksh = (int)sq.z;
+    const int lsh = (int)sq.w;
+    
     DataType fac_sym = active ? PI_FAC : zero;
     if (ish == jsh) fac_sym *= half;
     if (ksh == lsh) fac_sym *= half;
@@ -364,6 +368,8 @@ void rys_jk(const int nbas,
     const int k0 = ao_loc[ksh];
     const int l0 = ao_loc[lsh];
 
+    bool survived_quartet = false;
+
     DataType *smem = shared_memory + tx;
     constexpr int smem_stride = nsq_per_block | 1;
     for (int i_dm = 0; i_dm < n_dm; ++i_dm) {
@@ -454,7 +460,6 @@ void rys_jk(const int nbas,
                     }
                     integral_off += tstride_l;
                 }
-
                 if constexpr(ntkl > 1){
                     const int ij = i + j * nfi;
                     smem[ij * smem_stride + smem_off] = vj_ji;
@@ -513,7 +518,6 @@ void rys_jk(const int nbas,
                         }
                         integral_off += tstride_j;
                     }
-
                     if constexpr (ntjl > 1){
                         const int ik = i*nfk + k;
                         smem[ik * smem_stride + smem_off] = vk_ik;
@@ -573,7 +577,6 @@ void rys_jk(const int nbas,
                         }
                         integral_off += tstride_j;
                     }
-
                     if constexpr (ntjk > 1){
                         const int il = i * nfl + l;
                         smem[il * smem_stride + smem_off] = vk_il;

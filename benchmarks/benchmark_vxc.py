@@ -45,6 +45,7 @@ atom = 'molecules/020_Vitamin_C.xyz'
 n_warmup = 3
 deriv = 1
 xc = 'b3lyp'
+xctype = 'GGA'
 mol = pyscf.M(atom=atom,
               basis='def2-tzvpp', 
               output='pyscf_test.log',
@@ -95,20 +96,23 @@ gpu4pyscf_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Time with GPU4PySCF, {gpu4pyscf_time_ms}")
 
 ###### xQC / FP64 #######
-_, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, dtype=np.float64)
+cutoff_a = np.log(1e-13)
+cutoff_b = np.log(1e6)
+_, rho_kern, vxc_kern = rks.generate_rks_kernel(mol)
 # Warm up
 for i in range(n_warmup):
-    vxc = vxc_kern(None, mol, grids, xc, wv)
+    vxc = vxc_kern(None, mol, grids, xctype, wv, np.float64, cutoff_a, cutoff_b)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mol.verbose = 4
-vxc = vxc_kern(None, mol, grids, xc, wv)
+vxc = vxc_kern(None, mol, grids, xctype, wv, np.float64, cutoff_a, cutoff_b)
 mol.verbose = 4
 end.record()
 end.synchronize()
 xqc_time_ms = cp.cuda.get_elapsed_time(start, end)
 
+print("-------------------------------")
 print("Benchmark with FP64")
 print(f"Time with xQC, {xqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/xqc_time_ms}")
@@ -116,23 +120,51 @@ vxc_diff = vxc_pyscf - vxc
 print('vxc diff:', cp.linalg.norm(vxc_diff))
 
 ###### xQC / FP32 #######
-_, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, dtype=np.float32)
+cutoff_a = np.log(1e-13)
+cutoff_b = np.log(1e6)
+_, rho_kern, vxc_kern = rks.generate_rks_kernel(mol)
 # Warm up
 for i in range(n_warmup):
-    vxc = vxc_kern(None, mol, grids, xc, wv)
+    vxc = vxc_kern(None, mol, grids, xctype, wv, np.float32, cutoff_a, cutoff_b)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mol.verbose = 4
-vxc = vxc_kern(None, mol, grids, xc, wv)
+vxc = vxc_kern(None, mol, grids, xctype, wv, np.float32, cutoff_a, cutoff_b)
 mol.verbose = 4
 end.record()
 end.synchronize()
 xqc_time_ms = cp.cuda.get_elapsed_time(start, end)
 
+print("-------------------------------")
 print("Benchmark with FP32")
 print(f"Time with xQC, {xqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/xqc_time_ms}")
 vxc_diff = vxc_pyscf - vxc
 print('vxc diff:', cp.linalg.norm(vxc_diff))
 
+###### xQC / FP32 + FP64 #######
+cutoff_max = np.log(1e10)
+cutoff_fp64 = np.log(1e-7)
+cutoff_fp32 = np.log(1e-13)
+_, _, vxc_kern = rks.generate_rks_kernel(mol)
+# Warm up
+for i in range(n_warmup):
+    vxc = vxc_kern(None, mol, grids, xctype, wv, np.float32, cutoff_fp32, cutoff_fp64)
+    vxc+= vxc_kern(None, mol, grids, xctype, wv, np.float64, cutoff_fp64, cutoff_max)
+start = cp.cuda.Event()
+end = cp.cuda.Event()
+start.record()
+mol.verbose = 4
+vxc = vxc_kern(None, mol, grids, xctype, wv, np.float32, cutoff_fp32, cutoff_fp64)
+vxc+= vxc_kern(None, mol, grids, xctype, wv, np.float64, cutoff_fp64, cutoff_max)
+end.record()
+end.synchronize()
+xqc_time_ms = cp.cuda.get_elapsed_time(start, end)
+
+print("-------------------------------")
+print("Benchmark with FP32 + FP64")
+print(f"Time with xQC, {xqc_time_ms}")
+print(f"Speedup: {gpu4pyscf_time_ms/xqc_time_ms}")
+vxc_diff = vxc_pyscf - vxc
+print('vxc diff:', cp.linalg.norm(vxc_diff))

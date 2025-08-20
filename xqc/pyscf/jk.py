@@ -25,11 +25,10 @@ import time
 import math
 import numpy as np
 import cupy as cp
-import logging
 from collections import Counter
 from pyscf import lib
 from xqc.backend.linalg_helper import inplace_add_transpose, max_block_pooling
-from xqc.backend.jk_tasks import generate_fill_tasks_kernel
+from xqc.backend.jk_tasks import generate_fill_tasks_kernel, MAX_PAIR_SIZE, QUEUE_DEPTH
 from xqc.backend.jk import gen_jk_kernel
 from xqc.backend.cart2sph import mol2cart, cart2mol
 from xqc.pyscf.mol import compute_q_matrix, sort_group_basis
@@ -38,24 +37,27 @@ __all__ = [
     'get_jk', 'get_j',
 ]
 
-int4_dtype = np.dtype([('x', 'i4'), ('y', 'i4'), ('z', 'i4'), ('w', 'i4')])
+ushort4_dtype = np.dtype([
+    ('x', np.uint16), 
+    ('y', np.uint16), 
+    ('z', np.uint16), 
+    ('w', np.uint16)])
 
 LMAX = 4
 TILE = 4
-MAX_PAIR_SIZE = 16384
-QUEUE_DEPTH = MAX_PAIR_SIZE * MAX_PAIR_SIZE # 4 GB
-PTR_BAS_COORD = 7
 GROUP_SIZE = 256
 NPRIM_MAX = 16
+PAIR_CUTOFF = 1e-13
 
-logger = logging.getLogger(__name__)
+def generate_get_jk(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    get_jk_fp64 = generate_jk_kernel(mol, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
+    def get_jk(*args, **kwargs):
+        return get_jk_fp64(*args, **kwargs)
+    return get_jk
 
-def generate_jk_kernel(mol, dtype=np.float64):
-    # TODO: mixed-precision
-    cutoff_fp32 = 1e100
-    direct_scf_tol = 1e-13  # TODO: use the parameter in mf object
-    bas_cache, bas_mapping, padding_mask, group_info = sort_group_basis(mol, alignment=TILE, dtype=dtype)
-    
+def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    bas_cache, bas_mapping, padding_mask, group_info = sort_group_basis(mol, alignment=TILE)
+
     # TODO: Q matrix for short-range
     q_matrix = compute_q_matrix(mol)
     nbas = bas_mapping.shape[0]
@@ -65,11 +67,23 @@ def generate_jk_kernel(mol, dtype=np.float64):
     q_matrix[:, padding_mask] = -100  # set the Q matrix for padded basis to -100
     q_matrix = cp.asarray(q_matrix, dtype=np.float32)
 
-    logger = lib.logger.Logger(mol, mol.verbose)
+    logger = lib.logger.new_logger(mol, mol.verbose)
+    log_cutoff_fp64 = np.float32(math.log(cutoff_fp64))
+    log_cutoff_fp32 = np.float32(math.log(cutoff_fp32))
+
+    coeffs_fp64, exponents_fp64, coords_fp64, angs, _ = bas_cache
+    coeffs_fp32 = coeffs_fp64.astype(np.float32)
+    exponents_fp32 = exponents_fp64.astype(np.float32)
+    coords_fp32 = coords_fp64.astype(np.float32)
+
+    ao_loc = np.concatenate(([0], np.cumsum((angs+1)*(angs+2)//2)))
+    nao = ao_loc[-1]
+    ao_loc = cp.asarray(ao_loc, dtype=np.int32)
+
     def get_jk(mol_ref, dm, hermi=0, vhfopt=None,
             with_j=True, with_k=True, omega=None, verbose=None):
         '''
-        Compute J, K matrices
+        Compute J, K matrices, compatible with jk.get_jk in PySCF
         
         Args:
             mol_ref: pyscf Mole object
@@ -88,32 +102,25 @@ def generate_jk_kernel(mol, dtype=np.float64):
         assert mol_ref == mol, "mol_ref must be the same as mol"
         cputime_start  = time.perf_counter()
         
-        _, _, coords, angs, _ = bas_cache
         group_key, group_offset = group_info
         uniq_l = group_key[:,0]
-        l_ctr_bas_loc = group_offset
         l_symb = [lib.param.ANGULAR[i] for i in uniq_l]
         n_groups = np.count_nonzero(uniq_l <= LMAX)
 
         if np.any(uniq_l > LMAX):
             raise RuntimeError('LMAX > 4 is not supported')
-
-        log_cutoff_fp64 = np.float32(math.log(direct_scf_tol))
-        log_cutoff_fp32 = np.float32(math.log(cutoff_fp32))
-        logger.debug(f"Compute J/K matrices with do_j={with_j} and do_k={with_k}, omega={omega}")
+        
+        logger.debug1(f"Compute J/K matrices with do_j={with_j} and do_k={with_k}, omega={omega}")
         
         dm = cp.asarray(dm, order='C')
         dms = dm.reshape(-1,nao_orig,nao_orig)
-
-        ao_loc = np.concatenate(([0], np.cumsum((angs+1)*(angs+2)//2)))
-        nao = ao_loc[-1]
-        ao_loc = cp.asarray(ao_loc, dtype=np.int32)
 
         # Convert the density matrix to cartesian basis
         dms = mol2cart(dms, angs, ao_loc, bas_mapping, mol)
         dms = dms.reshape(-1, nao, nao)
         dm_cond = max_block_pooling(dms, ao_loc)
-        dms = cp.asarray(dms, dtype=dtype) # transfer to current device
+        dms = cp.asarray(dms) # transfer to current device
+        dms_fp32 = cp.asarray(dms, dtype=np.float32)
         if hermi == 0:
             # Wrap the triu contribution to tril
             dm_cond = dm_cond + dm_cond.T
@@ -132,18 +139,21 @@ def generate_jk_kernel(mol, dtype=np.float64):
         if with_j:
             vj = cp.zeros(dms.shape)
 
-        cutoff_a = log_cutoff_fp64 - log_max_dm
-        cutoff_b = log_cutoff_fp32 - log_max_dm
-        cutoff_range = [cutoff_a, cutoff_b]
-        tile_pairs = make_tile_pairs(l_ctr_bas_loc, q_matrix, cutoff_range)
-        info = cp.empty(2, dtype=np.uint32)
-        logger.debug(f'q_cond and dm_cond')
+        # J: q_ab * q_cd * p_cd < cutoff_min
+        # K: q_ac * q_bd * p_cd < cutoff_min
+
+        # cutoff absorbs sqrt(p_cd)
+        cutoff = np.log(PAIR_CUTOFF) - log_max_dm
+        tile_pairs = make_tile_pairs(group_offset, q_matrix, cutoff)
         
+        info = cp.empty(2, dtype=np.uint32)
+        logger.debug1(f'Calculate dm_cond and AO pairs')
+
         _, _, gen_tasks_fun = generate_fill_tasks_kernel(do_j=with_j, do_k=with_k, tile=TILE)
-        logger.debug(f'Generate tasks kernel')
+        logger.debug1(f'Generate tasks kernel')
         timing_counter = Counter()
         kern_counts = 0
-        quartet_list = cp.empty((QUEUE_DEPTH), dtype=int4_dtype)
+        quartet_list = cp.empty((QUEUE_DEPTH), dtype=ushort4_dtype)
         tasks = [(i,j,k,l) for i in range(n_groups)
                             for j in range(i+1)
                             for k in range(i+1)
@@ -159,66 +169,80 @@ def generate_jk_kernel(mol, dtype=np.float64):
                 ll, lp = group_key[l]
                 ang = (li, lj, lk, ll)
                 nprim = (ip, jp, kp, lp)
-
+                
                 tile_ij = tile_pairs[i,j]
                 tile_kl = tile_pairs[k,l]
                 ntile_ij = tile_ij.size
                 ntile_kl = tile_kl.size
                 if ntile_kl == 0 or ntile_ij == 0:
                     continue
-                ntasks = 0
+                ntasks_fp64 = 0
+                ntasks_fp32 = 0
 
-                jk_kernel = gen_jk_kernel(ang, nprim, do_j=with_j, do_k=with_k, 
-                                        dtype=dtype, n_dm=n_dm, omega=omega)
-                
                 # Setup events for timing the critical kernels
-                start = end = None
-                if logger.verbose > logging.INFO:
+                start = fp64_event = fp32_event = None
+                if logger.verbose > lib.logger.INFO:
                     start = cp.cuda.Event()
-                    end = cp.cuda.Event()
+                    fp64_event = cp.cuda.Event()
+                    fp32_event = cp.cuda.Event()
                     start.record()
 
-                # Breakdown the tile pairs into smaller chunks
                 PAIR_TILE_SIZE = MAX_PAIR_SIZE//(TILE*TILE)
                 for t_ij0, t_ij1 in lib.prange(0, ntile_ij, PAIR_TILE_SIZE):
                     for t_kl0, t_kl1 in lib.prange(0, ntile_kl, PAIR_TILE_SIZE):
-                        # TODO: early exit if the chunk is negligible?
-                        # Create a task list containing significant quartets
+                        # Run the tasks with fp32 precision
                         gen_tasks_fun(
                             quartet_list, info, nbas, 
                             tile_ij[t_ij0:t_ij1], tile_kl[t_kl0:t_kl1],
                             q_matrix, log_dm_cond,
-                            log_cutoff_fp64, log_cutoff_fp32)
+                            log_cutoff_fp32, log_cutoff_fp64)
                         kern_counts += 1
-                        n_quartets = info[1].item()
-                        if n_quartets <= 0:
-                            continue
+                        info_cpu = info.get()
 
-                        # Run the tasks
-                        coeffs, exponents, coords, _, _ = bas_cache
-                        jk_kernel(nbas, ao_loc, coords, exponents, coeffs,
-                                dms, vj, vk, omega, quartet_list, n_quartets)
-                        kern_counts += 1
-                        ntasks += n_quartets
-                        
+                        # FP32 tasks
+                        n_quartets_fp32 = info_cpu[0]
+                        if n_quartets_fp32 > 0:
+                            jk_fp32_kernel = gen_jk_kernel(ang, nprim, do_j=with_j, do_k=with_k, 
+                                                           dtype=np.float32, n_dm=n_dm, omega=omega)
+                            jk_fp32_kernel(nbas, ao_loc, coords_fp32, exponents_fp32, coeffs_fp32,
+                                           dms_fp32, vj, vk, omega, quartet_list,
+                                           n_quartets_fp32)
+                            kern_counts += 1
+                            ntasks_fp32 += n_quartets_fp32
+
+                        # FP64 tasks
+                        offset = info_cpu[1] + 1
+                        n_quartets_fp64 = QUEUE_DEPTH - offset
+                        if n_quartets_fp64 > 0:
+                            jk_fp64_kernel = gen_jk_kernel(ang, nprim, do_j=with_j, do_k=with_k, 
+                                                           dtype=np.float64, n_dm=n_dm, omega=omega)
+                            jk_fp64_kernel(nbas, ao_loc, coords_fp64, exponents_fp64, coeffs_fp64,
+                                           dms, vj, vk, omega, quartet_list[offset:],
+                                           n_quartets_fp64)
+                            kern_counts += 1
+                            ntasks_fp64 += n_quartets_fp64
                 if logger.verbose > lib.logger.INFO:
                     stream.synchronize()
-                    end.record()
-                    end.synchronize()
-                    elasped_time = cp.cuda.Event.elapsed_time(start, end)
+                    fp32_event.record()
+                    fp64_event.record()
+                    fp64_event.synchronize()
+                    fp32_elasped_time = cp.cuda.get_elapsed_time(start, fp32_event)
+                    fp64_elasped_time = cp.cuda.get_elapsed_time(fp32_event, fp64_event)
 
                     llll = f'({l_symb[i]}{l_symb[j]}|{l_symb[k]}{l_symb[l]})'
-                    msg = f'proc {llll}/({ip}{jp}{kp}{lp}), tasks = {ntasks}, time = {elasped_time:.2f} ms'
-                    logger.debug(msg)
-                    timing_counter[llll] += elasped_time
-        
+                    msg_kernel = f'JK kernel {llll}/({ip}{jp}{kp}{lp}),'
+                    msg_fp64 = f'FP64 tasks = {ntasks_fp64:10d}, {fp64_elasped_time:5.2f} ms,'
+                    msg_fp32 = f'FP32 tasks = {ntasks_fp32:10d}, {fp32_elasped_time:5.2f} ms'
+                    logger.debug1(msg_kernel + msg_fp64 + msg_fp32)
+                    timing_counter[llll] += fp64_elasped_time + fp32_elasped_time
+                
         stream.synchronize()
-
+        
         # Remove the padding basis
-        ao_loc = ao_loc[:-1][~padding_mask]
+        ao_loc0 = ao_loc[:-1][~padding_mask]
         angs0 = angs[~padding_mask]
         bmap = bas_mapping[~padding_mask]
-
+        
         if with_j:
             if hermi == 1:
                 vj *= 2.
@@ -226,7 +250,7 @@ def generate_jk_kernel(mol, dtype=np.float64):
                 vj, vjT = vj[:n_dm//2], vj[n_dm//2:]
                 vj += vjT.transpose(0,2,1)
             vj = inplace_add_transpose(vj)
-            vj = cart2mol(vj, angs0, ao_loc, bmap, mol)
+            vj = cart2mol(vj, angs0, ao_loc0, bmap, mol)
             vj = vj.reshape(dm.shape)
 
         if with_k:
@@ -235,24 +259,23 @@ def generate_jk_kernel(mol, dtype=np.float64):
             else:
                 vk, vkT = vk[:n_dm//2], vk[n_dm//2:]
                 vk += vkT.transpose(0,2,1)
-            vk = cart2mol(vk, angs0, ao_loc, bmap, mol)
+            vk = cart2mol(vk, angs0, ao_loc0, bmap, mol)
             vk = vk.reshape(dm.shape)
         
         if logger.verbose >= lib.logger.DEBUG:
-            logger.debug('kernel launches %d', kern_counts)
+            logger.debug1('kernel launches %d', kern_counts)
             for llll, t in timing_counter.items():
-                logger.debug('%s wall time %.2f', llll, t)
+                logger.debug1(f'{llll} wall time {t:.2f} ms')
 
         cputime_end  = time.perf_counter()
-        logger.debug(f'vj and vk take {cputime_end - cputime_start:.2f} s')
+        logger.debug1(f'vj and vk take {cputime_end - cputime_start:.2f} s')
         return vj, vk
     return get_jk
 
-def make_tile_pairs(l_ctr_bas_loc, q_matrix, cutoff, tile=TILE):
+def make_tile_pairs(l_ctr_bas_loc, q_matrix, cutoff, tile=TILE,):
     ''' Make tile pairs with GTO pairing screening and symmetry
-        Filter out the tiles that are not in the cutoff range [cutoff[0], cutoff[1]]
+        Filter out the tiles that are not within cutoff
     '''
-    assert len(cutoff) == 2
     assert q_matrix.shape[0] % tile == 0
     tile_pairs = {}
     n_groups = len(l_ctr_bas_loc) - 1
@@ -264,8 +287,7 @@ def make_tile_pairs(l_ctr_bas_loc, q_matrix, cutoff, tile=TILE):
         for j in range(i+1):
             j0, j1 = tile_loc[j], tile_loc[j+1]
             sub_tile_q = tiled_q_matrix[i0:i1,j0:j1]
-            mask = sub_tile_q > cutoff[0]
-            mask &= sub_tile_q <= cutoff[1]
+            mask = sub_tile_q > cutoff
             if i == j:
                 mask = cp.tril(mask)
             t_ij = (cp.arange(i0, i1, dtype=np.int32)[:,None] * ntiles +

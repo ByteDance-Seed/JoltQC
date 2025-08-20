@@ -122,13 +122,11 @@ local memory: {kernel.local_size_bytes:4d} Bytes')
     def fun(*args):
         ntasks = args[-1] # the last argument is ntasks
         blocks = (ntasks + nsq_per_block - 1) // nsq_per_block
-        try:
-            kernel(
-                (blocks,), 
-                (nsq_per_block, 1), 
-                args, 
-                shared_mem=shared_memory)
-        except cp.cuda.runtime.CUDARuntimeError as e:
-            print("CUDA Runtime Error in the low ang kernel:", e)
         
+        kernel(
+            (blocks,), 
+            (nsq_per_block, 1), 
+            args, 
+            shared_mem=shared_memory)
+
     return script, mod, fun

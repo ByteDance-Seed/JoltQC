@@ -1,0 +1,6 @@
+- Rename project, JoltQC
+- Organize the project with pyproject.toml
+- Update dataset
+- jqc.compile() API
+- Debug screening for mGGA
+- Remove ni in rho_fun and vxc_fun

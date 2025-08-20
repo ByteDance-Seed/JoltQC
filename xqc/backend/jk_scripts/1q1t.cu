@@ -36,7 +36,7 @@ void rys_jk(const int nbas,
         double* vj, 
         double* vk, 
         const DataType omega,
-        int4* __restrict__ shl_quartet_idx, 
+        ushort4* __restrict__ shl_quartet_idx, 
         const int ntasks) // rename
 {
     if (ntasks == 0) return;
@@ -59,13 +59,17 @@ void rys_jk(const int nbas,
     constexpr int gstride_j = gstride_k * nfk;
     constexpr int gstride_i = gstride_j * nfj;
     constexpr int integral_size = nfi*nfj*nfk*nfl;
-
-    const int4 sq = shl_quartet_idx[task_id];
+    
     const bool active = (task_id < ntasks);
-    const int ish = active ? sq.x : 0;
-    const int jsh = active ? sq.y : 0;
-    const int ksh = active ? sq.z : 0;
-    const int lsh = active ? sq.w : 0;
+    ushort4 sq = {0,0,0,0};
+    if (active) {
+        sq = shl_quartet_idx[task_id];
+    }
+    
+    const int ish = (int)sq.x;
+    const int jsh = (int)sq.y;
+    const int ksh = (int)sq.z;
+    const int lsh = (int)sq.w;
 
     DataType fac_sym = active ? PI_FAC : zero;
     if (ish == jsh) fac_sym *= half;

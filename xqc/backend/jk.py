@@ -23,10 +23,10 @@ import numpy as np
 import json
 from xqc.backend.jk_1q1t import gen_kernel as jk_1q1t_kernel
 from xqc.backend.jk_1qnt import gen_kernel as jk_1qnt_kernel
+from functools import lru_cache
 
 __all__ = ['gen_jk_kernel']
 
-kernel_registry = {}
 cache_lock = threading.Lock()
 
 # Default fragmentation scheme, support FP32 and FP64 only
@@ -39,6 +39,7 @@ file_path = os.path.join(script_dir, 'data/optimal_scheme_fp64.json')
 with open(file_path, 'r') as f:
     default_frags_fp64 = json.load(f)
 
+@lru_cache(maxsize=2048)
 def gen_jk_kernel(angulars, nprimitives, dtype=np.double,
                   n_dm=1, do_j=True, do_k=True, omega=None,
                   frags=None, print_log=False):
@@ -46,10 +47,6 @@ def gen_jk_kernel(angulars, nprimitives, dtype=np.double,
     If frags = [-1]:      use 1q1t algorithm
     If frags = [x,x,x,x]: use 1qnt algorithm
     """
-    
-    key = (angulars, nprimitives, dtype, n_dm)
-    if key in kernel_registry:
-        return kernel_registry[key]
     
     if frags is None:
         li, lj, lk, ll = angulars
@@ -76,9 +73,6 @@ def gen_jk_kernel(angulars, nprimitives, dtype=np.double,
             angulars, nprimitives, frags=opt_frags, dtype=dtype, n_dm=n_dm,
             do_j=do_j, do_k=do_k, omega=omega, print_log=print_log)
     
-    # For multi-threading
-    with cache_lock:
-        kernel_registry[key] = fun
     return fun
 
 if __name__ == "__main__":
