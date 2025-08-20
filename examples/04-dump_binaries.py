@@ -18,6 +18,7 @@
 # .cubin files can be reused to avoid recompilation
 ####################################################################
 
+import time
 import os
 import pyscf
 from gpu4pyscf import scf
@@ -39,10 +40,15 @@ mf.max_cycle = 50
 # .cubin files can be reused for the same GPU architecture
 os.environ["CUPY_CACHE_DIR"] = "./tmp/"
 
+start = time.process_time()
+
 # Overwrite PySCF get_jk function
 mf.get_jk = jk.generate_jk_kernel(mol) 
 e_tot = mf.kernel()
 print('total energy with double precision:', e_tot)
+
+end = time.process_time()
+print("CPU time:", end - start, "seconds")
 
 from pathlib import Path
 count = sum(1 for f in Path("./tmp").rglob("*") if f.is_file())

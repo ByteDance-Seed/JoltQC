@@ -1,4 +1,0 @@
-numpy==2.2.6
-pyscf==2.9.0
-cupy-cuda12x==13.4.1
-cutensor-cu12==2.2.0

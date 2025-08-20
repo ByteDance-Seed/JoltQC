@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xqc"
+version = "0.1.0"
+authors = [
+  { name = "Xiaojie Wu", email = "xiaojie.wu@bytedance.com" },
+]
+description = "JIT-compiled GPU backend for quantum chemistry calculations"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+dependencies = [
+  "numpy>=2.1.0",  # From existing requirements.txt
+  "cupy-cuda12x>=13.4.0",  # For CUDA JIT compilation
+  "scipy>=1.10.0",  # For scientific computing operations
+  "pyscf>=2.8.0",  # For quantum chemistry integration
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0",  # For testing
+  "black>=23.0",   # For code formatting
+  "flake8>=6.0",   # For linting
+  "mypy>=1.0",     # For type checking
+  "gpu4pyscf-cuda12x>=1.4.0",
+]
+
+[tool.setuptools.package-data]
+"*" = [
+    "*.cu",
+    "*.json"
+]
+
+[project.urls]
+"Bug Tracker" = "https://github.com/yourusername/xqc/issues"
+"Source Code" = "https://github.com/yourusername/xqc"

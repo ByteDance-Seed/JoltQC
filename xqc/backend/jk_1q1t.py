@@ -25,7 +25,7 @@ from xqc.backend.cuda_scripts import rys_roots_data, rys_roots_code, jk_1q1t_cud
 __all__ = ['gen_jk_kernel']
 
 THREADS = 256
-compile_options = ('-std=c++17','--use_fast_math')
+compile_options = ('-std=c++17','--use_fast_math', '--minimal')
 
 _script_cache = {}
 

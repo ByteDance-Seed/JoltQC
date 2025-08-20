@@ -19,7 +19,7 @@
 
 ![seed logo](https://github.com/user-attachments/assets/c42e675e-497c-4508-8bb9-093ad4d1f216)
 
-# xQC: a JIT-compiled GPU backend for quantum chemistry algorithms
+# xQC: a JIT-compiled GPU backend for quantum chemistry calculations
 <p align="center">
   <a href="https://opensource.org/licenses/Apache-2.0">
     <img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
@@ -36,17 +36,19 @@ xQC is not intended to be a complete quantum chemistry package, but rather a col
 - High-performance GPU kernels for quantum chemistry
 - Completely JIT compilation, without any pre-compiled kernels
 - Support FP64 and FP32
-- Python interface via [GPU4PySCF](https://github.com/pyscf/gpu4pyscf)
+- Python interface to [GPU4PySCF](https://github.com/pyscf/gpu4pyscf)
 
 ## Recommendations
 
 - Use **PySCF/GPU4PySCF** for general-purpose workflows; xQC is a JIT backend
 - NVIDIA **Ampere or newer** GPUs are recommended
-- **Newer CUDA versions** (e.g., CUDA 12+) improve JIT compilation speed
+- **Newer CUDA versions** (e.g., CUDA 12.4+) improve JIT compilation speed
 
 ## Installation
 
-coming soon when it is available on github.
+```bash
+pip3 install -e .
+```
 
 ## Python Interface
 

@@ -23,12 +23,12 @@ from xqc.backend.cuda_scripts import code_path
 
 __all__ = ['cart2sph', 'sph2cart']
 
-compile_options = ('-std=c++17','--use_fast_math')
+compile_options = ('-std=c++17','--use_fast_math', '--minimal')
 
-with open(f'{code_path}/cart2sph_scripts/cart2sph.cu') as f:
+with open(f'{code_path}/cuda/cart2sph.cu') as f:
     cart2sph_scripts = f.read()
 
-with open(f'{code_path}/cart2sph_scripts/sph2cart.cu') as f:
+with open(f'{code_path}/cuda/sph2cart.cu') as f:
     sph2cart_scripts = f.read()
 
 def cart2sph(dm_cart, angs, cart_offset, sph_offset, nao_sph, out=None):

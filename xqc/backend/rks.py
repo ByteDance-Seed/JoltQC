@@ -24,10 +24,10 @@ code_path = Path(__file__).resolve().parent
 
 __all__ = ['gen_rho_kernel', 'gen_vxc_kernel']
 
-compile_options = ('-std=c++17','--use_fast_math')
+compile_options = ('-std=c++17','--use_fast_math', '--minimal')
 nthreads = 256
 
-with open(f'{code_path}/dft_scripts/eval_rho.cu', 'r') as f:
+with open(f'{code_path}/cuda/eval_rho.cu', 'r') as f:
     eval_rho_cuda_code = f.read()
 
 def gen_rho_kernel(ang, nprim, dtype, ndim=1, print_log=False):
@@ -83,7 +83,7 @@ local memory: {kernel.local_size_bytes:4d} Bytes')
     
     return script, mod, fun
 
-with open(f'{code_path}/dft_scripts/eval_vxc.cu', 'r') as f:
+with open(f'{code_path}/cuda/eval_vxc.cu', 'r') as f:
     eval_vxc_cuda_code = f.read()
 
 def gen_vxc_kernel(ang, nprim, dtype, ndim=1, print_log=False):

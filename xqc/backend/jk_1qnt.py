@@ -29,7 +29,7 @@ __all__ = ['gen_jk_kernel']
 dev_id = cp.cuda.runtime.getDevice()
 props = cp.cuda.runtime.getDeviceProperties(dev_id)
 shm_size = props['sharedMemPerBlock']
-compile_options = ('-std=c++17','--use_fast_math')
+compile_options = ('-std=c++17','--use_fast_math', '--minimal')
 
 def create_scheme(ang, frags=None, do_j=True, do_k=True, 
                   max_shared_memory=shm_size, 

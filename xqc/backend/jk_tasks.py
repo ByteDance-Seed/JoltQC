@@ -28,7 +28,7 @@ THREADSY = 16
 MAX_PAIR_SIZE = 16384
 QUEUE_DEPTH = MAX_PAIR_SIZE * MAX_PAIR_SIZE # 2 GB
 
-compile_options = ('-std=c++17','--use_fast_math')
+compile_options = ('-std=c++17','--use_fast_math', '--minimal')
 
 info_init = np.array([0, QUEUE_DEPTH-1], dtype=np.uint32)
 
