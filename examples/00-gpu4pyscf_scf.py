@@ -45,6 +45,6 @@ mf.verbose = 1
 mf.conv_tol = 1e-10
 mf.max_cycle = 50
 
-mf.get_jk = jk.generate_jk_kernel(mol, dtype=np.float32)
+mf.get_jk = jk.generate_jk_kernel(mol)
 e_tot = mf.kernel()
 print('total energy with single precision:', e_tot)

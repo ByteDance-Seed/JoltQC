@@ -72,7 +72,7 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
         
-        get_jk_jit = jk.generate_jk_kernel(mol_sph, dtype=np.float64)
+        get_jk_jit = jk.generate_jk_kernel(mol_sph)
         vj, vk = get_jk_jit(mol_sph, dm, hermi=1)
         vj1 = vj.get()
         vk1 = vk.get()
@@ -89,7 +89,7 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
         
-        get_jk_jit = jk.generate_jk_kernel(mol, dtype=np.float64)
+        get_jk_jit = jk.generate_jk_kernel(mol)
         vj, vk = get_jk_jit(mol, dm, hermi=1)
         vj1 = vj.get()
         vk1 = vk.get()
@@ -105,7 +105,7 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
         
-        get_jk_jit = jk.generate_jk_kernel(mol, dtype=np.float32)
+        get_jk_jit = jk.generate_jk_kernel(mol, cutoff_fp32=1e-13, cutoff_fp64=1e100)
         vj, vk = get_jk_jit(mol, dm, hermi=1)
         vj1 = vj.get()
         vk1 = vk.get()
@@ -121,7 +121,7 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(3, nao, nao)
         dm = dm + dm.transpose([0,2,1])
         
-        get_jk_jit = jk.generate_jk_kernel(mol, dtype=np.float64)
+        get_jk_jit = jk.generate_jk_kernel(mol)
         vj, vk = get_jk_jit(mol, dm, hermi=1)
         vj1 = vj.get()
         vk1 = vk.get()
@@ -137,7 +137,7 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
         
-        get_jk_jit = jk.generate_jk_kernel(mol, dtype=np.float64)
+        get_jk_jit = jk.generate_jk_kernel(mol)
         vj, _ = get_jk_jit(mol, dm, hermi=1, with_j=True, with_k=False)
         vj1 = vj.get()
         ref = get_jk(mol, dm, hermi=1, with_j=True, with_k=False)
@@ -150,7 +150,7 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
         
-        get_jk_jit = jk.generate_jk_kernel(mol, dtype=np.float64)
+        get_jk_jit = jk.generate_jk_kernel(mol)
         _, vk = get_jk_jit(mol, dm, hermi=1, with_j=False, with_k=True)
         vk1 = vk.get()
         ref = get_jk(mol, dm, hermi=1)
@@ -174,7 +174,7 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
         
-        get_jk_jit = jk.generate_jk_kernel(mol_with_omega, dtype=np.float64)
+        get_jk_jit = jk.generate_jk_kernel(mol_with_omega)
         vj, vk = get_jk_jit(mol_with_omega, dm, hermi=1, omega=omega)
         vj1 = vj.get()
         vk1 = vk.get()
@@ -197,7 +197,7 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
         
-        get_jk_jit = jk.generate_jk_kernel(mol_apart, dtype=np.float64)
+        get_jk_jit = jk.generate_jk_kernel(mol_apart)
         vj, vk = get_jk_jit(mol_apart, dm, hermi=1)
         vj1 = vj.get()
         vk1 = vk.get()

@@ -19,8 +19,6 @@
 ####################################################################
 
 import os
-from functools import partial
-import numpy as np
 import pyscf
 from gpu4pyscf import scf
 from xqc.pyscf import jk
@@ -42,7 +40,7 @@ mf.max_cycle = 50
 os.environ["CUPY_CACHE_DIR"] = "./tmp/"
 
 # Overwrite PySCF get_jk function
-mf.get_jk = jk.generate_jk_kernel(dtype=np.float64) 
+mf.get_jk = jk.generate_jk_kernel(mol) 
 e_tot = mf.kernel()
 print('total energy with double precision:', e_tot)
 
