@@ -19,13 +19,18 @@ The task is screened with Schwartz inequality and density matrix screening
 '''
 
 import cupy as cp
+import numpy as np
 from xqc.backend.cuda_scripts import fill_tasks_code
 from functools import lru_cache
 
 THREADSX = 16
 THREADSY = 16
+MAX_PAIR_SIZE = 16384
+QUEUE_DEPTH = MAX_PAIR_SIZE * MAX_PAIR_SIZE # 2 GB
 
 compile_options = ('-std=c++17','--use_fast_math')
+
+info_init = np.array([0, QUEUE_DEPTH-1], dtype=np.uint32)
 
 @lru_cache(maxsize=2048)
 def generate_fill_tasks_kernel(do_j=True, do_k=True, omega=None, tile=2):
@@ -58,20 +63,16 @@ constexpr int TILE = {tile};
         block_size_x = (nt_ij + THREADSX - 1) // THREADSX
         block_size_y = (nt_kl + THREADSY - 1) // THREADSY
         threads = (THREADSX,THREADSY)
-        info[:] = 0
-
-        try:
-            kernel(
-                (block_size_x, block_size_y),
-                threads,
-                (quartet_idx, info, nbas, 
-                tile_ij_mapping, tile_kl_mapping, 
-                nt_ij, nt_kl,
-                q_cond, dm_cond, 
-                log_cutoff_a, log_cutoff_b)
-            )
-        except cp.cuda.runtime.CUDARuntimeError as e:
-            print("CUDA Runtime Error in the task generation kernel:", e)
+        info[:].set(info_init)
+        kernel(
+            (block_size_x, block_size_y),
+            threads,
+            (quartet_idx, info, nbas, 
+            tile_ij_mapping, tile_kl_mapping, 
+            nt_ij, nt_kl,
+            q_cond, dm_cond, 
+            log_cutoff_a, log_cutoff_b)
+        )
         return
 
     return fill_tasks_code, kernel, fun

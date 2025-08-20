@@ -78,9 +78,11 @@ print('Total energy with double precision:', e_tot)
 See more examples in the examples/ directory.
 
 ## Limitations
-- No support for density-fitting (DF); DF does not benefit significantly from JIT at this stage
-- First runs may be slow due to JIT compilation (especially with large basis sets)
-- Only RHF and RKS are currently supported
+- No support for density-fitting (DF); DF does not benefit significantly from JIT at this stage.
+- First runs may be slow due to JIT compilation (especially with large basis sets).
+- Only RHF and RKS are currently supported.
+- The performance of small systems is bounded by Python overhead and kernel launch overhead.
+- Support up to 65535 atomic basis
 
 ## Disclaimer
 

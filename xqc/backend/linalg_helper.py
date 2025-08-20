@@ -129,3 +129,74 @@ def max_block_pooling(matrix: cp.ndarray, offsets: cp.ndarray) -> cp.ndarray:
     kernel(blocks, threads, (matrix, offsets_dev, out, batch_size, N, K))
 
     return out.reshape((K, K))
+
+def l2_block_pooling(matrix: cp.ndarray, offsets: cp.ndarray) -> cp.ndarray:
+    """
+    Blockwise l2 pooling on square CuPy matrix using a 1D offset array.
+    If the input is 3D, it performs block max pooling on the last two dimensions
+    and then a max operation along the first dimension.
+
+    Parameters:
+    - matrix: CuPy 2D array of shape (N, N) or 3D array of shape (B, N, N). Must be of type float64.
+    - offsets: 1D array of block boundaries, length K+1
+
+    Returns:
+    - output: CuPy 2D array of shape (K, K).
+    """
+    assert matrix.ndim in [2, 3], "Input matrix must be 2D or 3D"
+    if matrix.ndim == 2:
+        assert matrix.shape[0] == matrix.shape[1], "Input 2D matrix must be square"
+    else:  # 3D
+        assert matrix.shape[1] == matrix.shape[2], "Last two dimensions of 3D matrix must be square"
+
+    assert matrix.dtype == cp.float64, "Kernel currently only supports float64"
+    assert offsets.ndim == 1, "Offsets must be a 1D array"
+
+    kernel_code = r'''
+    extern "C" __global__
+    void block_max_kernel(const double* __restrict__ mat,
+                          const int* __restrict__ offsets,
+                          double* __restrict__ out,
+                          int batch_size,
+                          int stride,
+                          int k)
+    {
+        int i = blockIdx.y * blockDim.y + threadIdx.y;
+        int j = blockIdx.x * blockDim.x + threadIdx.x;
+        if (i >= k || j >= k) return;
+
+        int r0 = offsets[i];
+        int r1 = offsets[i+1];
+        int c0 = offsets[j];
+        int c1 = offsets[j+1];
+
+        double l2_norm = 0.0;
+        for (int b = 0; b < batch_size; ++b) {
+            for (int r = r0; r < r1; ++r) {
+                for (int c = c0; c < c1; ++c) {
+                    const double val = mat[b * stride * stride + r * stride + c];
+                    l2_norm += abs_val * abs_val;
+                }
+            }
+        }
+        out[i * k + j] = sqrt(l2_norm);
+    }
+    '''
+
+    kernel = cp.RawKernel(kernel_code, 'block_l2_kernel')
+
+    N = matrix.shape[-1]
+    matrix = matrix.reshape([-1, N, N])
+    batch_size = matrix.shape[0]
+    K = offsets.shape[0] - 1
+
+    offsets_dev = cp.asarray(offsets, dtype=cp.int32)
+    out = cp.empty((K * K,), dtype=cp.float64)
+
+    threads = (16, 16)
+    blocks = ((K + threads[0] - 1) // threads[0],
+              (K + threads[1] - 1) // threads[1])
+
+    kernel(blocks, threads, (matrix, offsets_dev, out, batch_size, N, K))
+
+    return out.reshape((K, K))

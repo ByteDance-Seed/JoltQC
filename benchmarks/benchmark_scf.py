@@ -19,18 +19,17 @@ from gpu4pyscf.scf import hf
 from xqc.pyscf import jk
 
 #atom = 'molecules/h2o.xyz'
-#atom = 'molecules/020_Vitamin_C.xyz'
+atom = 'molecules/020_Vitamin_C.xyz'
 #atom = 'molecules/052_Cetirizine.xyz'
 #atom = 'molecules/valinomycin.xyz'
-atom = 'molecules/gly30.xyz'
+#atom = 'molecules/gly30.xyz'
 basis = 'def2-tzvpp'#'6-31gs'
 count = 1
 
-'''
 mol = pyscf.M(atom=atom, basis=basis, output=f'gpu4pyscf_{basis}.log', verbose=5, cart=1)
 mf = hf.RHF(mol)
 mf.verbose = 4
-e_tot = mf.kernel()
+e_pyscf = mf.kernel()
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
@@ -43,26 +42,26 @@ end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Time with GPU4PySCF, {elapsed_time_ms/count} ms")
 print(e_tot)
-'''
 
-dtype = cp.float32
-mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}.log', verbose=4, cart=1)
+#dtype = cp.float32
+#mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}.log', verbose=4, cart=1)
+mol = pyscf.M(atom=atom, basis=basis, verbose=4, cart=1)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
-get_jk = jk.generate_jk_kernel(mol, dtype=dtype)
+get_jk = jk.generate_get_jk(mol)
 end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Compilation time, {elapsed_time_ms/count} ms")
 mf_jit = hf.RHF(mol)
 mf_jit.get_jk = get_jk # Overwrite PySCF get_jk function
-e_tot = mf_jit.kernel()
+e_xqc = mf_jit.kernel()
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 for i in range(count):
-    get_jk = jk.generate_jk_kernel(mol, dtype=dtype)
+    get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
     mf_jit = hf.RHF(mol)
     mf_jit.get_jk = get_jk
     e_tot = mf_jit.kernel()
@@ -71,3 +70,4 @@ end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Time with xQC, {elapsed_time_ms/count} ms")
 print(e_tot)
+print(e_pyscf - e_xqc)

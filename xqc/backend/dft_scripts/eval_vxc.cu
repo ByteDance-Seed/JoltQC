@@ -73,7 +73,7 @@ void eval_vxc(
     const int* __restrict__ nnz_indices_j,
     const int* __restrict__ nnz_j,
     const int nbas_j,
-    float log_cutoff,
+    float log_cutoff_a, float log_cutoff_b,
     const int ngrids) {
     
     constexpr int nfi = (li+1)*(li+2)/2;
@@ -112,7 +112,8 @@ void eval_vxc(
     __shared__ float log_max_wv0_smem[1];
     block_reduce_max(log_wv0, log_max_wv0_smem);
     //float log_max_wv0 = log_max_wv0_smem[0];
-    log_cutoff -= log_max_wv0_smem[0];
+    log_cutoff_a -= log_max_wv0_smem[0];
+    log_cutoff_b -= log_max_wv0_smem[0];
 
     __shared__ DataType vxc_smem[num_warps * nfij];
 
@@ -189,7 +190,8 @@ void eval_vxc(
             const int offset = ish_nz + block_id * nbas_i;
             const float log_aoi = log_maxval_i[offset];
             const int ish = nnz_indices_i[offset];
-            if (log_aoi + log_aoj < log_cutoff || ish > jsh) continue;
+            if (ish > jsh) continue;
+            if (log_aoi + log_aoj < log_cutoff_a || log_aoi + log_aoj >= log_cutoff_b) continue;
 
             const DataType gix = gx[0] - __ldg(shell_coords + 3*ish);
             const DataType giy = gx[1] - __ldg(shell_coords + 3*ish + 1);

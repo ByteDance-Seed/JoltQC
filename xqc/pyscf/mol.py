@@ -210,7 +210,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
 
 def compute_q_matrix(mol):
     """ 
-    Compute the Q matrix for the given molecule.
+    Compute the Q matrix in infinite norm for the given molecule.
 
     Args:
         mol (pyscf.gto.Mole): The pyscf Mole object.

@@ -35,7 +35,7 @@ from xqc.backend.cart2sph import mol2cart, cart2mol
 
 __all__ = ['build_grids', 'generate_rks_kernel']
 
-rho_vxc_cutoff = 1e-13
+ao_cutoff = 1e-13
 GROUP_BOX_SIZE = 3.0
 LMAX = 4
 DIM_BY_XC = {"LDA": 1, "GGA": 4, "MGGA": 5}
@@ -131,7 +131,7 @@ def build_grids(grids, mol=None, with_non0tab=False, sort_grids=True, **kwargs):
     alignment = grids.alignment
     if alignment > 1:
         padding = (ngrids + alignment - 1) // alignment * alignment - ngrids
-        logger.debug(f'Padding %d grids {padding}')
+        logger.debug(f'Padding {padding} grids')
         if padding > 0:
             grids.coords = cp.vstack([grids.coords, cp.full((padding, 3), 1e-4)])
             grids.weights = cp.hstack([grids.weights, cp.zeros(padding)])
@@ -155,19 +155,32 @@ def build_grids(grids, mol=None, with_non0tab=False, sort_grids=True, **kwargs):
     grids._non0ao_idx = None
     return grids
 
-def generate_nr_rks(mol, dtype=np.float64):
-    rks_fun, rho_fun, vxc_fun = generate_rks_kernel(mol, dtype=dtype)
+def generate_nr_rks(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    rks_fun, rho_fun, vxc_fun = generate_rks_kernel(mol, cutoff_fp64, cutoff_fp32)
     return rks_fun
 
-def generate_rks_kernel(mol, dtype=np.float64, rho_vxc_cutoff = rho_vxc_cutoff):    
-    log_cutoff = math.log(rho_vxc_cutoff)
-    bas_cache, bas_mapping, _, group_info = sort_group_basis(mol, alignment=1, dtype=dtype)
+def generate_get_rho(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    _, rho_fun, _ = generate_rks_kernel(mol, cutoff_fp64, cutoff_fp32)
+    def get_rho(mol, dm, grids, *args, **kwargs):
+        log_cutoff_a = np.log(cutoff_fp64)
+        log_cutoff_b = np.log(1e100)
+        rho = rho_fun(None, mol, grids, 'LDA', dm, np.float64, log_cutoff_a, log_cutoff_b)
+        if cutoff_fp64 > cutoff_fp32:
+            log_cutoff_a = np.log(cutoff_fp32)
+            log_cutoff_b = np.log(cutoff_fp64)
+            rho += rho_fun(None, mol, grids, 'LDA', dm, np.float32, log_cutoff_a, log_cutoff_b)
+        return rho[0]
+    return get_rho
+
+def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    bas_cache, bas_mapping, _, group_info = sort_group_basis(mol, alignment=1)
     coeffs, exps, coords, angs, nprims = bas_cache
     ao_loc = np.concatenate(([0], np.cumsum((angs+1)*(angs+2)//2)))
     nao = ao_loc[-1]
     nbas = nprims.shape[0]
     ao_loc = cp.asarray(ao_loc, dtype=np.int32)
     group_key, group_offset = group_info
+    log_cutoff = math.log(ao_cutoff)
 
     _cache = {'dm_prev': 0, 'rho_prev': 0, 'wv_prev': 0, 'vxcmat_prev': 0}
     def rks_fun(ni, mol, grids, xc_code, dm, max_memory=2000, verbose=None):
@@ -192,13 +205,21 @@ def generate_rks_kernel(mol, dtype=np.float64, rho_vxc_cutoff = rho_vxc_cutoff):
         rho_prev = _cache['rho_prev']
         wv_prev = _cache['wv_prev']
         vxcmat_prev = _cache['vxcmat_prev']
-
+        
         xctype = libxc.xc_type(xc_code)
 
         # Evaluate rho on grids for given density matrix
         weights = grids.weights
         dm_diff = dm - dm_prev
-        rho_diff = rho_fun(ni, mol, grids, xctype, dm_diff)
+        log_cutoff_a = np.log(cutoff_fp64)
+        log_cutoff_b = np.log(1e100)
+        rho_diff = rho_fun(ni, mol, grids, xctype, dm_diff, dtype=np.float64, 
+                           log_cutoff_a=log_cutoff_a, log_cutoff_b=log_cutoff_b)
+        if cutoff_fp64 > cutoff_fp32:
+            log_cutoff_a = np.log(cutoff_fp32)
+            log_cutoff_b = np.log(cutoff_fp64)
+            rho_diff += rho_fun(ni, mol, grids, xctype, dm_diff, dtype=np.float32, 
+                                log_cutoff_a=log_cutoff_a, log_cutoff_b=log_cutoff_b) 
         rho = rho_prev + rho_diff
 
         # Evaluate vxc on grids via libxc
@@ -212,7 +233,15 @@ def generate_rks_kernel(mol, dtype=np.float64, rho_vxc_cutoff = rho_vxc_cutoff):
         nelec = float(den.sum())
         wv = vxc * weights
         wv_diff = wv - wv_prev
-        vxcmat_diff = vxc_fun(None, mol, grids, xctype, wv_diff)
+        log_cutoff_a = np.log(cutoff_fp64)
+        log_cutoff_b = np.log(1e100)
+        vxcmat_diff = vxc_fun(None, mol, grids, xctype, wv_diff, dtype=np.float64, 
+                              log_cutoff_a=log_cutoff_a, log_cutoff_b=log_cutoff_b)
+        if cutoff_fp64 > cutoff_fp32:
+            log_cutoff_a = np.log(cutoff_fp32)
+            log_cutoff_b = np.log(cutoff_fp64)
+            vxcmat_diff += vxc_fun(None, mol, grids, xctype, wv_diff, dtype=np.float32, 
+                                   log_cutoff_a=log_cutoff_a, log_cutoff_b=log_cutoff_b)
         vxcmat = vxcmat_prev + vxcmat_diff
 
         _cache['dm_prev'] = dm.copy()
@@ -221,7 +250,8 @@ def generate_rks_kernel(mol, dtype=np.float64, rho_vxc_cutoff = rho_vxc_cutoff):
         _cache['vxcmat_prev'] = vxcmat.copy()
         return nelec, excsum, vxcmat
 
-    def rho_fun(ni, mol, grids, xctype, dm, max_memory=2000, verbose=None):
+    def rho_fun(ni, mol, grids, xctype, dm, dtype=np.float64, 
+                log_cutoff_a=-36.8, log_cutoff_b=36.8):
         ngrids = grids.coords.shape[0]
         grid_coords = cp.asarray(grids.coords.T, dtype=dtype, order='C')
         dm = mol2cart(dm, angs, ao_loc, bas_mapping, mol)
@@ -250,6 +280,9 @@ def generate_rks_kernel(mol, dtype=np.float64, rho_vxc_cutoff = rho_vxc_cutoff):
 
         rho = cp.zeros((ndim, ngrids), dtype=np.float64)
         dm = cp.asarray(dm, dtype=dtype)
+        c = cp.asarray(coeffs, dtype=dtype)
+        e = cp.asarray(exps, dtype=dtype)
+        x = cp.asarray(coords, dtype=dtype)
         for i in range(n_groups):
             for j in range(i, n_groups):
                 li, ip = group_key[i]
@@ -262,16 +295,17 @@ def generate_rks_kernel(mol, dtype=np.float64, rho_vxc_cutoff = rho_vxc_cutoff):
                 nbas_i = indices_i.shape[1]
                 nbas_j = indices_j.shape[1]
                 fun(grid_coords, 
-                    coords, coeffs, exps, nbas,
+                    x, c, e, nbas,
                     dm, log_dm_shell, ao_loc, nao, 
                     rho,
                     log_maxval_i, indices_i, nnz_i, nbas_i,
                     log_maxval_j, indices_j, nnz_j, nbas_j,
-                    np.float32(log_cutoff), ngrids
+                    np.float32(log_cutoff_a), np.float32(log_cutoff_b), ngrids
                 )
         return rho
 
-    def vxc_fun(ni, mol, grids, xctype, wv, max_memory=None, verbose=None):
+    def vxc_fun(ni, mol, grids, xctype, wv, dtype=np.float64, 
+                log_cutoff_a=-36.8, log_cutoff_b=36.8):
         ngrids = grids.coords.shape[0]
         grid_coords = cp.asarray(grids.coords.T, dtype=dtype, order='C')
         vxc = cp.zeros([1, nao, nao], dtype=np.float64)
@@ -299,6 +333,9 @@ def generate_rks_kernel(mol, dtype=np.float64, rho_vxc_cutoff = rho_vxc_cutoff):
             ao_sparsity[i] = (log_maxval, indices, nnz)
         
         wv = cp.asarray(wv, dtype=dtype)
+        c = cp.asarray(coeffs, dtype=dtype)
+        e = cp.asarray(exps, dtype=dtype)
+        x = cp.asarray(coords, dtype=dtype)
         for i in range(n_groups):
             for j in range(i, n_groups):
                 li, ip = group_key[i]
@@ -311,12 +348,12 @@ def generate_rks_kernel(mol, dtype=np.float64, rho_vxc_cutoff = rho_vxc_cutoff):
                 nbas_i = indices_i.shape[1]
                 nbas_j = indices_j.shape[1]
                 fun(grid_coords, 
-                    coords, coeffs, exps, nbas,
+                    x, c, e, nbas,
                     vxc, ao_loc, nao,
                     wv, 
                     log_maxval_i, indices_i, nnz_i, nbas_i,
                     log_maxval_j, indices_j, nnz_j, nbas_j,
-                    np.float32(log_cutoff), ngrids
+                    np.float32(log_cutoff_a), np.float32(log_cutoff_b), ngrids
                 )
 
         vxc = cart2mol(vxc, angs, ao_loc, bas_mapping, mol)
@@ -324,7 +361,7 @@ def generate_rks_kernel(mol, dtype=np.float64, rho_vxc_cutoff = rho_vxc_cutoff):
         return vxc[0]
     return rks_fun, rho_fun, vxc_fun
 
-def create_tasks(l_ctr_bas_loc, ovlp, cutoff=rho_vxc_cutoff):
+def create_tasks(l_ctr_bas_loc, ovlp, cutoff=1e-13):
     n_groups = len(l_ctr_bas_loc) - 1
     tasks = {}
     for i in range(n_groups):

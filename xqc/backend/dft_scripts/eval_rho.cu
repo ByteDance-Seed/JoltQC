@@ -45,7 +45,7 @@ void eval_rho(
     const int* __restrict__ nnz_indices_j,
     const int* __restrict__ nnz_j,
     const int nbas_j,
-    const float log_cutoff,
+    const float log_cutoff_a, const float log_cutoff_b,
     const int ngrids){
     
     constexpr int nfi = (li+1)*(li+2)/2;
@@ -136,7 +136,8 @@ void eval_rho(
             const int ish = nnz_indices_i[offset];
             const float log_aoi = log_maxval_i[offset];
             const float log_rho_est = log_aoi + log_aoj + log_dm_shell[ish+jsh*nbas];
-            if (log_rho_est < log_cutoff || ish > jsh) continue;
+            if (ish > jsh) continue;
+            if (log_rho_est < log_cutoff_a || log_rho_est >= log_cutoff_b) continue;
 
             const DataType gix = gx[0] - __ldg(shell_coords + 3*ish);
             const DataType giy = gx[1] - __ldg(shell_coords + 3*ish + 1);
