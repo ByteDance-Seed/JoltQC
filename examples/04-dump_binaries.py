@@ -22,7 +22,7 @@ import time
 import os
 import pyscf
 from gpu4pyscf import scf
-from xqc.pyscf import jk
+import xqc.pyscf
 
 atom = '''
 O       0.0000000000    -0.0000000000     0.1174000000
@@ -32,9 +32,6 @@ H       0.7570000000     0.0000000000    -0.4696000000
 
 mol = pyscf.M(atom=atom, basis='def2-tzvpp')
 mf = scf.RHF(mol)
-mf.verbose = 1
-mf.conv_tol = 1e-10
-mf.max_cycle = 50
 
 # .cubin files will be stored in ./tmp/
 # .cubin files can be reused for the same GPU architecture
@@ -42,8 +39,8 @@ os.environ["CUPY_CACHE_DIR"] = "./tmp/"
 
 start = time.process_time()
 
-# Overwrite PySCF get_jk function
-mf.get_jk = jk.generate_jk_kernel(mol) 
+# Compile GPU4PySCF object
+mf = xqc.pyscf.compile(mf)
 e_tot = mf.kernel()
 print('total energy with double precision:', e_tot)
 

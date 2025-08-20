@@ -18,6 +18,8 @@ import numpy as np
 
 __all__ = ['inplace_add_transpose', 'max_block_pooling']
 
+compile_options = ('-std=c++17','--use_fast_math', '--minimal')
+
 def inplace_add_transpose(A: cp.ndarray):
     """In-place A <- A + A.T for the last two dimensions of a CuPy array."""
     assert A.ndim >= 2 and A.shape[-1] == A.shape[-2], "Last two dimensions must be square"
@@ -48,7 +50,7 @@ void add_transpose_inplace(double* A, int batch_size, int n) {
         matrix_A[j * n + i] = sum;
     }
 }
-''', 'add_transpose_inplace')
+''', 'add_transpose_inplace', compile_options)
 
     batch_size = int(np.prod(A.shape[:-2]))
     threads = (16, 16, 1)
@@ -112,7 +114,7 @@ def max_block_pooling(matrix: cp.ndarray, offsets: cp.ndarray) -> cp.ndarray:
     }
     '''
 
-    kernel = cp.RawKernel(kernel_code, 'block_max_kernel')
+    kernel = cp.RawKernel(kernel_code, 'block_max_kernel', options=compile_options)
 
     N = matrix.shape[-1]
     matrix = matrix.reshape([-1, N, N])
@@ -183,7 +185,7 @@ def l2_block_pooling(matrix: cp.ndarray, offsets: cp.ndarray) -> cp.ndarray:
     }
     '''
 
-    kernel = cp.RawKernel(kernel_code, 'block_l2_kernel')
+    kernel = cp.RawKernel(kernel_code, 'block_l2_kernel', options=compile_options)
 
     N = matrix.shape[-1]
     matrix = matrix.reshape([-1, N, N])

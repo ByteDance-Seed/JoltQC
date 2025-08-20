@@ -28,7 +28,7 @@ import cupy as cp
 from collections import Counter
 from pyscf import lib
 from xqc.backend.linalg_helper import inplace_add_transpose, max_block_pooling
-from xqc.backend.jk_tasks import generate_fill_tasks_kernel, MAX_PAIR_SIZE, QUEUE_DEPTH
+from xqc.backend.jk_tasks import gen_screen_jk_tasks_kernel, MAX_PAIR_SIZE, QUEUE_DEPTH
 from xqc.backend.jk import gen_jk_kernel
 from xqc.backend.cart2sph import mol2cart, cart2mol
 from xqc.pyscf.mol import compute_q_matrix, sort_group_basis
@@ -50,9 +50,9 @@ NPRIM_MAX = 16
 PAIR_CUTOFF = 1e-13
 
 def generate_get_jk(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    get_jk_fp64 = generate_jk_kernel(mol, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
+    get_jk_kernel = generate_jk_kernel(mol, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
     def get_jk(*args, **kwargs):
-        return get_jk_fp64(*args, **kwargs)
+        return get_jk_kernel(*args, **kwargs)
     return get_jk
 
 def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
@@ -149,7 +149,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         info = cp.empty(2, dtype=np.uint32)
         logger.debug1(f'Calculate dm_cond and AO pairs')
 
-        _, _, gen_tasks_fun = generate_fill_tasks_kernel(do_j=with_j, do_k=with_k, tile=TILE)
+        _, _, gen_tasks_fun = gen_screen_jk_tasks_kernel(do_j=with_j, do_k=with_k, tile=TILE)
         logger.debug1(f'Generate tasks kernel')
         timing_counter = Counter()
         kern_counts = 0

@@ -74,7 +74,7 @@ int global_offset(int* batch_head, int val){
 
 
 extern "C" __global__ 
-void fill_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas, 
+void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas, 
     const int * __restrict__ tile_ij_mapping, 
     const int * __restrict__ tile_kl_mapping, 
     const int ntiles_ij1, const int ntiles_kl1,

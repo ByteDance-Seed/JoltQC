@@ -122,7 +122,7 @@ def build_grids(grids, mol=None, with_non0tab=False, sort_grids=True, **kwargs):
         r, vol = atom_grids_tab[mol.atom_symbol(ia)]
         p0, p1 = p1, p1 + vol.size
         atm_idx[p0:p1] = ia
-        quadrature_weights[p0:p1] = vol
+        quadrature_weights[p0:p1] = cp.asarray(vol)
     grids.atm_idx = atm_idx
     grids.quadrature_weights = quadrature_weights
 
@@ -146,10 +146,10 @@ def build_grids(grids, mol=None, with_non0tab=False, sort_grids=True, **kwargs):
         grids.atm_idx = grids.atm_idx[idx]
         logger.debug(f'sorting grids {time.perf_counter() - cputime_start}')
 
-    if with_non0tab:
-        raise RuntimeError('with_non0tab is not supported yet')
-    else:
-        grids.screen_index = grids.non0tab = None
+    #if with_non0tab:
+    #    raise RuntimeError('with_non0tab is not supported yet')
+    #else:
+    grids.screen_index = grids.non0tab = None
     logger.info(f'tot grids = {len(grids.weights)}')
 
     grids._non0ao_idx = None
@@ -162,13 +162,14 @@ def generate_nr_rks(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 def generate_get_rho(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     _, rho_fun, _ = generate_rks_kernel(mol, cutoff_fp64, cutoff_fp32)
     def get_rho(mol, dm, grids, *args, **kwargs):
+        dm = cp.asarray(dm)
         log_cutoff_a = np.log(cutoff_fp64)
         log_cutoff_b = np.log(1e100)
-        rho = rho_fun(None, mol, grids, 'LDA', dm, np.float64, log_cutoff_a, log_cutoff_b)
+        rho = rho_fun(mol, grids, 'LDA', dm, np.float64, log_cutoff_a, log_cutoff_b)
         if cutoff_fp64 > cutoff_fp32:
             log_cutoff_a = np.log(cutoff_fp32)
             log_cutoff_b = np.log(cutoff_fp64)
-            rho += rho_fun(None, mol, grids, 'LDA', dm, np.float32, log_cutoff_a, log_cutoff_b)
+            rho += rho_fun(mol, grids, 'LDA', dm, np.float32, log_cutoff_a, log_cutoff_b)
         return rho[0]
     return get_rho
 
@@ -200,7 +201,7 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             excsum: exchange correlation energy
             vxcmat: vxc matrix
         """
-        
+
         dm_prev = _cache['dm_prev']
         rho_prev = _cache['rho_prev']
         wv_prev = _cache['wv_prev']
@@ -213,12 +214,12 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         dm_diff = dm - dm_prev
         log_cutoff_a = np.log(cutoff_fp64)
         log_cutoff_b = np.log(1e100)
-        rho_diff = rho_fun(ni, mol, grids, xctype, dm_diff, dtype=np.float64, 
+        rho_diff = rho_fun(mol, grids, xctype, dm_diff, dtype=np.float64, 
                            log_cutoff_a=log_cutoff_a, log_cutoff_b=log_cutoff_b)
         if cutoff_fp64 > cutoff_fp32:
             log_cutoff_a = np.log(cutoff_fp32)
             log_cutoff_b = np.log(cutoff_fp64)
-            rho_diff += rho_fun(ni, mol, grids, xctype, dm_diff, dtype=np.float32, 
+            rho_diff += rho_fun(mol, grids, xctype, dm_diff, dtype=np.float32, 
                                 log_cutoff_a=log_cutoff_a, log_cutoff_b=log_cutoff_b) 
         rho = rho_prev + rho_diff
 
@@ -235,12 +236,12 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         wv_diff = wv - wv_prev
         log_cutoff_a = np.log(cutoff_fp64)
         log_cutoff_b = np.log(1e100)
-        vxcmat_diff = vxc_fun(None, mol, grids, xctype, wv_diff, dtype=np.float64, 
+        vxcmat_diff = vxc_fun(mol, grids, xctype, wv_diff, dtype=np.float64, 
                               log_cutoff_a=log_cutoff_a, log_cutoff_b=log_cutoff_b)
         if cutoff_fp64 > cutoff_fp32:
             log_cutoff_a = np.log(cutoff_fp32)
             log_cutoff_b = np.log(cutoff_fp64)
-            vxcmat_diff += vxc_fun(None, mol, grids, xctype, wv_diff, dtype=np.float32, 
+            vxcmat_diff += vxc_fun(mol, grids, xctype, wv_diff, dtype=np.float32, 
                                    log_cutoff_a=log_cutoff_a, log_cutoff_b=log_cutoff_b)
         vxcmat = vxcmat_prev + vxcmat_diff
 
@@ -248,9 +249,10 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         _cache['rho_prev'] = rho
         _cache['wv_prev'] = wv
         _cache['vxcmat_prev'] = vxcmat.copy()
+
         return nelec, excsum, vxcmat
 
-    def rho_fun(ni, mol, grids, xctype, dm, dtype=np.float64, 
+    def rho_fun(mol, grids, xctype, dm, dtype=np.float64, 
                 log_cutoff_a=-36.8, log_cutoff_b=36.8):
         ngrids = grids.coords.shape[0]
         grid_coords = cp.asarray(grids.coords.T, dtype=dtype, order='C')
@@ -304,7 +306,7 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 )
         return rho
 
-    def vxc_fun(ni, mol, grids, xctype, wv, dtype=np.float64, 
+    def vxc_fun(mol, grids, xctype, wv, dtype=np.float64, 
                 log_cutoff_a=-36.8, log_cutoff_b=36.8):
         ngrids = grids.coords.shape[0]
         grid_coords = cp.asarray(grids.coords.T, dtype=dtype, order='C')

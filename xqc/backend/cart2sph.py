@@ -63,8 +63,8 @@ def cart2sph(dm_cart, angs, cart_offset, sph_offset, nao_sph, out=None):
     for p0, p1 in zip(offsets[:-1], offsets[1:]):
         nbatch = p1 - p0
         ang = angs[p0]
-        macro = f'constexpr int ang = {ang};'
-        scripts = macro + cart2sph_scripts
+        const = f'constexpr int ang = {ang};'
+        scripts = const + cart2sph_scripts
         mod = cp.RawModule(code=scripts, options=compile_options)
         kernel = mod.get_function('cart2sph')
 
@@ -85,8 +85,8 @@ def cart2sph(dm_cart, angs, cart_offset, sph_offset, nao_sph, out=None):
     for p0, p1 in zip(offsets[:-1], offsets[1:]):
         nbatch = p1 - p0
         ang = angs[p0]
-        macro = f'constexpr int ang = {ang};'
-        scripts = macro + cart2sph_scripts
+        const = f'constexpr int ang = {ang};'
+        scripts = const + cart2sph_scripts
         mod = cp.RawModule(code=scripts, options=compile_options)
         kernel = mod.get_function('cart2sph')
 
@@ -132,8 +132,8 @@ def sph2cart(dm_sph, angs, sph_offset, cart_offset, nao_cart, out=None):
     for p0, p1 in zip(offsets[:-1], offsets[1:]):
         nbatch = p1 - p0
         ang = angs[p0]
-        macro = f'constexpr int ang = {ang};'
-        scripts = macro + sph2cart_scripts
+        const = f'constexpr int ang = {ang};'
+        scripts = const + sph2cart_scripts
         mod = cp.RawModule(code=scripts, options=compile_options)
         kernel = mod.get_function('sph2cart')
 
@@ -154,8 +154,8 @@ def sph2cart(dm_sph, angs, sph_offset, cart_offset, nao_cart, out=None):
     for p0, p1 in zip(offsets[:-1], offsets[1:]):
         nbatch = p1 - p0
         ang = angs[p0]
-        macro = f'constexpr int ang = {ang};'
-        scripts = macro + sph2cart_scripts
+        const = f'constexpr int ang = {ang};'
+        scripts = const + sph2cart_scripts
         mod = cp.RawModule(code=scripts, options=compile_options)
         kernel = mod.get_function('sph2cart')
 

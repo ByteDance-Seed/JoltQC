@@ -25,7 +25,7 @@ with open(f'{code_path}/rys/rys_roots.cu', 'r') as f:
     rys_roots_code = f.read()
 
 with open(f'{code_path}/cuda/screen_jk_tasks.cu', 'r') as f:
-    fill_tasks_code = f.read()
+    screen_jk_tasks_code = f.read()
 
 with open(f'{code_path}/rys/rys_roots_parallel.cu', 'r') as f:
     rys_roots_parallel_code = f.read()

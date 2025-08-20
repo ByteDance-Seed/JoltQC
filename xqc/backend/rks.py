@@ -46,7 +46,7 @@ def gen_rho_kernel(ang, nprim, dtype, ndim=1, print_log=False):
     
     li, lj = ang
     npi, npj = nprim
-    macros = f'''
+    const = f'''
 using DataType = {dtype_cuda};
 constexpr int li = {li};
 constexpr int lj = {lj};
@@ -57,7 +57,7 @@ constexpr int deriv = {1 if ndim > 1 else 0};
 constexpr int nthreads = {nthreads};
 '''
 
-    script = macros + eval_rho_cuda_code
+    script = const + eval_rho_cuda_code
     mod = cp.RawModule(code=script, options=compile_options)
     kernel = mod.get_function('eval_rho')
     
@@ -102,7 +102,7 @@ def gen_vxc_kernel(ang, nprim, dtype, ndim=1, print_log=False):
     
     li, lj = ang
     npi, npj = nprim
-    macros = f'''
+    const = f'''
 using DataType = {dtype_cuda};
 constexpr int li = {li};
 constexpr int lj = {lj};
@@ -113,7 +113,7 @@ constexpr int deriv = {1 if ndim > 1 else 0};
 constexpr int nthreads = {nthreads};
 '''
 
-    script = macros + eval_vxc_cuda_code
+    script = const + eval_vxc_cuda_code
     mod = cp.RawModule(code=script, options=compile_options)
     kernel = mod.get_function('eval_vxc')
 
@@ -139,7 +139,7 @@ local memory: {kernel.local_size_bytes:4d} Bytes')
     
     return script, mod, fun    
 
-with open(f'{code_path}/dft_scripts/estimate_log_aovalue.cu', 'r') as f:
+with open(f'{code_path}/cuda/estimate_log_aovalue.cu', 'r') as f:
     estimate_aovalue_script = f.read()
 
 def estimate_log_aovalue(grid_coords, coords, coeffs, exps, ang, nprim, log_cutoff=-36.8):
@@ -193,11 +193,11 @@ def estimate_log_aovalue(grid_coords, coords, coeffs, exps, ang, nprim, log_cuto
 
     nnz_indices = cp.empty((nblocks, nbas), dtype=np.int32)
     nnz_per_block = cp.empty((nblocks), dtype=np.int32)
-    macro = f'''
+    const = f'''
 constexpr int ang = {ang};
 constexpr int nprim = {nprim};
 '''
-    script = macro + estimate_aovalue_script
+    script = const + estimate_aovalue_script
     mod = cp.RawModule(code=script, options=compile_options)
     kernel = mod.get_function('estimate_log_aovalue')
     kernel(

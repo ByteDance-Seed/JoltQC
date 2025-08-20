@@ -17,11 +17,9 @@
 # This example shows how to use DFT kernels with GPU4PySCF
 ##########################################################
 
-from functools import partial
-import numpy as np
 import pyscf
 from gpu4pyscf import dft
-from xqc.pyscf import rks, jk
+import xqc.pyscf
 
 atom = '''
 O       0.0000000000    -0.0000000000     0.1174000000
@@ -44,14 +42,14 @@ mf.grids.atom_grid = (99,590)
 mf.conv_tol = 1e-10
 mf.max_cycle = 50
 
-# Generate a Vxc function, which is compatiable with PySCF
-nr_rks = rks.generate_nr_rks(mol)
-from types import MethodType
-mf._numint.nr_rks = MethodType(nr_rks, mf._numint)
-
-# Generate a JK function, which is compatiable with PySCF
-mf.get_jk = jk.generate_jk_kernel(mol)
+# Compile GPU4PySCF object
+mf = xqc.pyscf.compile(mf)
 e_xqc = mf.kernel()
 
 print('total energy with pyscf:', e_pyscf)
 print('total energy with xqc  :', e_xqc)
+
+# Compile PySCF object directly
+mf = pyscf.dft.RKS(mol, xc='wb97m-v')
+mf = xqc.pyscf.compile(mf)
+mf.kernel()

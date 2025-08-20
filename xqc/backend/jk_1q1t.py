@@ -45,7 +45,7 @@ def gen_code(keys):
     li, lj, lk, ll = ang
     npi, npj, npk, npl = nprim
     nroots = (li+lj+lk+ll)//2 + 1
-    macros = f'''
+    const = f'''
 typedef unsigned int uint32_t;
 using DataType = {dtype_cuda};
 using DataType4 = {dtype4_cuda};
@@ -67,7 +67,7 @@ constexpr int nsq_per_block = {nsq_per_block};
 constexpr int nroots = ((li+lj+lk+ll)/2+1);
 '''
     idx_script = generate_lookup_table(li,lj,lk,ll)
-    script = macros + rys_roots_data[nroots] \
+    script = const + rys_roots_data[nroots] \
         + rys_roots_code \
         + idx_script \
         + jk_1q1t_cuda_code

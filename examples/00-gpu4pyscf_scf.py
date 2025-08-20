@@ -17,10 +17,10 @@
 # This example shows how to use JK kernels with gpu4pyscf
 ##########################################################
 
-import numpy as np
 import pyscf
 from gpu4pyscf import scf
-from xqc.pyscf import jk
+import xqc
+import xqc.pyscf
 
 atom = '''
 O       0.0000000000    -0.0000000000     0.1174000000
@@ -30,21 +30,23 @@ H       0.7570000000     0.0000000000    -0.4696000000
 
 mol = pyscf.M(atom=atom, basis='def2-tzvpp')
 mf = scf.RHF(mol)
-mf.verbose = 1
 mf.conv_tol = 1e-10
 mf.max_cycle = 50
 
-# Overwrite PySCF get_jk function
-mf.get_jk = jk.generate_jk_kernel(mol) 
+# Compile GPU4PySCF object (recommended)
+print("Compile GPU4PySCF object")
+mf = xqc.pyscf.compile(mf)
+print("Run compiled GPU4PySCF object")
 e_tot = mf.kernel()
-print('total energy with double precision:', e_tot)
 
-mol = pyscf.M(atom=atom, basis='def2-tzvpp')
-mf = scf.RHF(mol)
-mf.verbose = 1
-mf.conv_tol = 1e-10
-mf.max_cycle = 50
+# Convert GPU4PySCF object to PySCF object
+print("Convert GPU4PySCF object to PySCF object")
+mf_cpu = mf.to_cpu()
+print("Run PySCF object")
+e_tot = mf_cpu.kernel()
 
-mf.get_jk = jk.generate_jk_kernel(mol)
-e_tot = mf.kernel()
-print('total energy with single precision:', e_tot)
+# Compile PySCF object
+print("Compile PySCF object")
+mf = xqc.pyscf.compile(mf_cpu)
+print("Run compiled PySCF object")
+mf.kernel()

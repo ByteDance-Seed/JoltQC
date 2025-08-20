@@ -72,8 +72,9 @@ O    F
         _c2s[l] = cp.asarray(c2s, order='C')
 
     eye = cp.eye(mol_sph.nao)
-    s0 = sph2cart(eye, angs, cart_offset, sph_offset, mol_cart.nao)
+    s0 = sph2cart(eye, angs, sph_offset, cart_offset, mol_cart.nao)
     s1 = cp.empty([mol_cart.nao, mol_cart.nao])
+    
     for p in range(len(cart_offset)-1):
         for q in range(len(sph_offset)-1):
             c2s_left = _c2s[angs[p]]

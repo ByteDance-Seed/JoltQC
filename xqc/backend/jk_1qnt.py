@@ -171,7 +171,7 @@ def gen_kernel(ang, nprim, frags=None, dtype=np.double, n_dm=1,
         raise RuntimeError(f'Invalid tile size {frags} for {ang}')
     if nfl % fragl != 0:
         raise RuntimeError(f'Invalid tile size {frags} for {ang}')
-    macros = f'''
+    const = f'''
 typedef unsigned int uint32_t;
 using DataType = {dtype_cuda};
 using DataType4 = {dtype4_cuda};
@@ -198,7 +198,7 @@ constexpr int do_k = {int(do_k)};
 constexpr int nroots = ((li+lj+lk+ll)/2+1);
 '''
     idx_script = generate_lookup_table(li,lj,lk,ll)
-    script = macros + rys_roots_data[nroots] \
+    script = const + rys_roots_data[nroots] \
         + rys_roots_parallel_code \
         + idx_script \
         + jk_1qnt_cuda_code

@@ -20,7 +20,7 @@ The task is screened with Schwartz inequality and density matrix screening
 
 import cupy as cp
 import numpy as np
-from xqc.backend.cuda_scripts import fill_tasks_code
+from xqc.backend.cuda_scripts import screen_jk_tasks_code
 from functools import lru_cache
 
 THREADSX = 16
@@ -33,7 +33,7 @@ compile_options = ('-std=c++17','--use_fast_math', '--minimal')
 info_init = np.array([0, QUEUE_DEPTH-1], dtype=np.uint32)
 
 @lru_cache(maxsize=2048)
-def generate_fill_tasks_kernel(do_j=True, do_k=True, omega=None, tile=2):
+def gen_screen_jk_tasks_kernel(do_j=True, do_k=True, omega=None, tile=2):
     if omega is None:
         rys_type = 0
     elif omega > 0:
@@ -43,7 +43,7 @@ def generate_fill_tasks_kernel(do_j=True, do_k=True, omega=None, tile=2):
     else:
         raise RuntimeError('Omega value is not supported yet')
 
-    macros = f'''
+    const = f'''
 constexpr int do_j = {int(do_j)};
 constexpr int do_k = {int(do_k)};
 constexpr int rys_type = {rys_type};
@@ -52,8 +52,8 @@ constexpr int threadsy = {THREADSY};
 constexpr int threads = {THREADSX*THREADSY};
 constexpr int TILE = {tile};
     '''
-    mod = cp.RawModule(code=macros+fill_tasks_code, options=compile_options)
-    kernel = mod.get_function('fill_jk_tasks')
+    mod = cp.RawModule(code=const + screen_jk_tasks_code, options=compile_options)
+    kernel = mod.get_function('screen_jk_tasks')
 
     def fun(quartet_idx, info, nbas, 
             tile_ij_mapping, tile_kl_mapping, 
@@ -75,4 +75,4 @@ constexpr int TILE = {tile};
         )
         return
 
-    return fill_tasks_code, kernel, fun
+    return screen_jk_tasks_code, kernel, fun

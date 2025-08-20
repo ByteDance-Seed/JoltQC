@@ -18,6 +18,7 @@ import numpy as np
 import unittest
 from types import MethodType
 import cupy as cp
+import xqc.pyscf
 from xqc.pyscf import rks, jk
 from gpu4pyscf import dft
 
@@ -108,7 +109,14 @@ class KnownValues(unittest.TestCase):
         e_ref = -76.4672144985
         print('| CPU - GPU | with cart:', e_tot - e_ref)
         assert np.abs(e_tot - e_ref) < 1e-5
-
+    
+    def test_rks_compile(self):
+        mf = dft.RKS(mol_sph, xc='PBE')
+        mf = xqc.pyscf.compile(mf)
+        e_tot = mf.kernel() 
+        e_ref = dft.RKS(mol_sph, xc='PBE').kernel()
+        assert np.abs(e_tot - e_ref) < 1e-5
+        
 if __name__ == "__main__":
     print("Full Tests for DFT Kernels")
     unittest.main()

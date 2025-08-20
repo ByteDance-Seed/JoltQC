@@ -13,4 +13,40 @@
 # limitations under the License.
 #
 
-# Coming soon
+##########################################################
+# This example shows mixed-precision algorithms
+##########################################################
+
+
+import numpy as np
+import pyscf
+from gpu4pyscf import scf
+import xqc
+
+atom = '''
+O       0.0000000000    -0.0000000000     0.1174000000
+H      -0.7570000000    -0.0000000000    -0.4696000000
+H       0.7570000000     0.0000000000    -0.4696000000
+'''
+
+mol = pyscf.M(atom=atom, basis='def2-tzvpp')
+mf = scf.RHF(mol)
+
+# Double precision algorithm (default)
+mf = xqc.pyscf.compile(mf)
+e_fp64 = mf.kernel()
+
+# Single precision algorithm
+mf = scf.RHF(mol)
+mf = xqc.pyscf.compile(mf, cutoff_fp32=1e-13, cutoff_fp64=1e100)
+e_fp32 = mf.kernel()
+
+# Mixed precision algorithm
+mf = scf.RHF(mol)
+mf = xqc.pyscf.compile(mf, cutoff_fp32=1e-13, cutoff_fp64=1e-6)
+e_mixed = mf.kernel()
+
+print('Total energy with different precisions')
+print(f"e_fp64 = {e_fp64:.12f}")
+print(f"e_fp32 = {e_fp32:.12f}")
+print(f"e_mixed = {e_mixed:.12f}")
