@@ -23,13 +23,8 @@ from xqc.pyscf import jk, rks
 from xqc.pyscf.rks import build_grids
 
 #atom = 'molecules/h2o.xyz'
-#atom = 'molecules/020_Vitamin_C.xyz'
-atom = 'molecules/0031-irregular-nitrogenous.xyz'
-#atom = 'molecules/valinomycin.xyz'
-#atom = 'molecules/gly30.xyz'
-#atom = 'molecules/ubiquitin.xyz'
-#atom = 'molecules/chignolin_1UAO_model1.xyz'
-#atom = 'molecules/0753-globular.xyz'
+#atom = 'molecules/0031-irregular-nitrogenous.xyz'
+atom = 'molecules/0051-elongated-halogenated.xyz'
 basis = 'def2-tzvpp'
 #xc = 'wb97m-v'
 xc = 'b3lyp'
@@ -87,7 +82,7 @@ start.record()
 for i in range(count):
     nr_rks = rks.generate_nr_rks(mol)
     mf_jit = dft.RKS(mol, xc=xc)
-    mf_jit.verbose = 6
+    mf_jit.verbose = 4
     mf_jit.grids.atom_grid = (99, 590)
     mf_jit.grids.build = MethodType(build_grids, mf_jit.grids)
     mf_jit._numint.nr_rks = MethodType(nr_rks, mf_jit._numint)
@@ -124,7 +119,7 @@ start.record()
 for i in range(count):
     nr_rks = rks.generate_nr_rks(mol, cutoff_fp64=1e-6, cutoff_fp32=1e-13)
     mf_jit = dft.RKS(mol, xc=xc)
-    mf_jit.verbose = 6
+    mf_jit.verbose = 4
     mf_jit.grids.atom_grid = (99, 590)
     mf_jit.grids.build = MethodType(build_grids, mf_jit.grids)
     mf_jit._numint.nr_rks = MethodType(nr_rks, mf_jit._numint)
@@ -142,7 +137,7 @@ print(f'Total energy by xQC, {e_tot}')
 ##########################
 
 cp.get_default_memory_pool().free_all_blocks()
-mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}-fp32+fp64.log', verbose=6)
+mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}-fp32+fp64.log', verbose=4)
 mf_jit = dft.RKS(mol, xc=xc)
 mf_jit.verbose = 4
 mf_jit.grids.atom_grid = (99, 590)
@@ -161,7 +156,7 @@ start.record()
 for i in range(count):
     nr_rks = rks.generate_nr_rks(mol, cutoff_fp64=1e-6, cutoff_fp32=1e-13)
     mf_jit = dft.RKS(mol, xc=xc)
-    mf_jit.verbose = 6
+    mf_jit.verbose = 4
     mf_jit.grids.atom_grid = (99, 590)
     mf_jit.grids.build = MethodType(build_grids, mf_jit.grids)
     mf_jit._numint.nr_rks = MethodType(nr_rks, mf_jit._numint)

@@ -37,10 +37,7 @@ O    D
 ''')
 
 #atom = 'molecules/h2o.xyz'
-#atom = 'molecules/gly30.xyz'
-#atom = 'molecules/ubiquitin.xyz'
-atom = 'molecules/020_Vitamin_C.xyz'
-#atom = 'molecules/052_Cetirizine.xyz'
+atom = 'molecules/0031-irregular-nitrogenous.xyz'
 
 n_warmup = 3
 deriv = 1
@@ -53,7 +50,7 @@ mol = pyscf.M(atom=atom,
               spin=None,
               cart=1)
 mf = dft.KS(mol, xc=xc)
-mf.grids.level = 2
+mf.grids.level = 1
 
 dm = mf.get_init_guess()
 #dm = cp.empty_like(dm0)
@@ -79,7 +76,7 @@ for i in range(n_warmup):
     aow = cp.einsum('nip,np->ip', ao_gpu, wv_pyscf)
     vxc_pyscf = ao_gpu[0].dot(aow.T)
     vxc_pyscf += vxc_pyscf.T
-    aow = None
+    aow = ao_gpu = None
 
 start = cp.cuda.Event()
 end = cp.cuda.Event()
@@ -98,15 +95,15 @@ print(f"Time with GPU4PySCF, {gpu4pyscf_time_ms}")
 ###### xQC / FP64 #######
 cutoff_a = np.log(1e-13)
 cutoff_b = np.log(1e6)
-_, rho_kern, vxc_kern = rks.generate_rks_kernel(mol)
+_, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
 # Warm up
 for i in range(n_warmup):
-    vxc = vxc_kern(None, mol, grids, xctype, wv, np.float64, cutoff_a, cutoff_b)
+    vxc = vxc_kern(mol, grids, xctype, wv)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mol.verbose = 4
-vxc = vxc_kern(None, mol, grids, xctype, wv, np.float64, cutoff_a, cutoff_b)
+vxc = vxc_kern(mol, grids, xctype, wv)
 mol.verbose = 4
 end.record()
 end.synchronize()
@@ -122,15 +119,15 @@ print('vxc diff:', cp.linalg.norm(vxc_diff))
 ###### xQC / FP32 #######
 cutoff_a = np.log(1e-13)
 cutoff_b = np.log(1e6)
-_, rho_kern, vxc_kern = rks.generate_rks_kernel(mol)
+_, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, cutoff_fp64=1e10, cutoff_fp32=1e-13)
 # Warm up
 for i in range(n_warmup):
-    vxc = vxc_kern(None, mol, grids, xctype, wv, np.float32, cutoff_a, cutoff_b)
+    vxc = vxc_kern(mol, grids, xctype, wv)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mol.verbose = 4
-vxc = vxc_kern(None, mol, grids, xctype, wv, np.float32, cutoff_a, cutoff_b)
+vxc = vxc_kern(mol, grids, xctype, wv)
 mol.verbose = 4
 end.record()
 end.synchronize()
@@ -144,20 +141,15 @@ vxc_diff = vxc_pyscf - vxc
 print('vxc diff:', cp.linalg.norm(vxc_diff))
 
 ###### xQC / FP32 + FP64 #######
-cutoff_max = np.log(1e10)
-cutoff_fp64 = np.log(1e-7)
-cutoff_fp32 = np.log(1e-13)
-_, _, vxc_kern = rks.generate_rks_kernel(mol)
+_, _, vxc_kern = rks.generate_rks_kernel(mol, cutoff_fp64=1e-7, cutoff_fp32=1e-13)
 # Warm up
 for i in range(n_warmup):
-    vxc = vxc_kern(None, mol, grids, xctype, wv, np.float32, cutoff_fp32, cutoff_fp64)
-    vxc+= vxc_kern(None, mol, grids, xctype, wv, np.float64, cutoff_fp64, cutoff_max)
+    vxc = vxc_kern(mol, grids, xctype, wv)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mol.verbose = 4
-vxc = vxc_kern(None, mol, grids, xctype, wv, np.float32, cutoff_fp32, cutoff_fp64)
-vxc+= vxc_kern(None, mol, grids, xctype, wv, np.float64, cutoff_fp64, cutoff_max)
+vxc = vxc_kern(mol, grids, xctype, wv)
 end.record()
 end.synchronize()
 xqc_time_ms = cp.cuda.get_elapsed_time(start, end)

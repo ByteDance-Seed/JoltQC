@@ -59,3 +59,18 @@ cmd = cupy.cuda.get_nvcc_path().split()
 cmd += ['-lineinfo', '-arch=sm_80', '-src-in-ptx', '-ptx', 'tmp.cu', '-o', 'tmp.ptx'] 
 print(f"running {' '.join(cmd)}")
 subprocess.run(cmd, capture_output=True, text=True)
+
+############################ 
+# DFT kernels
+############################
+
+from xqc.backend.rks import gen_rho_kernel
+code, mod, fun = gen_rho_kernel((li,lj), (npi,npj), np.float32)
+with open('tmp_rho.cu', 'w+') as f:
+    f.write(code)
+import cupy
+import subprocess
+cmd = cupy.cuda.get_nvcc_path().split()
+cmd += ['-lineinfo', '-arch=sm_80', '-src-in-ptx', '-ptx', 'tmp_rho.cu', '-o', 'tmp_rho.ptx'] 
+print(f"running {' '.join(cmd)}")
+subprocess.run(cmd, capture_output=True, text=True)

@@ -21,7 +21,7 @@ constexpr float exp_cutoff = 36.8;
 
 extern "C" __global__
 void estimate_log_aovalue(
-    const float* __restrict__ grid_coords,
+    const double* __restrict__ grid_coords,
     const int ngrids,
     const float* __restrict__ shell_coords,
     const float* __restrict__ coeffs,
@@ -42,9 +42,9 @@ void estimate_log_aovalue(
 
     const int grid_id = block_id * ng_per_thread + thread_id;
     
-    gridx_shared[thread_id] = grid_coords[         grid_id];
-    gridy_shared[thread_id] = grid_coords[ngrids  +grid_id];
-    gridz_shared[thread_id] = grid_coords[ngrids*2+grid_id];
+    gridx_shared[thread_id] = (float)grid_coords[         grid_id];
+    gridy_shared[thread_id] = (float)grid_coords[ngrids  +grid_id];
+    gridz_shared[thread_id] = (float)grid_coords[ngrids*2+grid_id];
     
     __shared__ float maxval_smem[ng_per_thread];
     __shared__ int nnz;
@@ -71,8 +71,9 @@ void estimate_log_aovalue(
             float gto_sup = 0.0;
             
             for (int ip = 0; ip < nprim; ++ip) {
-                if (exps_reg[ip] * rr < exp_cutoff){
-                    gto_sup += coeffs_reg[ip] * __expf(-exps_reg[ip] * rr);
+                const float e = exps_reg[ip] * rr;
+                if (e < exp_cutoff){
+                    gto_sup += coeffs_reg[ip] * __expf(-e);
                 }
             }
             gto_sup = fabs(gto_sup);

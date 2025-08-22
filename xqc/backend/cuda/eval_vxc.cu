@@ -56,7 +56,7 @@ void block_reduce_max(float val, float* maxval) {
 
 extern "C" __global__
 void eval_vxc(
-    const DataType* __restrict__ grid_coords,
+    const double* __restrict__ grid_coords,
     const DataType* __restrict__ shell_coords,
     const DataType* __restrict__ coeffs,
     const DataType* __restrict__ exps,
@@ -64,7 +64,7 @@ void eval_vxc(
     double* __restrict__ vxc_mat,
     const int* __restrict__ ao_loc,
     const int nao,
-    DataType* __restrict__ wv_grid,
+    double* __restrict__ wv_grid,
     const float* log_maxval_i,
     const int* __restrict__ nnz_indices_i,
     const int* __restrict__ nnz_i,
@@ -93,34 +93,42 @@ void eval_vxc(
 
     constexpr int num_warps = nthreads / warpsize;
     DataType gx[3];
-    gx[0] = grid_coords[grid_id           ];
-    gx[1] = grid_coords[grid_id +   ngrids];
-    gx[2] = grid_coords[grid_id + 2*ngrids];
+    gx[0] = (DataType)grid_coords[grid_id           ];
+    gx[1] = (DataType)grid_coords[grid_id +   ngrids];
+    gx[2] = (DataType)grid_coords[grid_id + 2*ngrids];
 
     // ndim = 1 for LDA, 4 for GGA, 5 for mGGA
     DataType wv0, wv_x, wv_y, wv_z, wv_tau;
-    wv0 = wv_grid[grid_id];
+    wv0 = (DataType)wv_grid[grid_id];
     if constexpr (ndim > 1){
-        wv_x = wv_grid[grid_id + ngrids];
-        wv_y = wv_grid[grid_id + 2*ngrids];
-        wv_z = wv_grid[grid_id + 3*ngrids];
+        wv_x = (DataType)wv_grid[grid_id + ngrids];
+        wv_y = (DataType)wv_grid[grid_id + 2*ngrids];
+        wv_z = (DataType)wv_grid[grid_id + 3*ngrids];
         if constexpr (ndim > 4){
-            wv_tau = half * wv_grid[grid_id + 4*ngrids];
+            wv_tau = half * (DataType)wv_grid[grid_id + 4*ngrids];
         }
     }
     float log_wv0 = __logf(fabs(wv0) + 1e-16f);
     __shared__ float log_max_wv0_smem[1];
     block_reduce_max(log_wv0, log_max_wv0_smem);
-    //float log_max_wv0 = log_max_wv0_smem[0];
-    log_cutoff_a -= log_max_wv0_smem[0];
-    log_cutoff_b -= log_max_wv0_smem[0];
-
+    float log_max_wv0 = log_max_wv0_smem[0];
+    log_cutoff_a -= log_max_wv0;
+    log_cutoff_b -= log_max_wv0;
+    
     __shared__ DataType vxc_smem[num_warps * nfij];
 
     for (int jsh_nz = 0; jsh_nz < nnzj; jsh_nz++){
         const int offset = jsh_nz + block_id * nbas_j;
         const float log_aoj = log_maxval_j[offset];
         const int jsh = nnz_indices_j[offset];
+        const int j0 = ao_loc[jsh];
+        
+        for (int ish_nz = 0; ish_nz < nnzi; ish_nz++){
+            const int offset = ish_nz + block_id * nbas_i;
+            const float log_aoi = log_maxval_i[offset];
+            const int ish = nnz_indices_i[offset];
+            if (ish > jsh) continue;
+            if (log_aoi + log_aoj < log_cutoff_a || log_aoi + log_aoj >= log_cutoff_b) continue;
 
         const DataType gjx = gx[0] - __ldg(shell_coords + 3*jsh);
         const DataType gjy = gx[1] - __ldg(shell_coords + 3*jsh + 1);
@@ -142,7 +150,7 @@ void eval_vxc(
 
         constexpr int j_pow = lj + deriv;
         DataType xj_pows[j_pow+1], yj_pows[j_pow+1], zj_pows[j_pow+1];
-        xj_pows[0] = 1.0; yj_pows[0] = 1.0; zj_pows[0] = 1.0;
+        xj_pows[0] = one; yj_pows[0] = one; zj_pows[0] = one;
         for (int i = 0; i < j_pow; i++){
             xj_pows[i+1] = xj_pows[i] * gjx;
             yj_pows[i+1] = yj_pows[i] * gjy;
@@ -177,21 +185,14 @@ void eval_vxc(
                     ao_jy[i] = xj_pows[lx] * dyj[ly] * zj_pows[lz];
                     ao_jz[i] = xj_pows[lx] * yj_pows[ly] * dzj[lz];
                     aow_j[i] = ao_jx[i] * wv_x + ao_jy[i] * wv_y + ao_jz[i] * wv_z;
-                    ao_jx[i] *= wv_tau;
-                    ao_jy[i] *= wv_tau;
-                    ao_jz[i] *= wv_tau;
+                    if constexpr (ndim > 4){
+                        ao_jx[i] *= wv_tau;
+                        ao_jy[i] *= wv_tau;
+                        ao_jz[i] *= wv_tau;
+                    }
                 }
             }
         }
-
-        const int j0 = ao_loc[jsh];
-        
-        for (int ish_nz = 0; ish_nz < nnzi; ish_nz++){
-            const int offset = ish_nz + block_id * nbas_i;
-            const float log_aoi = log_maxval_i[offset];
-            const int ish = nnz_indices_i[offset];
-            if (ish > jsh) continue;
-            if (log_aoi + log_aoj < log_cutoff_a || log_aoi + log_aoj >= log_cutoff_b) continue;
 
             const DataType gix = gx[0] - __ldg(shell_coords + 3*ish);
             const DataType giy = gx[1] - __ldg(shell_coords + 3*ish + 1);
@@ -215,7 +216,7 @@ void eval_vxc(
 
             constexpr int i_pow = li + deriv;
             DataType xi_pows[i_pow+1], yi_pows[i_pow+1], zi_pows[i_pow+1];
-            xi_pows[0] = 1.0; yi_pows[0] = 1.0; zi_pows[0] = 1.0;
+            xi_pows[0] = one; yi_pows[0] = one; zi_pows[0] = one;
             for (int i = 0; i < i_pow; i++){
                 xi_pows[i+1] = xi_pows[i] * gix;
                 yi_pows[i+1] = yi_pows[i] * giy;

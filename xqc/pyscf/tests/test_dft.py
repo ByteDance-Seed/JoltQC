@@ -115,8 +115,25 @@ class KnownValues(unittest.TestCase):
         mf = xqc.pyscf.compile(mf)
         e_tot = mf.kernel() 
         e_ref = dft.RKS(mol_sph, xc='PBE').kernel()
+        print('| CPU - GPU | with compile:', e_tot - e_ref)
         assert np.abs(e_tot - e_ref) < 1e-5
-        
+    
+    def test_rks_qz(self):
+        mol = pyscf.M(
+            atom = '''
+            H  -0.757    4.   -0.4696
+            H   0.757    4.   -0.4696
+            ''',
+            basis='def2-qzvpp', #'ccpvdz',
+            unit='B', cart=0, output='/dev/null')
+        mf = dft.RKS(mol, xc='PBE')
+        mf = xqc.pyscf.compile(mf)
+        e_tot = mf.kernel() 
+        e_ref = dft.RKS(mol, xc='PBE').kernel()
+        mol.stdout.close()
+        print('| CPU - GPU | with qz:', e_tot - e_ref)
+        assert np.abs(e_tot - e_ref) < 1e-8
+    
 if __name__ == "__main__":
     print("Full Tests for DFT Kernels")
     unittest.main()

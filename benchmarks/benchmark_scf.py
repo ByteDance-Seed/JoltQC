@@ -19,10 +19,7 @@ from gpu4pyscf.scf import hf
 from xqc.pyscf import jk
 
 #atom = 'molecules/h2o.xyz'
-atom = 'molecules/020_Vitamin_C.xyz'
-#atom = 'molecules/052_Cetirizine.xyz'
-#atom = 'molecules/valinomycin.xyz'
-#atom = 'molecules/gly30.xyz'
+atom = 'molecules/0031-irregular-nitrogenous.xyz'
 basis = 'def2-tzvpp'#'6-31gs'
 count = 1
 

@@ -27,7 +27,7 @@ constexpr DataType half = 0.5;
 
 extern "C" __global__
 void eval_rho(
-    const DataType* __restrict__ grid_coords,
+    const double* __restrict__ grid_coords,
     const DataType* __restrict__ shell_coords,
     const DataType* __restrict__ coeffs,
     const DataType* __restrict__ exps,
@@ -59,9 +59,9 @@ void eval_rho(
     if (nnzi == 0 || nnzj == 0) return;
 
     DataType gx[3];
-    gx[0] = grid_coords[grid_id           ];
-    gx[1] = grid_coords[grid_id +   ngrids];
-    gx[2] = grid_coords[grid_id + 2*ngrids];
+    gx[0] = (DataType)grid_coords[grid_id           ];
+    gx[1] = (DataType)grid_coords[grid_id +   ngrids];
+    gx[2] = (DataType)grid_coords[grid_id + 2*ngrids];
 
     // ndim = 1 for LDA, 4 for GGA, 5 for mGGA
     DataType rho_reg[ndim] = {zero};
@@ -69,6 +69,14 @@ void eval_rho(
         const int offset = jsh_nz + block_id * nbas_j;
         const int jsh = nnz_indices_j[offset];
         const float log_aoj = log_maxval_j[offset];
+        const int j0 = ao_loc[jsh];
+        for (int ish_nz = 0; ish_nz < nnzi; ish_nz++){
+            const int offset = ish_nz + block_id * nbas_i;
+            const int ish = nnz_indices_i[offset];
+            const float log_aoi = log_maxval_i[offset];
+            const float log_rho_est = log_aoi + log_aoj + log_dm_shell[ish+jsh*nbas];
+            if (ish > jsh) continue;
+            if (log_rho_est < log_cutoff_a || log_rho_est >= log_cutoff_b) continue;
 
         const DataType gjx = gx[0] - __ldg(shell_coords + 3*jsh);
         const DataType gjy = gx[1] - __ldg(shell_coords + 3*jsh + 1);
@@ -130,14 +138,6 @@ void eval_rho(
                 }
             }
         }
-        const int j0 = ao_loc[jsh];
-        for (int ish_nz = 0; ish_nz < nnzi; ish_nz++){
-            const int offset = ish_nz + block_id * nbas_i;
-            const int ish = nnz_indices_i[offset];
-            const float log_aoi = log_maxval_i[offset];
-            const float log_rho_est = log_aoi + log_aoj + log_dm_shell[ish+jsh*nbas];
-            if (ish > jsh) continue;
-            if (log_rho_est < log_cutoff_a || log_rho_est >= log_cutoff_b) continue;
 
             const DataType gix = gx[0] - __ldg(shell_coords + 3*ish);
             const DataType giy = gx[1] - __ldg(shell_coords + 3*ish + 1);
@@ -162,7 +162,7 @@ void eval_rho(
 
             constexpr int i_pow = li + deriv;
             DataType xi_pows[i_pow+1], yi_pows[i_pow+1], zi_pows[i_pow+1];
-            xi_pows[0] = 1.0; yi_pows[0] = 1.0; zi_pows[0] = 1.0;
+            xi_pows[0] = one; yi_pows[0] = one; zi_pows[0] = one;
 #pragma unroll
             for (int i = 0; i < i_pow; i++){
                 xi_pows[i+1] = xi_pows[i] * gix;

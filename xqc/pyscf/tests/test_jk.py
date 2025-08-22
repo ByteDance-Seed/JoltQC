@@ -157,6 +157,19 @@ class KnownValues(unittest.TestCase):
         print('vk diff in JK kernel:', abs(vk1 - ref[1]).max())
         assert abs(vk1 - ref[1]).max() < 1e-7
     
+    def test_k_dm_fp32(self):
+        np.random.seed(9)
+        nao = mol.nao
+        dm = np.random.rand(nao, nao)
+        dm = dm.dot(dm.T)
+        
+        get_jk_jit = jk.generate_jk_kernel(mol, cutoff_fp32=1e-13, cutoff_fp64=1e100)
+        _, vk = get_jk_jit(mol, dm, hermi=1, with_j=False, with_k=True, omega=0.3)
+        vk1 = vk.get()
+        ref = get_jk(mol, dm, hermi=1, omega=0.3)
+        print('vk diff in JK kernel:', abs(vk1 - ref[1]).max())
+        assert abs(vk1 - ref[1]).max() < 1e-3
+
     def test_jk_omega(self):
         omega = 0.5
         mol_with_omega = pyscf.M(

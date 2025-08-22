@@ -4,3 +4,6 @@
 - jqc.compile() API
 - Debug screening for mGGA
 - Remove ni in rho_fun and vxc_fun
+
+- Improve DFT with triplet indices
+- vv10 mixed precision

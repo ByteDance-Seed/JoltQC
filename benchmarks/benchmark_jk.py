@@ -70,10 +70,7 @@ O    P
 ''')
 
 #atom = 'molecules/h2o.xyz'
-#atom = 'molecules/gly30.xyz'
-#atom = 'molecules/ubiquitin.xyz'
-atom = 'molecules/020_Vitamin_C.xyz'
-#atom = 'molecules/052_Cetirizine.xyz'
+atom = 'molecules/0031-irregular-nitrogenous.xyz'
 
 n_dm = 1
 n_warmup = 3

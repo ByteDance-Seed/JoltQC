@@ -22,13 +22,10 @@ from xqc.pyscf import jk, rks
 from xqc.pyscf.rks import build_grids
 
 #atom = 'molecules/h2o.xyz'
-atom = 'molecules/020_Vitamin_C.xyz'
-#atom = 'molecules/052_Cetirizine.xyz'
-#atom = 'molecules/valinomycin.xyz'
-#atom = 'molecules/gly30.xyz'
-basis = 'def2-tzvpp'
+atom = 'molecules/0031-irregular-nitrogenous.xyz'
 xc = 'wb97m-v'
 xctype = 'mGGA'
+basis = 'def2-tzvpp'
 count = 1
 
 mol = pyscf.M(atom=atom, basis=basis, output=f'gpu4pyscf-{basis}.log', verbose=5, cart=1)

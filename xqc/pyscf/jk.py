@@ -57,7 +57,6 @@ def generate_get_jk(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
 def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     bas_cache, bas_mapping, padding_mask, group_info = sort_group_basis(mol, alignment=TILE)
-
     # TODO: Q matrix for short-range
     q_matrix = compute_q_matrix(mol)
     nbas = bas_mapping.shape[0]
@@ -118,15 +117,18 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         # Convert the density matrix to cartesian basis
         dms = mol2cart(dms, angs, ao_loc, bas_mapping, mol)
         dms = dms.reshape(-1, nao, nao)
-        dm_cond = max_block_pooling(dms, ao_loc)
-        dms = cp.asarray(dms) # transfer to current device
+        dm_cond = max_block_pooling(dms, ao_loc).astype(np.float32)
+        dms = cp.asarray(dms, dtype=np.float64) # transfer to current device
         dms_fp32 = cp.asarray(dms, dtype=np.float32)
+        
+        omega_fp32 = np.float32(omega) if omega is not None else None
+        omega_fp64 = np.float64(omega) if omega is not None else None
+
         if hermi == 0:
             # Wrap the triu contribution to tril
             dm_cond = dm_cond + dm_cond.T
-        log_dm_cond = cp.log(dm_cond + 1e-300).astype(np.float32)
+        log_dm_cond = cp.log(dm_cond + 1e-300, dtype=np.float32)
         log_max_dm = log_dm_cond.max().item()
-        log_dm_cond = cp.asarray(log_dm_cond, dtype=np.float32)
 
         if hermi == 0:
             # Contract the tril and triu parts separately
@@ -203,9 +205,9 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         n_quartets_fp32 = info_cpu[0]
                         if n_quartets_fp32 > 0:
                             jk_fp32_kernel = gen_jk_kernel(ang, nprim, do_j=with_j, do_k=with_k, 
-                                                           dtype=np.float32, n_dm=n_dm, omega=omega)
+                                                           dtype=np.float32, n_dm=n_dm, omega=omega_fp32)
                             jk_fp32_kernel(nbas, ao_loc, coords_fp32, exponents_fp32, coeffs_fp32,
-                                           dms_fp32, vj, vk, omega, quartet_list,
+                                           dms_fp32, vj, vk, omega_fp32, quartet_list,
                                            n_quartets_fp32)
                             kern_counts += 1
                             ntasks_fp32 += n_quartets_fp32
@@ -215,9 +217,9 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         n_quartets_fp64 = QUEUE_DEPTH - offset
                         if n_quartets_fp64 > 0:
                             jk_fp64_kernel = gen_jk_kernel(ang, nprim, do_j=with_j, do_k=with_k, 
-                                                           dtype=np.float64, n_dm=n_dm, omega=omega)
+                                                           dtype=np.float64, n_dm=n_dm, omega=omega_fp64)
                             jk_fp64_kernel(nbas, ao_loc, coords_fp64, exponents_fp64, coeffs_fp64,
-                                           dms, vj, vk, omega, quartet_list[offset:],
+                                           dms, vj, vk, omega_fp64, quartet_list[offset:],
                                            n_quartets_fp64)
                             kern_counts += 1
                             ntasks_fp64 += n_quartets_fp64
@@ -228,12 +230,14 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                     fp64_event.synchronize()
                     fp32_elasped_time = cp.cuda.get_elapsed_time(start, fp32_event)
                     fp64_elasped_time = cp.cuda.get_elapsed_time(fp32_event, fp64_event)
-
+                    ntasks = max(ntasks_fp64 + ntasks_fp32, 1)
                     llll = f'({l_symb[i]}{l_symb[j]}|{l_symb[k]}{l_symb[l]})'
-                    msg_kernel = f'JK kernel {llll}/({ip}{jp}{kp}{lp}),'
-                    msg_fp64 = f'FP64 tasks = {ntasks_fp64:10d}, {fp64_elasped_time:5.2f} ms,'
-                    msg_fp32 = f'FP32 tasks = {ntasks_fp32:10d}, {fp32_elasped_time:5.2f} ms'
-                    logger.debug1(msg_kernel + msg_fp64 + msg_fp32)
+                    msg_kernel = f'kernel type {llll}/({ip}{jp}{kp}{lp}), '
+                    msg_fp64 = f'FP64 tasks = {ntasks_fp64:10d}, '
+                    msg_fp32 = f'FP32 tasks = {ntasks_fp32:10d}, {fp32_elasped_time:5.2f} ms, '
+                    msg_ratio = f'FP64 ratio = {ntasks_fp64/ntasks:.2f}'
+                    msg = msg_kernel + msg_fp64 + msg_fp32 + msg_ratio
+                    logger.debug1(msg)
                     timing_counter[llll] += fp64_elasped_time + fp32_elasped_time
                 
         stream.synchronize()
@@ -272,7 +276,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         return vj, vk
     return get_jk
 
-def make_tile_pairs(l_ctr_bas_loc, q_matrix, cutoff, tile=TILE,):
+def make_tile_pairs(l_ctr_bas_loc, q_matrix, cutoff, tile=TILE):
     ''' Make tile pairs with GTO pairing screening and symmetry
         Filter out the tiles that are not within cutoff
     '''

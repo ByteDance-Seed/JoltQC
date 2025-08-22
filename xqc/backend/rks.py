@@ -180,7 +180,7 @@ def estimate_log_aovalue(grid_coords, coords, coeffs, exps, ang, nprim, log_cuto
         A (nblocks,) array with the count of significant shells for each
         grid block.
     """
-    grid_coords = cp.asarray(grid_coords, dtype=np.float32)
+    grid_coords = cp.asarray(grid_coords, dtype=np.float64)
     coords = cp.asarray(coords, dtype=np.float32)
     coeffs = cp.asarray(coeffs, dtype=np.float32)
     exps = cp.asarray(exps, dtype=np.float32)

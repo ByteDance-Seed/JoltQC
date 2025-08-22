@@ -103,6 +103,11 @@ def build_grids(grids, mol=None, with_non0tab=False, sort_grids=True, **kwargs):
         Whether to generate non-zero tab.
     sort_grids : bool, optional
         Whether to sort grids.
+
+    Returns
+    -------
+    grids : Grid
+        PySCF Grid object.
     """
     if mol is None: mol = grids.mol
     if grids.verbose >= 5:
@@ -146,10 +151,10 @@ def build_grids(grids, mol=None, with_non0tab=False, sort_grids=True, **kwargs):
         grids.atm_idx = grids.atm_idx[idx]
         logger.debug(f'sorting grids {time.perf_counter() - cputime_start}')
 
-    #if with_non0tab:
-    #    raise RuntimeError('with_non0tab is not supported yet')
-    #else:
-    grids.screen_index = grids.non0tab = None
+    if with_non0tab:
+        raise RuntimeError('with_non0tab is not supported yet')
+    else:
+        grids.screen_index = grids.non0tab = None
     logger.info(f'tot grids = {len(grids.weights)}')
 
     grids._non0ao_idx = None
@@ -163,25 +168,27 @@ def generate_get_rho(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     _, rho_fun, _ = generate_rks_kernel(mol, cutoff_fp64, cutoff_fp32)
     def get_rho(mol, dm, grids, *args, **kwargs):
         dm = cp.asarray(dm)
-        log_cutoff_a = np.log(cutoff_fp64)
-        log_cutoff_b = np.log(1e100)
-        rho = rho_fun(mol, grids, 'LDA', dm, np.float64, log_cutoff_a, log_cutoff_b)
-        if cutoff_fp64 > cutoff_fp32:
-            log_cutoff_a = np.log(cutoff_fp32)
-            log_cutoff_b = np.log(cutoff_fp64)
-            rho += rho_fun(mol, grids, 'LDA', dm, np.float32, log_cutoff_a, log_cutoff_b)
+        rho = rho_fun(mol, grids, 'LDA', dm)
         return rho[0]
     return get_rho
 
 def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     bas_cache, bas_mapping, _, group_info = sort_group_basis(mol, alignment=1)
-    coeffs, exps, coords, angs, nprims = bas_cache
+    coeffs_fp64, exps_fp64, coords_fp64, angs, nprims = bas_cache
+    coeffs_fp32 = coeffs_fp64.astype(np.float32)
+    exps_fp32 = exps_fp64.astype(np.float32)
+    coords_fp32 = coords_fp64.astype(np.float32)
+
     ao_loc = np.concatenate(([0], np.cumsum((angs+1)*(angs+2)//2)))
     nao = ao_loc[-1]
     nbas = nprims.shape[0]
     ao_loc = cp.asarray(ao_loc, dtype=np.int32)
     group_key, group_offset = group_info
     log_cutoff = math.log(ao_cutoff)
+
+    log_cutoff_fp32 = np.log(cutoff_fp32).astype(np.float32)
+    log_cutoff_fp64 = np.log(cutoff_fp64).astype(np.float32)
+    log_cutoff_max = np.log(1e100).astype(np.float32)
 
     _cache = {'dm_prev': 0, 'rho_prev': 0, 'wv_prev': 0, 'vxcmat_prev': 0}
     def rks_fun(ni, mol, grids, xc_code, dm, max_memory=2000, verbose=None):
@@ -212,15 +219,13 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         # Evaluate rho on grids for given density matrix
         weights = grids.weights
         dm_diff = dm - dm_prev
-        log_cutoff_a = np.log(cutoff_fp64)
-        log_cutoff_b = np.log(1e100)
-        rho_diff = rho_fun(mol, grids, xctype, dm_diff, dtype=np.float64, 
-                           log_cutoff_a=log_cutoff_a, log_cutoff_b=log_cutoff_b)
-        if cutoff_fp64 > cutoff_fp32:
-            log_cutoff_a = np.log(cutoff_fp32)
-            log_cutoff_b = np.log(cutoff_fp64)
-            rho_diff += rho_fun(mol, grids, xctype, dm_diff, dtype=np.float32, 
-                                log_cutoff_a=log_cutoff_a, log_cutoff_b=log_cutoff_b) 
+        #start = cp.cuda.Event()
+        #end = cp.cuda.Event()
+        #start.record()
+        rho_diff = rho_fun(mol, grids, xctype, dm_diff)
+        #end.record()
+        #end.synchronize()
+        #print(f'rho_diff time: {cp.cuda.get_elapsed_time(start, end)} ms')
         rho = rho_prev + rho_diff
 
         # Evaluate vxc on grids via libxc
@@ -234,17 +239,15 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         nelec = float(den.sum())
         wv = vxc * weights
         wv_diff = wv - wv_prev
-        log_cutoff_a = np.log(cutoff_fp64)
-        log_cutoff_b = np.log(1e100)
-        vxcmat_diff = vxc_fun(mol, grids, xctype, wv_diff, dtype=np.float64, 
-                              log_cutoff_a=log_cutoff_a, log_cutoff_b=log_cutoff_b)
-        if cutoff_fp64 > cutoff_fp32:
-            log_cutoff_a = np.log(cutoff_fp32)
-            log_cutoff_b = np.log(cutoff_fp64)
-            vxcmat_diff += vxc_fun(mol, grids, xctype, wv_diff, dtype=np.float32, 
-                                   log_cutoff_a=log_cutoff_a, log_cutoff_b=log_cutoff_b)
+        #start = cp.cuda.Event()
+        #end = cp.cuda.Event()
+        #start.record()
+        vxcmat_diff = vxc_fun(mol, grids, xctype, wv_diff)
+        #end.record()
+        #end.synchronize()
+        #print(f'vxcmat_diff time: {cp.cuda.get_elapsed_time(start, end)} ms')
         vxcmat = vxcmat_prev + vxcmat_diff
-
+        #print(wv_diff.min(), wv_diff.max(), rho_diff.min(), rho_diff.max(), dm_diff.min(), dm_diff.max())
         _cache['dm_prev'] = dm.copy()
         _cache['rho_prev'] = rho
         _cache['wv_prev'] = wv
@@ -252,14 +255,13 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
         return nelec, excsum, vxcmat
 
-    def rho_fun(mol, grids, xctype, dm, dtype=np.float64, 
-                log_cutoff_a=-36.8, log_cutoff_b=36.8):
+    def rho_fun(mol, grids, xctype, dm):
         ngrids = grids.coords.shape[0]
-        grid_coords = cp.asarray(grids.coords.T, dtype=dtype, order='C')
+        grid_coords = cp.asarray(grids.coords.T, dtype=np.float64, order='C')
         dm = mol2cart(dm, angs, ao_loc, bas_mapping, mol)
         dm_cond = max_block_pooling(dm, ao_loc)
         dm_cond = cp.asarray(dm_cond, dtype=np.float32)
-        log_dm_shell = cp.log(cp.abs(dm_cond) + 1e-200)
+        log_dm_shell = cp.log(dm_cond + 1e-200, dtype=np.float32)
         log_dm = cp.max(log_dm_shell).item()
         log_ao_cutoff = log_cutoff - log_dm # ao.T * dm * ao < cutoff
         n_groups = len(group_offset) - 1
@@ -270,9 +272,9 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         ao_sparsity = {}
         for i in range(n_groups):
             ish0, ish1 = group_offset[i], group_offset[i+1]
-            x = coords[ish0:ish1]
-            c = coeffs[ish0:ish1]
-            e = exps[ish0:ish1]
+            x = coords_fp32[ish0:ish1]
+            c = coeffs_fp32[ish0:ish1]
+            e = exps_fp32[ish0:ish1]
             a = angs[ish0].item()
             n = nprims[ish0].item()
             s = estimate_log_aovalue(grid_coords, x, c, e, a, n, log_cutoff=log_ao_cutoff)
@@ -281,35 +283,44 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             ao_sparsity[i] = (log_maxval, indices, nnz)
 
         rho = cp.zeros((ndim, ngrids), dtype=np.float64)
-        dm = cp.asarray(dm, dtype=dtype)
-        c = cp.asarray(coeffs, dtype=dtype)
-        e = cp.asarray(exps, dtype=dtype)
-        x = cp.asarray(coords, dtype=dtype)
+        dm = cp.asarray(dm, dtype=np.float64)
+        dm_fp32 = cp.asarray(dm, dtype=np.float32)
+
         for i in range(n_groups):
             for j in range(i, n_groups):
                 li, ip = group_key[i]
                 lj, jp = group_key[j]
                 ang = (li,lj)
                 nprim = (ip, jp)
-                script, mod, fun = gen_rho_kernel(ang, nprim, dtype, ndim)
+                
                 log_maxval_i, indices_i, nnz_i = ao_sparsity[i]
                 log_maxval_j, indices_j, nnz_j = ao_sparsity[j]
                 nbas_i = indices_i.shape[1]
                 nbas_j = indices_j.shape[1]
+                script, mod, fun = gen_rho_kernel(ang, nprim, np.float64, ndim)
                 fun(grid_coords, 
-                    x, c, e, nbas,
+                    coords_fp64, coeffs_fp64, exps_fp64, nbas,
                     dm, log_dm_shell, ao_loc, nao, 
                     rho,
                     log_maxval_i, indices_i, nnz_i, nbas_i,
                     log_maxval_j, indices_j, nnz_j, nbas_j,
-                    np.float32(log_cutoff_a), np.float32(log_cutoff_b), ngrids
+                    log_cutoff_fp64, log_cutoff_max, ngrids
                 )
+                if cutoff_fp64 > cutoff_fp32:
+                    script, mod, fun = gen_rho_kernel(ang, nprim, np.float32, ndim)
+                    fun(grid_coords, 
+                        coords_fp32, coeffs_fp32, exps_fp32, nbas,
+                        dm_fp32, log_dm_shell, ao_loc, nao, 
+                        rho,
+                        log_maxval_i, indices_i, nnz_i, nbas_i,
+                        log_maxval_j, indices_j, nnz_j, nbas_j,
+                        log_cutoff_fp32, log_cutoff_fp64, ngrids
+                    )
         return rho
 
-    def vxc_fun(mol, grids, xctype, wv, dtype=np.float64, 
-                log_cutoff_a=-36.8, log_cutoff_b=36.8):
+    def vxc_fun(mol, grids, xctype, wv):
         ngrids = grids.coords.shape[0]
-        grid_coords = cp.asarray(grids.coords.T, dtype=dtype, order='C')
+        grid_coords = cp.asarray(grids.coords.T, dtype=np.float64, order='C')
         vxc = cp.zeros([1, nao, nao], dtype=np.float64)
         ngrids_per_atom = ngrids / mol.natm
         wv_max = cp.max(cp.abs(wv)).item()
@@ -324,44 +335,52 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         ao_sparsity = {}
         for i in range(n_groups):
             ish0, ish1 = group_offset[i], group_offset[i+1]
-            x = coords[ish0:ish1]
-            c = coeffs[ish0:ish1]
-            e = exps[ish0:ish1]
+            x = coords_fp32[ish0:ish1]
+            c = coeffs_fp32[ish0:ish1]
+            e = exps_fp32[ish0:ish1]
             a = angs[ish0].item()
             n = nprims[ish0].item()
             s = estimate_log_aovalue(grid_coords, x, c, e, a, n, log_cutoff=log_ao_cutoff)
             log_maxval, indices, nnz = s
             indices += ish0
             ao_sparsity[i] = (log_maxval, indices, nnz)
-        
-        wv = cp.asarray(wv, dtype=dtype)
-        c = cp.asarray(coeffs, dtype=dtype)
-        e = cp.asarray(exps, dtype=dtype)
-        x = cp.asarray(coords, dtype=dtype)
+
         for i in range(n_groups):
             for j in range(i, n_groups):
                 li, ip = group_key[i]
                 lj, jp = group_key[j]
                 ang = (li,lj)
                 nprim = (ip, jp)
-                script, mod, fun = gen_vxc_kernel(ang, nprim, dtype, ndim)
+                
                 log_maxval_i, indices_i, nnz_i = ao_sparsity[i]
                 log_maxval_j, indices_j, nnz_j = ao_sparsity[j]
                 nbas_i = indices_i.shape[1]
                 nbas_j = indices_j.shape[1]
+                script, mod, fun = gen_vxc_kernel(ang, nprim, np.float64, ndim)
                 fun(grid_coords, 
-                    x, c, e, nbas,
+                    coords_fp64, coeffs_fp64, exps_fp64, nbas,
                     vxc, ao_loc, nao,
                     wv, 
                     log_maxval_i, indices_i, nnz_i, nbas_i,
                     log_maxval_j, indices_j, nnz_j, nbas_j,
-                    np.float32(log_cutoff_a), np.float32(log_cutoff_b), ngrids
+                    log_cutoff_fp64, log_cutoff_max, ngrids
                 )
+                if cutoff_fp64 > cutoff_fp32:
+                    script, mod, fun = gen_vxc_kernel(ang, nprim, np.float32, ndim)
+                    fun(grid_coords, 
+                        coords_fp32, coeffs_fp32, exps_fp32, nbas,
+                        vxc, ao_loc, nao,
+                        wv, 
+                        log_maxval_i, indices_i, nnz_i, nbas_i,
+                        log_maxval_j, indices_j, nnz_j, nbas_j,
+                        log_cutoff_fp32, log_cutoff_fp64, ngrids
+                    )
 
         vxc = cart2mol(vxc, angs, ao_loc, bas_mapping, mol)
         vxc = inplace_add_transpose(vxc)
         return vxc[0]
     return rks_fun, rho_fun, vxc_fun
+
 
 def create_tasks(l_ctr_bas_loc, ovlp, cutoff=1e-13):
     n_groups = len(l_ctr_bas_loc) - 1

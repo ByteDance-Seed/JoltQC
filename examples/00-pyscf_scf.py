@@ -13,15 +13,13 @@
 # limitations under the License.
 #
 
-###################################################################
-# This example shows how to dump .cubin files for a given molecule
-# .cubin files can be reused to avoid recompilation
-####################################################################
+##########################################################
+# This example shows how to use JK kernels with gpu4pyscf
+##########################################################
 
-import time
-import os
 import pyscf
 from gpu4pyscf import scf
+import xqc
 import xqc.pyscf
 
 atom = '''
@@ -32,22 +30,25 @@ H       0.7570000000     0.0000000000    -0.4696000000
 
 mol = pyscf.M(atom=atom, basis='def2-tzvpp')
 mf = scf.RHF(mol)
+mf.conv_tol = 1e-10
+mf.max_cycle = 50
 
-# .cubin files will be stored in ./tmp/
-# .cubin files can be reused for the same GPU architecture
-os.environ["CUPY_CACHE_DIR"] = "./tmp/"
-
-start = time.process_time()
-
-# Compile GPU4PySCF object
+# Method 1:
+# Compile GPU4PySCF object (recommended)
+print("Compile GPU4PySCF object")
 mf = xqc.pyscf.compile(mf)
+print("Run compiled GPU4PySCF object")
 e_tot = mf.kernel()
-print('total energy with double precision:', e_tot)
 
-end = time.process_time()
-print("CPU time:", end - start, "seconds")
+# Convert GPU4PySCF object to PySCF object
+print("Convert GPU4PySCF object to PySCF object")
+mf_cpu = mf.to_cpu()
+print("Run PySCF object")
+e_tot = mf_cpu.kernel()
 
-from pathlib import Path
-count = sum(1 for f in Path("./tmp").rglob("*") if f.is_file())
-size = sum(f.stat().st_size for f in Path("./tmp").rglob("*") if f.is_file())
-print(f'{count} binaries, total size: {size/1024/1024} MB')
+# Method 2:
+# Compile PySCF object
+print("Compile PySCF object")
+mf = xqc.pyscf.compile(mf_cpu)
+print("Run compiled PySCF object")
+mf.kernel()
