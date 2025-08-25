@@ -16,7 +16,7 @@
 import cupy as cp
 import pyscf
 from pyscf import gto
-from gpu4pyscf import scf, dft
+from gpu4pyscf import scf
 from xqc.pyscf import jk
 
 basis = gto.basis.parse('''
@@ -55,35 +55,37 @@ basis = gto.basis.parse('''
 #      0.1553961625E+02      -0.1107775495E+00       0.7087426823E-01
 #      0.3599933586E+01      -0.1480262627E+00       0.3397528391E+00
 #      0.1013761750E+01       0.1130767015E+01       0.7271585773E+00
-H    P
-      1.2700058226E+00      1
+#H    D
+#      1.2700058226E+00      1
 #      0.2700058226E+00      1
-O    F
+O    D
       0.2700058226E+00      1
-O    P
-      0.2700058226E+00      1
-      0.2700058226E+00      1 
-      0.2700058226E+00      1
-      0.2700058226E+00      1
+#O    S
+#      0.2700058226E+00      1
+#      0.2700058226E+00      1 
+#      0.2700058226E+00      1
+#      0.2700058226E+00      1
 #      0.2700058226E+00      1
 #      0.2700058226E+00      1
 ''')
 
 #atom = 'molecules/h2o.xyz'
-atom = 'molecules/0031-irregular-nitrogenous.xyz'
-
+#atom = 'molecules/0031-irregular-nitrogenous.xyz'
+#atom = 'molecules/0084-elongated-halogenated.xyz'
+atom = 'molecules/0401-globular-nitrogenous.xyz'
+#atom = 'molecules/0753-globular.xyz'
 n_dm = 1
 n_warmup = 3
 mol = pyscf.M(atom=atom,
-              basis='def2-tzvpp',#'6-31g', 
+              basis=basis,#'6-31g',#'def2-tzvpp',#'6-31g', 
               output='pyscf_test.log',
               verbose=4,
               spin=None)
 
-mf = dft.KS(mol, xc='b3lyp')
+mf = scf.RHF(mol)
 
 dm0 = mf.get_init_guess()
-dm = cp.ones_like(dm0) * 1e-3
+dm = cp.ones_like(dm0)
 
 dm = cp.expand_dims(dm, axis=0)
 dm = cp.repeat(dm, repeats=n_dm, axis=0)
@@ -119,6 +121,7 @@ mol.verbose = 4
 end.record()
 end.synchronize()
 xqc_time_ms = cp.cuda.get_elapsed_time(start, end)
+print("-------- Benchmark FP64 ---------")
 print(f"Time with xQC / FP64, {xqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/xqc_time_ms}")
 print('vj diff:', cp.linalg.norm(vj - vj_jit))
@@ -139,6 +142,7 @@ mol.verbose = 4
 end.record()
 end.synchronize()
 xqc_time_ms = cp.cuda.get_elapsed_time(start, end)
+print("------- Benchmark FP64 -----------")
 print(f"Time with xQC / FP32, {xqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/xqc_time_ms}")
 print('vj diff:', cp.linalg.norm(vj - vj_jit))
@@ -159,6 +163,7 @@ mol.verbose = 4
 end.record()
 end.synchronize()
 xqc_time_ms = cp.cuda.get_elapsed_time(start, end)
+print("------- Benchmark mixed precision -------- ")
 print(f"Time with xQC / FP32 + FP64, {xqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/xqc_time_ms}")
 print('vj diff:', cp.linalg.norm(vj - vj_jit))

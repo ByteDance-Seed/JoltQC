@@ -57,8 +57,17 @@ def compile(obj, jit=True, cutoff_fp32=1e-13, cutoff_fp64=1e-13):
         nr_rks = rks.generate_nr_rks(mol, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)
         obj._numint.nr_rks = MethodType(nr_rks, obj._numint)
 
-    if not obj.istype('DFRHF') and hasattr(obj, 'get_jk'):
-        get_jk = jk.generate_jk_kernel(mol, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)
-        obj.get_jk = get_jk
-    
+    if not obj.istype('DFRHF'):
+        # TODO: cache intermediate variables
+        if hasattr(obj, 'get_jk'):
+            get_jk = jk.generate_jk_kernel(mol, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)
+            obj.get_jk = get_jk
+        
+        if hasattr(obj, 'get_j'):
+            get_j = jk.generate_get_j(mol, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)
+            obj.get_j = get_j
+
+        if hasattr(obj, 'get_k'):
+            get_k = jk.generate_get_k(mol, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)
+            obj.get_k = get_k
     return obj
