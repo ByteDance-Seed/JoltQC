@@ -17,7 +17,6 @@ from types import MethodType
 import cupy as cp
 import pyscf
 from gpu4pyscf import dft
-from gpu4pyscf.scf import hf
 from xqc.pyscf import jk, rks
 from xqc.pyscf.rks import build_grids
 

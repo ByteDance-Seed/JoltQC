@@ -18,13 +18,13 @@ import cupy as cp
 import numpy as np
 import pyscf
 from gpu4pyscf import dft
-from gpu4pyscf.scf import hf
 from xqc.pyscf import jk, rks
 from xqc.pyscf.rks import build_grids
 
 #atom = 'molecules/h2o.xyz'
 #atom = 'molecules/0031-irregular-nitrogenous.xyz'
 atom = 'molecules/0051-elongated-halogenated.xyz'
+#atom = 'molecules/0084-elongated-halogenated.xyz'
 basis = 'def2-tzvpp'
 #xc = 'wb97m-v'
 xc = 'b3lyp'
@@ -46,7 +46,7 @@ end = cp.cuda.Event()
 start.record()
 for i in range(count):
     mf = dft.RKS(mol, xc=xc)
-    mf.verbose = 6
+    mf.verbose = 4
     mf.grids.atom_grid = (99, 590)
     e_tot = mf.kernel()
 end.record()
@@ -72,6 +72,7 @@ mf_jit._numint.get_rho = rks.generate_get_rho(mol)
 nr_rks = rks.generate_nr_rks(mol)
 mf_jit._numint.nr_rks = MethodType(nr_rks, mf_jit._numint)
 mf_jit.get_jk = jk.generate_get_jk(mol)
+mf_jit.get_j = jk.generate_get_j(mol)
 e_tot = mf_jit.kernel()
 dm_fp64 = mf_jit.make_rdm1().get()
 print(f'Total energy by xQC (warmup), {e_tot}')
@@ -82,12 +83,13 @@ start.record()
 for i in range(count):
     nr_rks = rks.generate_nr_rks(mol)
     mf_jit = dft.RKS(mol, xc=xc)
-    mf_jit.verbose = 4
+    mf_jit.verbose = 6
     mf_jit.grids.atom_grid = (99, 590)
     mf_jit.grids.build = MethodType(build_grids, mf_jit.grids)
     mf_jit._numint.nr_rks = MethodType(nr_rks, mf_jit._numint)
     mf_jit._numint.get_rho = rks.generate_get_rho(mol)
     mf_jit.get_jk = jk.generate_get_jk(mol)
+    mf_jit.get_j = jk.generate_get_j(mol)
     e_fp64 = mf_jit.kernel()
 end.record()
 end.synchronize()
@@ -106,9 +108,10 @@ mf_jit.verbose = 4
 mf_jit.grids.atom_grid = (99, 590)
 mf_jit.grids.build = MethodType(build_grids, mf_jit.grids)
 mf_jit._numint.get_rho = rks.generate_get_rho(mol)
-nr_rks = rks.generate_nr_rks(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
+nr_rks = rks.generate_nr_rks(mol, cutoff_fp64=1e-6, cutoff_fp32=1e-13)
 mf_jit._numint.nr_rks = MethodType(nr_rks, mf_jit._numint)
 mf_jit.get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e100, cutoff_fp32=1e-13)
+mf_jit.get_j = jk.generate_get_j(mol, cutoff_fp64=1e100, cutoff_fp32=1e-13)
 e_tot = mf_jit.kernel()
 dm_fp32 = mf_jit.make_rdm1().get()
 print(f'Total energy by xQC (warmup), {e_tot}')
@@ -119,12 +122,13 @@ start.record()
 for i in range(count):
     nr_rks = rks.generate_nr_rks(mol, cutoff_fp64=1e-6, cutoff_fp32=1e-13)
     mf_jit = dft.RKS(mol, xc=xc)
-    mf_jit.verbose = 4
+    mf_jit.verbose = 6
     mf_jit.grids.atom_grid = (99, 590)
     mf_jit.grids.build = MethodType(build_grids, mf_jit.grids)
     mf_jit._numint.nr_rks = MethodType(nr_rks, mf_jit._numint)
     mf_jit._numint.get_rho = rks.generate_get_rho(mol, cutoff_fp64=1e-6, cutoff_fp32=1e-13)
     mf_jit.get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e100, cutoff_fp32=1e-13)
+    mf_jit.get_j = jk.generate_get_j(mol, cutoff_fp64=1e100, cutoff_fp32=1e-13)
     e_fp32 = mf_jit.kernel()
 end.record()
 end.synchronize()
@@ -146,6 +150,7 @@ mf_jit._numint.get_rho = rks.generate_get_rho(mol)
 nr_rks = rks.generate_nr_rks(mol, cutoff_fp64=1e-6, cutoff_fp32=1e-13)
 mf_jit._numint.nr_rks = MethodType(nr_rks, mf_jit._numint)
 mf_jit.get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e-6, cutoff_fp32=1e-13)
+mf_jit.get_j = jk.generate_get_j(mol, cutoff_fp64=1e-6, cutoff_fp32=1e-13)
 e_tot = mf_jit.kernel()
 dm_mixed = mf_jit.make_rdm1().get()
 print(f'Total energy by xQC (warmup), {e_tot}')
@@ -156,12 +161,13 @@ start.record()
 for i in range(count):
     nr_rks = rks.generate_nr_rks(mol, cutoff_fp64=1e-6, cutoff_fp32=1e-13)
     mf_jit = dft.RKS(mol, xc=xc)
-    mf_jit.verbose = 4
+    mf_jit.verbose = 6
     mf_jit.grids.atom_grid = (99, 590)
     mf_jit.grids.build = MethodType(build_grids, mf_jit.grids)
     mf_jit._numint.nr_rks = MethodType(nr_rks, mf_jit._numint)
     mf_jit._numint.get_rho = rks.generate_get_rho(mol, cutoff_fp64=1e-6, cutoff_fp32=1e-13)
     mf_jit.get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e-6, cutoff_fp32=1e-13)
+    mf_jit.get_j = jk.generate_get_j(mol, cutoff_fp64=1e-6, cutoff_fp32=1e-13)
     e_mixed = mf_jit.kernel()
 end.record()
 end.synchronize()

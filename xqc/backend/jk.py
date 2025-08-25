@@ -39,7 +39,7 @@ file_path = os.path.join(script_dir, 'data/optimal_scheme_fp64.json')
 with open(file_path, 'r') as f:
     default_frags_fp64 = json.load(f)
 
-@lru_cache(maxsize=2048)
+@lru_cache(maxsize=None)
 def gen_jk_kernel(angulars, nprimitives, dtype=np.double,
                   n_dm=1, do_j=True, do_k=True, omega=None,
                   frags=None, print_log=False):
