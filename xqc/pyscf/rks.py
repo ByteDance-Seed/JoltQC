@@ -161,7 +161,7 @@ def build_grids(grids, mol=None, with_non0tab=False, sort_grids=True, **kwargs):
     return grids
 
 def generate_nr_rks(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    rks_fun, rho_fun, vxc_fun = generate_rks_kernel(mol, cutoff_fp64, cutoff_fp32)
+    rks_fun, _, _ = generate_rks_kernel(mol, cutoff_fp64, cutoff_fp32)
     return rks_fun
 
 def generate_get_rho(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
@@ -297,7 +297,7 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 log_maxval_j, indices_j, nnz_j = ao_sparsity[j]
                 nbas_i = indices_i.shape[1]
                 nbas_j = indices_j.shape[1]
-                script, mod, fun = gen_rho_kernel(ang, nprim, np.float64, ndim)
+                _, _, fun = gen_rho_kernel(ang, nprim, np.float64, ndim)
                 fun(grid_coords, 
                     coords_fp64, coeffs_fp64, exps_fp64, nbas,
                     dm, log_dm_shell, ao_loc, nao, 
@@ -307,7 +307,7 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                     log_cutoff_fp64, log_cutoff_max, ngrids
                 )
                 if cutoff_fp64 > cutoff_fp32:
-                    script, mod, fun = gen_rho_kernel(ang, nprim, np.float32, ndim)
+                    _, _, fun = gen_rho_kernel(ang, nprim, np.float32, ndim)
                     fun(grid_coords, 
                         coords_fp32, coeffs_fp32, exps_fp32, nbas,
                         dm_fp32, log_dm_shell, ao_loc, nao, 
@@ -356,7 +356,7 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 log_maxval_j, indices_j, nnz_j = ao_sparsity[j]
                 nbas_i = indices_i.shape[1]
                 nbas_j = indices_j.shape[1]
-                script, mod, fun = gen_vxc_kernel(ang, nprim, np.float64, ndim)
+                _, _, fun = gen_vxc_kernel(ang, nprim, np.float64, ndim)
                 fun(grid_coords, 
                     coords_fp64, coeffs_fp64, exps_fp64, nbas,
                     vxc, ao_loc, nao,
@@ -366,7 +366,7 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                     log_cutoff_fp64, log_cutoff_max, ngrids
                 )
                 if cutoff_fp64 > cutoff_fp32:
-                    script, mod, fun = gen_vxc_kernel(ang, nprim, np.float32, ndim)
+                    _, _, fun = gen_vxc_kernel(ang, nprim, np.float32, ndim)
                     fun(grid_coords, 
                         coords_fp32, coeffs_fp32, exps_fp32, nbas,
                         vxc, ao_loc, nao,

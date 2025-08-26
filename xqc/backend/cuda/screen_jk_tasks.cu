@@ -177,10 +177,9 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
             }
         }
     }
-    
-    int offset_fp32 = global_offset(batch_head, count_fp32);
-    int offset_fp64 = global_offset(batch_head+1, -count_fp64);
-    
+    int offset_fp32 = global_offset(batch_head+1, count_fp32);
+    int offset_fp64 = global_offset(batch_head+2, -count_fp64) - 1;
+
     if (active){
 #pragma unroll
         for (int i = 0; i < TILE; i++){

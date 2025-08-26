@@ -160,7 +160,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         cutoff = np.log(PAIR_CUTOFF) - log_max_dm
         tile_pairs = make_tile_pairs(group_offset, q_matrix, cutoff)
         
-        info = cp.empty(2, dtype=np.uint32)
+        info = cp.empty(4, dtype=np.uint32)
         logger.debug1(f'Calculate dm_cond and AO pairs')
 
         _, _, gen_tasks_fun = gen_screen_jk_tasks_kernel(do_j=with_j, do_k=with_k, tile=TILE)
@@ -213,7 +213,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         info_cpu = info.get()
                         
                         # FP32 tasks
-                        n_quartets_fp32 = info_cpu[0]
+                        n_quartets_fp32 = info_cpu[1]
                         if n_quartets_fp32 > 0:
                             jk_fp32_kernel = gen_jk_kernel(ang, nprim, do_j=with_j, do_k=with_k, 
                                                            dtype=np.float32, n_dm=n_dm, omega=omega_fp32)
@@ -224,7 +224,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                             ntasks_fp32 += n_quartets_fp32
 
                         # FP64 tasks
-                        offset = info_cpu[1] + 1
+                        offset = info_cpu[2]
                         n_quartets_fp64 = QUEUE_DEPTH - offset
                         if n_quartets_fp64 > 0:
                             jk_fp64_kernel = gen_jk_kernel(ang, nprim, do_j=with_j, do_k=with_k, 
@@ -237,6 +237,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 if logger.verbose > lib.logger.INFO:
                     stream.synchronize()
                     end.record()
+                    end.synchronize()
                     elasped_time = cp.cuda.get_elapsed_time(start, end)
                     ntasks = max(ntasks_fp64 + ntasks_fp32, 1)
                     llll = f'({l_symb[i]}{l_symb[j]}|{l_symb[k]}{l_symb[l]})'
