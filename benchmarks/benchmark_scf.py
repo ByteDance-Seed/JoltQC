@@ -46,6 +46,7 @@ start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
+get_j = jk.generate_get_j(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
 end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
@@ -53,14 +54,17 @@ print("------- Benchmark FP64 ---------")
 print(f"Compilation time, {elapsed_time_ms/count} ms")
 mf_jit = hf.RHF(mol)
 mf_jit.get_jk = get_jk # Overwrite PySCF get_jk function
+mf_jit.get_j = get_j
 e_xqc = mf_jit.kernel()
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 for i in range(count):
     get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
+    get_j = jk.generate_get_j(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
     mf_jit = hf.RHF(mol)
     mf_jit.get_jk = get_jk
+    mf_jit.get_j = get_j
     e_tot = mf_jit.kernel()
 end.record()
 end.synchronize()
@@ -75,6 +79,7 @@ start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e100, cutoff_fp32=1e-13)
+get_j = jk.generate_get_j(mol, cutoff_fp64=1e100, cutoff_fp32=1e-13)
 end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
@@ -82,14 +87,17 @@ print("------ Benchmark FP32 -------")
 print(f"Compilation time, {elapsed_time_ms/count} ms")
 mf_jit = hf.RHF(mol)
 mf_jit.get_jk = get_jk # Overwrite PySCF get_jk function
+mf_jit.get_j = get_j
 e_xqc = mf_jit.kernel()
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 for i in range(count):
     get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e100, cutoff_fp32=1e-13)
+    get_j = jk.generate_get_j(mol, cutoff_fp64=1e100, cutoff_fp32=1e-13)
     mf_jit = hf.RHF(mol)
     mf_jit.get_jk = get_jk
+    mf_jit.get_j = get_j
     e_tot = mf_jit.kernel()
 end.record()
 end.synchronize()

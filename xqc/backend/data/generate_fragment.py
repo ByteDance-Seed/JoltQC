@@ -19,6 +19,11 @@ import cupy as cp
 from pyscf import gto, lib
 from xqc.backend import jk_1qnt as jk_algo1
 from xqc.backend import jk_1q1t as jk_algo0
+from xqc.pyscf.jk import TILE
+
+device_id = cp.cuda.Device().id
+props = cp.cuda.runtime.getDeviceProperties(device_id)
+device_name = props['name'].decode()
 
 '''
 Script for greedy search the optimal fragmentation for the kernel.
@@ -99,19 +104,19 @@ def update_frags(i,j,k,l,dtype_str):
                                 ''')
     xyz = 'gly30.xyz'
     mol = gto.M(atom=xyz, basis=basis, unit='Angstrom')
-    opt = _VHFOpt(mol).build()
+    opt = _VHFOpt(mol)
+    opt.tile = TILE
+    opt.build()
     mol = opt.sorted_mol
 
     nbas = mol.nbas
-    nfragments = nbas//jk.TILE
     dm_cond = cp.ones([nbas, nbas], dtype=np.float32)
     q_cond = cp.ones([nbas, nbas], dtype=np.float32)
-    tile_q_cond = cp.ones([nfragments, nfragments], dtype=np.float32)
+    tile_q_cond = cp.ones([nbas, nbas], dtype=np.float32)
     log_cutoff = -12
     uniq_l_ctr = opt.uniq_l_ctr
     l_ctr_bas_loc = opt.l_ctr_offsets
-    cutoff = np.asarray([-30, 100])
-    tile_pairs = jk.make_tile_pairs(l_ctr_bas_loc, tile_q_cond, cutoff)
+    tile_pairs = jk.make_tile_pairs(l_ctr_bas_loc, tile_q_cond, log_cutoff)
     nao = mol.nao
     dms = cp.empty([nao,nao])
 
@@ -133,12 +138,12 @@ def update_frags(i,j,k,l,dtype_str):
     best_time = 1e100
     best_frag = None
 
-    from xqc.backend.jk_tasks import generate_fill_tasks_kernel
-    script, kernel, gen_tasks_fun = generate_fill_tasks_kernel(tile=jk.TILE)
+    from xqc.backend.jk_tasks import gen_screen_jk_tasks_kernel
+    script, kernel, gen_tasks_fun = gen_screen_jk_tasks_kernel(tile=jk.TILE)
     QUEUE_DEPTH = jk.QUEUE_DEPTH
     cp.get_default_memory_pool().free_all_blocks()
-    pool = cp.empty((QUEUE_DEPTH), dtype=jk.int4_dtype)
-    info = cp.zeros(2, dtype=np.int32)
+    pool = cp.empty((QUEUE_DEPTH), dtype=jk.ushort4_dtype)
+    info = cp.zeros(4, dtype=np.uint32)
 
     gen_tasks_fun(
         pool, info, np.int32(mol.nbas), 
@@ -195,11 +200,19 @@ def update_frags(i,j,k,l,dtype_str):
             best_frag = np.array([-1])
         print(f'{ang} : algorithm 1q1t takes {elapsed_time_ms:.3f}:ms, best time: {best_time:.3f}ms')
     print('Optimal frag:', best_frag)
-    with open(f'optimal_scheme_{dtype_str}.json', 'r') as f:
+
+    filename = f'optimal_scheme_{device_name}_{dtype_str}.json'
+    from pathlib import Path
+    path = Path(filename)
+    if not path.exists():
+        with open(path, "w") as f:
+            json.dump({}, f)   # write empty dict
+
+    with open(filename, 'r') as f:
         data = json.load(f)
     ang_num = 1000*li + 100*lj + 10*lk + ll
     data.update({int(ang_num): best_frag.tolist()})
-    with open(f'optimal_scheme_{dtype_str}.json', 'w') as f: 
+    with open(filename, 'w') as f: 
         json.dump(data, f, indent=4)
 
 if __name__ == "__main__":

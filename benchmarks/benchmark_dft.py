@@ -23,9 +23,9 @@ from xqc.pyscf import jk, rks
 from xqc.pyscf.rks import build_grids
 
 #atom = 'molecules/h2o.xyz'
-atom = 'molecules/0031-irregular-nitrogenous.xyz'
+#atom = 'molecules/0031-irregular-nitrogenous.xyz'
 #atom = 'molecules/0051-elongated-halogenated.xyz'
-#atom = 'molecules/0084-elongated-halogenated.xyz'
+atom = 'molecules/0084-elongated-halogenated.xyz'
 basis = 'def2-tzvpp'
 #xc = 'wb97m-v'
 xc = 'b3lyp'

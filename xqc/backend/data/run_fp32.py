@@ -26,6 +26,8 @@ import queue
 script_dir = os.path.dirname(__file__)
 env_cmd = f'export PYTHONPATH="${{PYTHONPATH}}:{script_dir}/../../../"'
 
+os.makedirs("logs", exist_ok=True)
+
 n_groups = 5
 commands = []
 # 8-fold symmetry is applied
