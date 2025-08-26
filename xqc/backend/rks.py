@@ -20,6 +20,7 @@ Generate kernels for incremental DFT
 import numpy as np
 import cupy as cp
 from pathlib import Path
+from functools import lru_cache
 code_path = Path(__file__).resolve().parent
 
 __all__ = ['gen_rho_kernel', 'gen_vxc_kernel']
@@ -30,6 +31,7 @@ nthreads = 256
 with open(f'{code_path}/cuda/eval_rho.cu', 'r') as f:
     eval_rho_cuda_code = f.read()
 
+@lru_cache(maxsize=None)
 def gen_rho_kernel(ang, nprim, dtype, ndim=1, print_log=False):
     """
     ndim: 
@@ -86,6 +88,7 @@ local memory: {kernel.local_size_bytes:4d} Bytes')
 with open(f'{code_path}/cuda/eval_vxc.cu', 'r') as f:
     eval_vxc_cuda_code = f.read()
 
+@lru_cache(maxsize=None)
 def gen_vxc_kernel(ang, nprim, dtype, ndim=1, print_log=False):
     """
     ndim: 

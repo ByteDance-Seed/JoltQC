@@ -30,11 +30,11 @@ QUEUE_DEPTH = MAX_PAIR_SIZE * MAX_PAIR_SIZE # 2 GB
 
 compile_options = ('-std=c++17','--use_fast_math', '--minimal')
 
-buf = cp.cuda.alloc_pinned_memory(2 * np.uint32().nbytes)
-info_init = np.frombuffer(buf, dtype=np.uint32, count=2)
-info_init[:] = (0, QUEUE_DEPTH - 1)
+buf = cp.cuda.alloc_pinned_memory(4 * np.uint32().nbytes)
+info_init = np.frombuffer(buf, dtype=np.uint32, count=4)
+info_init[:] = (0, 0, QUEUE_DEPTH, QUEUE_DEPTH)
 
-@lru_cache(maxsize=2048)
+@lru_cache(maxsize=None)
 def gen_screen_jk_tasks_kernel(do_j=True, do_k=True, omega=None, tile=2):
     if omega is None:
         rys_type = 0
