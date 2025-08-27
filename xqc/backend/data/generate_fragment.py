@@ -133,8 +133,8 @@ def update_frags(i,j,k,l,dtype_str):
     lj, jp = uniq_l_ctr[j]
     lk, kp = uniq_l_ctr[k] 
     ll, lp = uniq_l_ctr[l]
-    ang = (li, lj, lk, ll)
-    nprim = (ip, jp, kp, lp)
+    ang = (li.item(), lj.item(), lk.item(), ll.item())
+    nprim = (ip.item(), jp.item(), kp.item(), lp.item())
     best_time = 1e100
     best_frag = None
 
@@ -177,7 +177,7 @@ def update_frags(i,j,k,l,dtype_str):
         if elapsed_time_ms < best_time:
             best_time = elapsed_time_ms
             best_frag = frag
-        print(f'{ang} : algorithm 1qnt with frag {frag} takes \
+        print(f'{ang}/{nprim} : algorithm 1qnt with frag {frag} takes \
 {elapsed_time_ms:.3f}ms, best time: {best_time:.3f}ms')
     
     # No need to check 1q1t algorithm for low-angular momentum

@@ -155,7 +155,6 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
         # J: q_ab * q_cd * p_cd < cutoff_min
         # K: q_ac * q_bd * p_cd < cutoff_min
-
         # cutoff absorbs sqrt(p_cd)
         cutoff = np.log(PAIR_CUTOFF) - log_max_dm
         tile_pairs = make_tile_pairs(group_offset, q_matrix, cutoff)
@@ -281,7 +280,8 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 logger.debug1(f'{llll} wall time {t:.2f} ms')
 
         cputime_end  = time.perf_counter()
-        logger.debug1(f'vj and vk take {cputime_end - cputime_start:.2f} s')
+        cputime = (cputime_end - cputime_start)
+        logger.info(f'vj = {with_j} and vk = {with_k} take {cputime:.3f} sec')
         return vj, vk
     return get_jk
 
