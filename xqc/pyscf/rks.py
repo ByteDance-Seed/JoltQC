@@ -189,7 +189,8 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     log_cutoff_fp32 = np.log(cutoff_fp32).astype(np.float32)
     log_cutoff_fp64 = np.log(cutoff_fp64).astype(np.float32)
     log_cutoff_max = np.log(1e100).astype(np.float32)
-
+    logger = lib.logger.new_logger(mol, mol.verbose)
+    
     _cache = {'dm_prev': 0, 'rho_prev': 0, 'wv_prev': 0, 'vxcmat_prev': 0}
     def rks_fun(ni, mol, grids, xc_code, dm, max_memory=2000, verbose=None):
         """ rks kernel for PySCF, with incremental DFT implementation
@@ -208,7 +209,7 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             excsum: exchange correlation energy
             vxcmat: vxc matrix
         """
-
+        cputime_start  = time.perf_counter()
         dm_prev = _cache['dm_prev']
         rho_prev = _cache['rho_prev']
         wv_prev = _cache['wv_prev']
@@ -252,6 +253,9 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         _cache['rho_prev'] = rho
         _cache['wv_prev'] = wv
         _cache['vxcmat_prev'] = vxcmat.copy()
+        cputime_end  = time.perf_counter()
+        cputime = (cputime_end - cputime_start)
+        logger.info(f'vxc takes {cputime:.3f} sec')
 
         return nelec, excsum, vxcmat
 

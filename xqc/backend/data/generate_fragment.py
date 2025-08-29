@@ -19,11 +19,10 @@ import cupy as cp
 from pyscf import gto, lib
 from xqc.backend import jk_1qnt as jk_algo1
 from xqc.backend import jk_1q1t as jk_algo0
+from xqc.backend.jk import device_name
 from xqc.pyscf.jk import TILE
 
-device_id = cp.cuda.Device().id
-props = cp.cuda.runtime.getDeviceProperties(device_id)
-device_name = props['name'].decode()
+
 
 '''
 Script for greedy search the optimal fragmentation for the kernel.

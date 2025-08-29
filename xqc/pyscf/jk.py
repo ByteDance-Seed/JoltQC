@@ -242,7 +242,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                     llll = f'({l_symb[i]}{l_symb[j]}|{l_symb[k]}{l_symb[l]})'
                     msg_kernel = f'kernel type {llll}/({ip}{jp}{kp}{lp}), '
                     msg_fp64 = f'FP64 tasks = {ntasks_fp64:10d}, '
-                    msg_fp32 = f'FP32 tasks = {ntasks_fp32:10d}, {elasped_time:5.2f} ms, '
+                    msg_fp32 = f'FP32 tasks = {ntasks_fp32:10d}, total time = {elasped_time:5.2f} ms, '
                     msg_ratio = f'FP64 ratio = {ntasks_fp64/ntasks:.2f}'
                     msg = msg_kernel + msg_fp64 + msg_fp32 + msg_ratio
                     logger.debug1(msg)

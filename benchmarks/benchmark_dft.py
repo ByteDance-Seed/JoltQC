@@ -23,9 +23,9 @@ from xqc.pyscf import jk, rks
 from xqc.pyscf.rks import build_grids
 
 #atom = 'molecules/h2o.xyz'
-#atom = 'molecules/0031-irregular-nitrogenous.xyz'
+atom = 'molecules/0031-irregular-nitrogenous.xyz'
 #atom = 'molecules/0051-elongated-halogenated.xyz'
-atom = 'molecules/0084-elongated-halogenated.xyz'
+#atom = 'molecules/0084-elongated-halogenated.xyz'
 basis = 'def2-tzvpp'
 #xc = 'wb97m-v'
 xc = 'b3lyp'
@@ -65,7 +65,7 @@ cp.get_default_memory_pool().free_all_blocks()
 # FP64 precision
 #######################
 
-mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}-fp64.log', verbose=4)
+mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}-fp64.log', verbose=6)
 #mol = pyscf.M(atom=atom, basis=basis, verbose=0)
 mf_jit = dft.RKS(mol, xc=xc)
 mf_jit.verbose = 4
@@ -86,7 +86,7 @@ start.record()
 for i in range(count):
     nr_rks = rks.generate_nr_rks(mol)
     mf_jit = dft.RKS(mol, xc=xc)
-    mf_jit.verbose = 4
+    mf_jit.verbose = 6
     mf_jit.grids.atom_grid = (99, 590)
     mf_jit.grids.build = MethodType(build_grids, mf_jit.grids)
     mf_jit._numint.nr_rks = MethodType(nr_rks, mf_jit._numint)
@@ -104,7 +104,7 @@ print(f'Total energy by xQC, {e_tot}')
 # FP32 precision
 #######################
 
-mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}-fp32.log', verbose=4)
+mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}-fp32.log', verbose=6)
 #mol = pyscf.M(atom=atom, basis=basis, verbose=0)
 mf_jit = dft.RKS(mol, xc=xc)
 mf_jit.verbose = 4
@@ -125,7 +125,7 @@ start.record()
 for i in range(count):
     nr_rks = rks.generate_nr_rks(mol, cutoff_fp64=1e-6, cutoff_fp32=1e-13)
     mf_jit = dft.RKS(mol, xc=xc)
-    mf_jit.verbose = 4
+    mf_jit.verbose = 6
     mf_jit.grids.atom_grid = (99, 590)
     mf_jit.grids.build = MethodType(build_grids, mf_jit.grids)
     mf_jit._numint.nr_rks = MethodType(nr_rks, mf_jit._numint)
@@ -144,7 +144,7 @@ print(f'Total energy by xQC, {e_tot}')
 ##########################
 
 cp.get_default_memory_pool().free_all_blocks()
-mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}-fp32+fp64.log', verbose=4)
+mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}-fp32+fp64.log', verbose=6)
 mf_jit = dft.RKS(mol, xc=xc)
 mf_jit.verbose = 4
 mf_jit.grids.atom_grid = (99, 590)
@@ -164,7 +164,7 @@ start.record()
 for i in range(count):
     nr_rks = rks.generate_nr_rks(mol, cutoff_fp64=1e-6, cutoff_fp32=1e-13)
     mf_jit = dft.RKS(mol, xc=xc)
-    mf_jit.verbose = 4
+    mf_jit.verbose = 6
     mf_jit.grids.atom_grid = (99, 590)
     mf_jit.grids.build = MethodType(build_grids, mf_jit.grids)
     mf_jit._numint.nr_rks = MethodType(nr_rks, mf_jit._numint)
