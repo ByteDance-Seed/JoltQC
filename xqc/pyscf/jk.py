@@ -67,6 +67,19 @@ def generate_get_jk(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         return get_jk_kernel(*args, **kwargs)
     return get_jk
 
+def generate_get_veff(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    get_jk_kernel = generate_jk_kernel(mol, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
+    def get_veff(mf, mol=None, dm=None, dm_last=None, vhf_last=None, hermi=1):
+        if dm is None: dm = mf.make_rdm1()
+        if dm_last is not None and mf.direct_scf:
+            dm = asarray(dm) - asarray(dm_last)
+        vj, vk = mf.get_jk(mol, dm, hermi)
+        vhf = vj -.5 * vk
+        if vhf_last is not None:
+            vhf += asarray(vhf_last)
+        return vhf
+    return get_veff
+
 def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     bas_cache, bas_mapping, padding_mask, group_info = sort_group_basis(mol, alignment=TILE)
     # TODO: Q matrix for short-range

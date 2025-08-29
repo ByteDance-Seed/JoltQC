@@ -70,4 +70,12 @@ def compile(obj, jit=True, cutoff_fp32=1e-13, cutoff_fp64=1e-13):
         if hasattr(obj, 'get_k'):
             get_k = jk.generate_get_k(mol, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)
             obj.get_k = get_k
+        
+        if obj.istype('RHF'):
+            get_veff = jk.generate_get_veff(mol, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)
+            obj.get_veff = MethodType(get_veff, obj)
+        
+        if obj.istype('RKS'):
+            get_veff = rks.generate_get_veff(mol, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)
+            obj.get_veff = MethodType(get_veff, obj)
     return obj

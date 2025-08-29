@@ -26,6 +26,7 @@ import time
 import numpy as np
 import cupy as cp
 from pyscf import lib
+from pyscf.lib import logger
 from pyscf.dft import libxc
 from pyscf.dft.gen_grid import GROUP_BOUNDARY_PENALTY
 from xqc.backend.linalg_helper import max_block_pooling, inplace_add_transpose
@@ -159,6 +160,79 @@ def build_grids(grids, mol=None, with_non0tab=False, sort_grids=True, **kwargs):
 
     grids._non0ao_idx = None
     return grids
+
+def generate_get_veff(mol, cutoff_fp32=1e-13, cutoff_fp64=1e-13):
+    from gpu4pyscf.dft.rks import initialize_grids
+    from gpu4pyscf.lib.cupy_helper import tag_array
+    def get_veff(ks, mol=None, dm=None, dm_last=0, vhf_last=0, hermi=1):
+        if mol is None: mol = ks.mol
+        if dm is None: dm = ks.make_rdm1()
+        t0 = (logger.process_clock(), logger.perf_counter())
+        initialize_grids(ks, mol, dm)
+
+        ground_state = getattr(dm, 'ndim', 0) == 2
+
+        ni = ks._numint
+        if hermi == 2:  # because rho = 0
+            n, exc, vxc = 0, 0, 0
+        else:
+            n, exc, vxc = ni.nr_rks(mol, ks.grids, ks.xc, dm)
+            if ks.do_nlc():
+                if ni.libxc.is_nlc(ks.xc):
+                    xc = ks.xc
+                else:
+                    assert ni.libxc.is_nlc(ks.nlc)
+                    xc = ks.nlc
+                n, enlc, vnlc = ni.nr_nlc_vxc(mol, ks.nlcgrids, xc, dm)
+
+                exc += enlc
+                vxc += vnlc
+            logger.debug(ks, 'nelec by numeric integration = %s', n)
+        t0 = logger.timer_debug1(ks, 'vxc tot', *t0)
+
+        if not ni.libxc.is_hybrid_xc(ks.xc):
+            vk = None
+            if (ks._eri is None and ks.direct_scf and
+                getattr(vhf_last, 'vj', None) is not None):
+                ddm = cp.asarray(dm) - cp.asarray(dm_last)
+                vj = ks.get_j(mol, ddm, hermi)
+                vj += vhf_last.vj
+            else:
+                vj = ks.get_j(mol, dm, hermi)
+
+            vxc += vj
+        else:
+            omega, alpha, hyb = ni.rsh_and_hybrid_coeff(ks.xc, spin=mol.spin)
+            if (ks._eri is None and ks.direct_scf and
+                getattr(vhf_last, 'vk', None) is not None):
+                ddm = cp.asarray(dm) - cp.asarray(dm_last)
+                vj, vk = ks.get_jk(mol, ddm, hermi)
+                vk *= hyb
+                if abs(omega) > 1e-10:  # For range separated Coulomb operator
+                    vklr = ks.get_k(mol, ddm, hermi, omega=omega)
+                    vklr *= (alpha - hyb)
+                    vk += vklr
+                vj += vhf_last.vj
+                vk += vhf_last.vk
+            else:
+                vj, vk = ks.get_jk(mol, dm, hermi)
+                vk *= hyb
+                if abs(omega) > 1e-10:
+                    vklr = ks.get_k(mol, dm, hermi, omega=omega)
+                    vklr *= (alpha - hyb)
+                    vk += vklr
+            vxc += vj - vk * .5
+            if ground_state:
+                exc -= cp.einsum('ij,ji', dm, vk).real * .5 * .5
+        
+        if ground_state:
+            ecoul = cp.einsum('ij,ji', dm, vj).real * .5
+        else:
+            ecoul = None
+        t0 = logger.timer_debug1(ks, 'veff', *t0)
+        vxc = tag_array(vxc, ecoul=ecoul, exc=exc, vj=vj, vk=vk)
+        return vxc
+    return get_veff
 
 def generate_nr_rks(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     rks_fun, _, _ = generate_rks_kernel(mol, cutoff_fp64, cutoff_fp32)

@@ -16,11 +16,11 @@
 import cupy as cp
 import pyscf
 from gpu4pyscf.scf import hf
-from xqc.pyscf import jk
+import xqc.pyscf
 
-#atom = 'molecules/h2o.xyz'
+atom = 'molecules/h2o.xyz'
 #atom = 'molecules/0031-irregular-nitrogenous.xyz'
-atom = 'molecules/0112-elongated-nitrogenous.xyz'
+#atom = 'molecules/0112-elongated-nitrogenous.xyz'
 basis = 'def2-tzvpp'#'6-31gs'
 count = 1
 
@@ -46,26 +46,20 @@ mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}-fp64.log', verbose=4,
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
-get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
-get_j = jk.generate_get_j(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
+mf = hf.RHF(mol)
+mf_jit = xqc.pyscf.compile(mf)
 end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
 print("------- Benchmark FP64 ---------")
 print(f"Compilation time, {elapsed_time_ms/count:.3f} ms")
-mf_jit = hf.RHF(mol)
-mf_jit.get_jk = get_jk # Overwrite PySCF get_jk function
-mf_jit.get_j = get_j
 e_xqc = mf_jit.kernel()
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 for i in range(count):
-    get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
-    get_j = jk.generate_get_j(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
-    mf_jit = hf.RHF(mol)
-    mf_jit.get_jk = get_jk
-    mf_jit.get_j = get_j
+    mf = hf.RHF(mol)
+    mf_jit = xqc.pyscf.compile(mf)
     e_tot = mf_jit.kernel()
 end.record()
 end.synchronize()
@@ -79,27 +73,20 @@ mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}-fp32.log', verbose=4,
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
-get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e100, cutoff_fp32=1e-13)
-get_j = jk.generate_get_j(mol, cutoff_fp64=1e100, cutoff_fp32=1e-13)
+mf = hf.RHF(mol)
+mf_jit = xqc.pyscf.compile(mf)
 end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
 print("------ Benchmark FP32 -------")
 print(f"Compilation time, {elapsed_time_ms/count:.3f} ms")
-mf_jit = hf.RHF(mol)
-mf_jit.get_jk = get_jk # Overwrite PySCF get_jk function
-mf_jit.get_j = get_j
 e_xqc = mf_jit.kernel()
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 for i in range(count):
-    get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e100, cutoff_fp32=1e-13)
-    get_j = jk.generate_get_j(mol, cutoff_fp64=1e100, cutoff_fp32=1e-13)
-    mf_jit = hf.RHF(mol)
-    #mf_jit.verbose = 4
-    mf_jit.get_jk = get_jk
-    mf_jit.get_j = get_j
+    mf = hf.RHF(mol)
+    mf_jit = xqc.pyscf.compile(mf)
     e_tot = mf_jit.kernel()
 end.record()
 end.synchronize()
