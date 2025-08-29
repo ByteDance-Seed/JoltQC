@@ -14,7 +14,7 @@
 #
 
 """
-Global constants used throughout the JoltQC package.
+Global constants used throughout the jqc package.
 """
 
 # Maximum angular momentum supported
