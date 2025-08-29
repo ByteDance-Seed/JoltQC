@@ -17,7 +17,7 @@ import cupy as cp
 import pyscf
 from pyscf import gto
 from gpu4pyscf import scf
-from xqc.pyscf import jk
+from jqc.pyscf import jk
 
 basis = gto.basis.parse('''
 #H   P

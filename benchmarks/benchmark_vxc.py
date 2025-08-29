@@ -18,7 +18,7 @@ import cupy as cp
 import pyscf
 from pyscf import gto
 from gpu4pyscf import scf, dft
-from xqc.pyscf import rks
+from jqc.pyscf import rks
 
 basis = gto.basis.parse('''
 #O    S
@@ -58,7 +58,7 @@ dm = mf.get_init_guess()
 
 dm = cp.ones_like(dm)
 
-from xqc.pyscf.rks import build_grids
+from jqc.pyscf.rks import build_grids
 from types import MethodType
 mf.grids.build = MethodType(build_grids, mf.grids)
 grids = mf.grids

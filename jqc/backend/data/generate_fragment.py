@@ -17,8 +17,9 @@ import json
 import numpy as np
 import cupy as cp
 from pyscf import gto, lib
-from xqc.backend import jk_1qnt as jk_algo1
-from xqc.backend import jk_1q1t as jk_algo0
+# Import moved inside function to avoid circular dependency
+# from jqc.backend import jk_1qnt as jk_algo1
+# from jqc.backend import jk_1q1t as jk_algo0
 
 '''
 Script for greedy search the optimal fragmentation for the kernel.
@@ -69,11 +70,19 @@ def generate_fragments(ang, max_threads = 256):
                         continue
                     yield fragments
 
-from xqc.pyscf import jk
-from xqc.pyscf.mol import format_bas_cache
-from gpu4pyscf.scf.jk import _VHFOpt
+# Import moved inside function to avoid circular dependency
+# from jqc.pyscf import jk
+# from jqc.pyscf.mol import format_bas_cache
+# from gpu4pyscf.scf.jk import _VHFOpt
 
 def update_frags(i,j,k,l,dtype_str):
+    # Import here to avoid circular dependency
+    from jqc.pyscf import jk
+    from jqc.pyscf.mol import format_bas_cache
+    from gpu4pyscf.scf.jk import _VHFOpt
+    from jqc.backend import jk_1qnt as jk_algo1
+    from jqc.backend import jk_1q1t as jk_algo0
+    
     if dtype_str=='fp32':
         dtype = np.float32
     elif dtype_str=='fp64':
@@ -133,7 +142,7 @@ def update_frags(i,j,k,l,dtype_str):
     best_time = 1e100
     best_frag = None
 
-    from xqc.backend.jk_tasks import generate_fill_tasks_kernel
+    from jqc.backend.jk_tasks import generate_fill_tasks_kernel
     script, kernel, gen_tasks_fun = generate_fill_tasks_kernel(tile=jk.TILE)
     QUEUE_DEPTH = jk.QUEUE_DEPTH
     cp.get_default_memory_pool().free_all_blocks()

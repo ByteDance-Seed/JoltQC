@@ -18,8 +18,8 @@ import numpy as np
 import unittest
 from types import MethodType
 import cupy as cp
-import xqc.pyscf
-from xqc.pyscf import rks, jk
+import jqc.pyscf
+from jqc.pyscf import rks, jk
 from gpu4pyscf import dft
 
 atom = '''

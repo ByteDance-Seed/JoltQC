@@ -16,7 +16,7 @@
 import pytest
 import cupy as cp
 import numpy as np
-from xqc.backend.linalg_helper import inplace_add_transpose, max_block_pooling
+from jqc.backend.linalg_helper import inplace_add_transpose, max_block_pooling
 
 def test_inplace_add_transpose():
     """Tests the inplace_add_transpose function for correctness."""

@@ -21,8 +21,8 @@ import os
 import threading
 import numpy as np
 import json
-from xqc.backend.jk_1q1t import gen_kernel as jk_1q1t_kernel
-from xqc.backend.jk_1qnt import gen_kernel as jk_1qnt_kernel
+from jqc.backend.jk_1q1t import gen_kernel as jk_1q1t_kernel
+from jqc.backend.jk_1qnt import gen_kernel as jk_1qnt_kernel
 from functools import lru_cache
 
 __all__ = ['gen_jk_kernel']
