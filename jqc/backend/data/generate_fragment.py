@@ -17,16 +17,7 @@ import json
 import numpy as np
 import cupy as cp
 from pyscf import gto, lib
-<<<<<<< HEAD:xqc/backend/data/generate_fragment.py
-from xqc.backend import jk_1qnt as jk_algo1
-from xqc.backend import jk_1q1t as jk_algo0
-from xqc.backend.jk import device_name
-from xqc.pyscf.jk import TILE
-
-
-=======
 from jqc.constants import TILE
->>>>>>> main:jqc/backend/data/generate_fragment.py
 
 '''
 Script for greedy search the optimal fragmentation for the kernel.

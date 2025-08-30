@@ -23,8 +23,8 @@
 
 import time
 import numpy as np
-from jqc.backend.jk_1qnt import gen_kernel
-#from jqc.backend.jk_1q1t import gen_kernel
+#from jqc.backend.jk_1qnt import gen_kernel
+from jqc.backend.jk_1q1t import gen_kernel
 
 # angular momentum
 li, lj, lk, ll = 0, 0, 0, 0
