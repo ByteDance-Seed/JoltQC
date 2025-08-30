@@ -21,23 +21,35 @@ import os
 import threading
 import numpy as np
 import json
+import cupy as cp
+from pathlib import Path
+from functools import lru_cache
 from jqc.backend.jk_1q1t import gen_kernel as jk_1q1t_kernel
 from jqc.backend.jk_1qnt import gen_kernel as jk_1qnt_kernel
-from functools import lru_cache
+
+device_id = cp.cuda.Device().id
+props = cp.cuda.runtime.getDeviceProperties(device_id)
+device_name = props['name'].decode()
 
 __all__ = ['gen_jk_kernel']
 
 cache_lock = threading.Lock()
 
-# Default fragmentation scheme, support FP32 and FP64 only
+# Load fragmentation scheme for 1qnt, support FP32 and FP64 only
 script_dir = os.path.dirname(__file__)
-file_path = os.path.join(script_dir, 'data/optimal_scheme_fp32.json')
-with open(file_path, 'r') as f:
-    default_frags_fp32 = json.load(f)
+file_path = os.path.join(script_dir, f'data/optimal_scheme_{device_name}_fp32.json')
+if not Path(file_path).exists():
+    file_path = os.path.join(script_dir, 'data/optimal_scheme_default_fp32.json')
 
-file_path = os.path.join(script_dir, 'data/optimal_scheme_fp64.json')
 with open(file_path, 'r') as f:
-    default_frags_fp64 = json.load(f)
+    frags_fp32 = json.load(f)
+
+file_path = os.path.join(script_dir, f'data/optimal_scheme_{device_name}_fp64.json')
+if not Path(file_path).exists():
+    file_path = os.path.join(script_dir, 'data/optimal_scheme_default_fp64.json')
+    
+with open(file_path, 'r') as f:
+    frags_fp64 = json.load(f)
 
 @lru_cache(maxsize=None)
 def gen_jk_kernel(angulars, nprimitives, dtype=np.double,
@@ -52,9 +64,9 @@ def gen_jk_kernel(angulars, nprimitives, dtype=np.double,
         li, lj, lk, ll = angulars
         ijkl_str = key = str(li*1000 + lj*100 + lk*10 + ll)
         if dtype == np.double:
-            frags = default_frags_fp64
+            frags = frags_fp64
         elif dtype == np.float32:
-            frags = default_frags_fp32
+            frags = frags_fp32
         else:
             raise RuntimeError('Data type is not supported')
         if ijkl_str in frags:
@@ -82,7 +94,7 @@ if __name__ == "__main__":
     #for li, lj, lk, ll in [[2,2,2,2]]:
     li = lj = lk = ll = 3
     ijkl_str = key = str(li*1000 + lj*100 + lk*10 + ll)
-    opt_frags = np.array(default_frags_fp32[ijkl_str])
+    opt_frags = np.array(frags_fp32[ijkl_str])
     start = time.perf_counter()
     for i in range(10):
         code, kernel, fun = jk_1qnt_kernel(
