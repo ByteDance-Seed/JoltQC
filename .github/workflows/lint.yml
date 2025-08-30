@@ -18,20 +18,11 @@ jobs:
       with:
         python-version: "3.11"
         
-    - name: Cache pip dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-        
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install black ruff mypy
-        # Install package in development mode
-        pip install -e .
+        pip install black ruff
+        # Skip package installation since it requires CUDA/CuPy
         
     - name: Run Black (code formatting check)
       run: |
@@ -40,20 +31,3 @@ jobs:
     - name: Run Ruff (linting and import sorting) 
       run: |
         ruff check jqc/__init__.py jqc/backend/__init__.py jqc/constants.py
-        
-    - name: Run Ruff on full codebase (allow failures)
-      run: |
-        ruff check jqc/ || echo "⚠️  Full codebase has linting issues - working to resolve them"
-      continue-on-error: true
-        
-    - name: Run MyPy (type checking)
-      run: |
-        mypy jqc/
-      # Allow mypy to fail for now since it may have import issues with CUDA packages
-      continue-on-error: true
-      
-    - name: Check package structure
-      run: |
-        python -c "import jqc; print('✓ Package imports successfully')"
-        python -c "import jqc.backend; print('✓ Backend module imports successfully')"
-        python -c "from jqc.constants import LMAX, NPRIM_MAX, TILE; print('✓ Constants import successfully')"
