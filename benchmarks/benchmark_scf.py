@@ -15,85 +15,83 @@
 
 import cupy as cp
 import pyscf
+from pyscf import lib
 from gpu4pyscf.scf import hf
-from jqc.pyscf import jk
+import jqc.pyscf
 
 #atom = 'molecules/h2o.xyz'
 atom = 'molecules/0031-irregular-nitrogenous.xyz'
+#atom = 'molecules/0112-elongated-nitrogenous.xyz'
 basis = 'def2-tzvpp'#'6-31gs'
-count = 1
+count = 3
+verbose = 0
 
-mol = pyscf.M(atom=atom, basis=basis, output=f'gpu4pyscf_{basis}.log', verbose=5, cart=1)
+lib.num_threads(8)
+
+mol = pyscf.M(atom=atom, basis=basis, output=f'gpu4pyscf_{basis}.log', verbose=verbose, cart=1)
 mf = hf.RHF(mol)
-mf.verbose = 4
+mf.verbose = verbose
 e_pyscf = mf.kernel()
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 for i in range(count):
     mf = hf.RHF(mol)
-    mf.verbose = 4
+    mf.verbose = verbose
     e_tot = mf.kernel()
 end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
-print(f"Time with GPU4PySCF, {elapsed_time_ms/count} ms")
-print(e_tot)
+print(f"Time with GPU4PySCF, {elapsed_time_ms/count:.3f} ms")
+print(f"Total energy GPU4PySCF, {e_tot}")
 
-mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}.log', verbose=4, cart=1)
-#mol = pyscf.M(atom=atom, basis=basis, verbose=0, cart=1)
+mol = pyscf.M(atom=atom, basis=basis, output=f'jqc-{basis}-fp64.log', verbose=verbose, cart=1)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
-get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
+mf = hf.RHF(mol)
+mf_jit = jqc.pyscf.compile(mf)
 end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
 print("------- Benchmark FP64 ---------")
-print(f"Compilation time, {elapsed_time_ms/count} ms")
-mf_jit = hf.RHF(mol)
-mf_jit.get_jk = get_jk # Overwrite PySCF get_jk function
-e_xqc = mf_jit.kernel()
+print(f"Compilation time, {elapsed_time_ms/count:.3f} ms")
+e_jqc = mf_jit.kernel()
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 for i in range(count):
-    get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
-    mf_jit = hf.RHF(mol)
-    mf_jit.get_jk = get_jk
+    mf = hf.RHF(mol)
+    mf_jit = jqc.pyscf.compile(mf)
     e_tot = mf_jit.kernel()
 end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
-print(f"Time with xQC, {elapsed_time_ms/count} ms")
-print(e_tot)
-print(e_pyscf - e_xqc)
+print(f"Time with JQC, {elapsed_time_ms/count:.3f} ms")
+print(f"Total energy by JQC / FP64, {e_tot}")
 
-mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}.log', verbose=4, cart=1)
-#mol = pyscf.M(atom=atom, basis=basis, verbose=0, cart=1)
+mol = pyscf.M(atom=atom, basis=basis, output=f'jqc-{basis}-fp32.log', verbose=verbose, cart=1)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
-get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e100, cutoff_fp32=1e-13)
+mf = hf.RHF(mol)
+mf_jit = jqc.pyscf.compile(mf, cutoff_fp32=1e-13, cutoff_fp64=1e100)
 end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
 print("------ Benchmark FP32 -------")
-print(f"Compilation time, {elapsed_time_ms/count} ms")
-mf_jit = hf.RHF(mol)
-mf_jit.get_jk = get_jk # Overwrite PySCF get_jk function
-e_xqc = mf_jit.kernel()
+print(f"Compilation time, {elapsed_time_ms/count:.3f} ms")
+e_jqc = mf_jit.kernel()
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 for i in range(count):
-    get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e100, cutoff_fp32=1e-13)
-    mf_jit = hf.RHF(mol)
-    mf_jit.get_jk = get_jk
+    mf = hf.RHF(mol)
+    mf_jit = jqc.pyscf.compile(mf, cutoff_fp32=1e-13, cutoff_fp64=1e100)
     e_tot = mf_jit.kernel()
 end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
-print(f"Time with xQC, {elapsed_time_ms/count} ms")
-print(e_tot)
-print(e_pyscf - e_xqc)
+print(f"Time with JQC, {elapsed_time_ms/count:.3f} ms")
+print(f"Total energy by JQC / FP32, {e_tot}")
+print(e_pyscf - e_jqc)

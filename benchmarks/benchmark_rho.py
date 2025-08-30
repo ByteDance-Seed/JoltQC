@@ -85,7 +85,7 @@ print(f"Time with GPU4PySCF, {gpu4pyscf_time_ms}")
 #gpu4pyscf_time_ms = 0.0
 #rho_pyscf = 0
 
-###### xQC / FP64 #######
+###### JQC / FP64 #######
 _, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
 # Warm up
 for i in range(n_warmup):
@@ -94,62 +94,62 @@ start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mol.verbose = 4
-rho_xqc = rho_kern(mol, grids, xctype, dm)
+rho_jqc = rho_kern(mol, grids, xctype, dm)
 mol.verbose = 4
 end.record()
 end.synchronize()
-xqc_time_ms = cp.cuda.get_elapsed_time(start, end)
+jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
 
 print("==========Benchmark with FP64===================")
-print(f"Time with xQC, {xqc_time_ms}")
-print(f"Speedup: {gpu4pyscf_time_ms/xqc_time_ms}")
-rho_diff = rho_pyscf - rho_xqc
+print(f"Time with JQC, {jqc_time_ms}")
+print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
+rho_diff = rho_pyscf - rho_jqc
 print('rho[0] diff:', cp.linalg.norm(rho_diff[0]))
 print('rho[1:4] diff:', cp.linalg.norm(rho_diff[1:]))
 
-###### xQC / FP32 #######
+###### JQC / FP32 #######
 _, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, cutoff_fp64=1e100, cutoff_fp32=1e-13)
 # Warm up
 for i in range(n_warmup):
-    rho_xqc = rho_kern(mol, grids, xctype, dm)
+    rho_jqc = rho_kern(mol, grids, xctype, dm)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mol.verbose = 4
-rho_xqc = rho_kern(mol, grids, xctype, dm)
+rho_jqc = rho_kern(mol, grids, xctype, dm)
 mol.verbose = 4
 end.record()
 end.synchronize()
-xqc_time_ms = cp.cuda.get_elapsed_time(start, end)
+jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
 
 print("Benchmark with FP32")
-print(f"Time with xQC, {xqc_time_ms}")
-print(f"Speedup: {gpu4pyscf_time_ms/xqc_time_ms}")
-rho_diff = rho_pyscf - rho_xqc
+print(f"Time with JQC, {jqc_time_ms}")
+print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
+rho_diff = rho_pyscf - rho_jqc
 print('rho[0] diff:', cp.linalg.norm(rho_diff[0]))
 print('rho[1] diff:', cp.linalg.norm(rho_diff[1]))
 print('rho[2] diff:', cp.linalg.norm(rho_diff[2]))
 print('rho[3] diff:', cp.linalg.norm(rho_diff[3]))
 
-###### xQC / FP32 + FP64 #######
+###### JQC / FP32 + FP64 #######
 _, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, cutoff_fp64=1e-7, cutoff_fp32=1e-13)
 # Warm up
 for i in range(n_warmup):
-    rho_xqc = rho_kern(mol, grids, xctype, dm)
+    rho_jqc = rho_kern(mol, grids, xctype, dm)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mol.verbose = 4
-rho_xqc = rho_kern(mol, grids, xctype, dm)
+rho_jqc = rho_kern(mol, grids, xctype, dm)
 mol.verbose = 4
 end.record()
 end.synchronize()
-xqc_time_ms = cp.cuda.get_elapsed_time(start, end)
+jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
 
 print("Benchmark with FP32 + FP64")
-print(f"Time with xQC, {xqc_time_ms}")
-print(f"Speedup: {gpu4pyscf_time_ms/xqc_time_ms}")
-rho_diff = rho_pyscf - rho_xqc
+print(f"Time with JQC, {jqc_time_ms}")
+print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
+rho_diff = rho_pyscf - rho_jqc
 print('rho[0] diff:', cp.linalg.norm(rho_diff[0]))
 print('rho[1] diff:', cp.linalg.norm(rho_diff[1]))
 print('rho[2] diff:', cp.linalg.norm(rho_diff[2]))

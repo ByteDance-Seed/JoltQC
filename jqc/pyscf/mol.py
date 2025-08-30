@@ -27,7 +27,7 @@ PTR_BAS_COORD = 7
 
 def format_bas_cache(sorted_mol, dtype=np.float64):
     """
-    Format the basis cache used in xQC.
+    Format the basis cache used in JQC.
     coords:    [nbas, 3]
     coeffs:    [nbas, nprim_max]
     exponents: [nbas, nprim_max]

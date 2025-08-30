@@ -65,6 +65,18 @@ def generate_get_jk(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         return get_jk_kernel(*args, **kwargs)
     return get_jk
 
+def generate_get_veff(mol):
+    def get_veff(mf, mol=None, dm=None, dm_last=None, vhf_last=None, hermi=1):
+        if dm is None: dm = mf.make_rdm1()
+        if dm_last is not None and mf.direct_scf:
+            dm = cp.asarray(dm) - cp.asarray(dm_last)
+        vj, vk = mf.get_jk(mol, dm, hermi)
+        vhf = vj -.5 * vk
+        if vhf_last is not None:
+            vhf += cp.asarray(vhf_last)
+        return vhf
+    return get_veff
+
 def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     bas_cache, bas_mapping, padding_mask, group_info = sort_group_basis(mol, alignment=TILE)
     # TODO: Q matrix for short-range
@@ -153,7 +165,6 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
         # J: q_ab * q_cd * p_cd < cutoff_min
         # K: q_ac * q_bd * p_cd < cutoff_min
-
         # cutoff absorbs sqrt(p_cd)
         cutoff = np.log(PAIR_CUTOFF) - log_max_dm
         tile_pairs = make_tile_pairs(group_offset, q_matrix, cutoff)
@@ -279,7 +290,8 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 logger.debug1(f'{llll} wall time {t:.2f} ms')
 
         cputime_end  = time.perf_counter()
-        logger.debug1(f'vj and vk take {cputime_end - cputime_start:.2f} s')
+        cputime = (cputime_end - cputime_start)
+        logger.info(f'vj = {with_j} and vk = {with_k} take {cputime:.3f} sec')
         return vj, vk
     return get_jk
 

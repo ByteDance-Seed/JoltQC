@@ -106,7 +106,7 @@ end.synchronize()
 gpu4pyscf_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Time with GPU4PySCF, {gpu4pyscf_time_ms}")
 
-###### xQC / FP64 #######
+###### JQC / FP64 #######
 # Warm up
 for i in range(n_warmup):
     get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
@@ -120,14 +120,14 @@ vj_jit, vk_jit = get_jk(mol, dm, hermi=1)
 mol.verbose = 4
 end.record()
 end.synchronize()
-xqc_time_ms = cp.cuda.get_elapsed_time(start, end)
+jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
 print("-------- Benchmark FP64 ---------")
-print(f"Time with xQC / FP64, {xqc_time_ms}")
-print(f"Speedup: {gpu4pyscf_time_ms/xqc_time_ms}")
+print(f"Time with JQC / FP64, {jqc_time_ms}")
+print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
 print('vj diff:', cp.linalg.norm(vj - vj_jit))
 print('vk diff:', cp.linalg.norm(vk - vk_jit))
 
-###### xQC / FP32 #######
+###### JQC / FP32 #######
 # Warm up
 for i in range(n_warmup):
     get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e6, cutoff_fp32=1e-13)
@@ -141,14 +141,14 @@ vj_jit, vk_jit = get_jk(mol, dm, hermi=1)
 mol.verbose = 4
 end.record()
 end.synchronize()
-xqc_time_ms = cp.cuda.get_elapsed_time(start, end)
+jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
 print("------- Benchmark FP64 -----------")
-print(f"Time with xQC / FP32, {xqc_time_ms}")
-print(f"Speedup: {gpu4pyscf_time_ms/xqc_time_ms}")
+print(f"Time with JQC / FP32, {jqc_time_ms}")
+print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
 print('vj diff:', cp.linalg.norm(vj - vj_jit))
 print('vk diff:', cp.linalg.norm(vk - vk_jit))
 
-###### xQC / FP32 + FP64 #######
+###### JQC / FP32 + FP64 #######
 # Warm up
 for i in range(n_warmup):
     get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e-7, cutoff_fp32=1e-13)
@@ -162,9 +162,9 @@ vj_jit, vk_jit = get_jk(mol, dm, hermi=1)
 mol.verbose = 4
 end.record()
 end.synchronize()
-xqc_time_ms = cp.cuda.get_elapsed_time(start, end)
+jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
 print("------- Benchmark mixed precision -------- ")
-print(f"Time with xQC / FP32 + FP64, {xqc_time_ms}")
-print(f"Speedup: {gpu4pyscf_time_ms/xqc_time_ms}")
+print(f"Time with JQC / FP32 + FP64, {jqc_time_ms}")
+print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
 print('vj diff:', cp.linalg.norm(vj - vj_jit))
 print('vk diff:', cp.linalg.norm(vk - vk_jit))

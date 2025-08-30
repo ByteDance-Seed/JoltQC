@@ -33,17 +33,17 @@ mol = pyscf.M(atom=atom, basis='def2-tzvpp')
 mf = scf.RHF(mol)
 
 # Double precision algorithm (default)
-mf = xqc.pyscf.compile(mf)
+mf = jqc.pyscf.compile(mf)
 e_fp64 = mf.kernel()
 
 # Single precision algorithm
 mf = scf.RHF(mol)
-mf = xqc.pyscf.compile(mf, cutoff_fp32=1e-13, cutoff_fp64=1e100)
+mf = jqc.pyscf.compile(mf, cutoff_fp32=1e-13, cutoff_fp64=1e100)
 e_fp32 = mf.kernel()
 
 # Mixed precision algorithm
 mf = scf.RHF(mol)
-mf = xqc.pyscf.compile(mf, cutoff_fp32=1e-13, cutoff_fp64=1e-6)
+mf = jqc.pyscf.compile(mf, cutoff_fp32=1e-13, cutoff_fp64=1e-6)
 e_mixed = mf.kernel()
 
 print('Total energy with different precisions')

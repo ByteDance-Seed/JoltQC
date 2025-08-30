@@ -75,8 +75,8 @@ mf.verbose = 1
 mf.conv_tol = 1e-10
 mf.max_cycle = 50
 
-# Overwrite PySCF's get_jk with the JIT-compiled kernel from JoltQC
-mf.get_jk = jk.generate_jk_kernel(dtype=np.float64) 
+# In-place overwrite PySCF kernels
+mf_jit = jqc.pyscf.compile(mf)
 e_tot = mf.kernel()
 print('Total energy with double precision:', e_tot)
 ```

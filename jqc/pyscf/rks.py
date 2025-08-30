@@ -26,6 +26,7 @@ import time
 import numpy as np
 import cupy as cp
 from pyscf import lib
+from pyscf.lib import logger
 from pyscf.dft import libxc
 from pyscf.dft.gen_grid import GROUP_BOUNDARY_PENALTY
 from jqc.backend.linalg_helper import max_block_pooling, inplace_add_transpose
@@ -39,31 +40,6 @@ __all__ = ['build_grids', 'generate_rks_kernel']
 ao_cutoff = 1e-13
 GROUP_BOX_SIZE = 3.0
 DIM_BY_XC = {"LDA": 1, "GGA": 4, "MGGA": 5}
-
-def arg_group_grids(mol, coords, box_size=GROUP_BOX_SIZE):
-    """
-    Parition the entire space into small boxes according to the input box_size.
-    Group the grids against these boxes.
-    """
-    atom_coords = mol.atom_coords()
-    boundary = [atom_coords.min(axis=0) - GROUP_BOUNDARY_PENALTY,
-                atom_coords.max(axis=0) + GROUP_BOUNDARY_PENALTY]
-    # how many boxes inside the boundary
-    boxes = ((boundary[1] - boundary[0]) * (1./box_size)).round().astype(int)
-    
-    # box_size is the length of each edge of the box
-    box_size = cp.asarray((boundary[1] - boundary[0]) / boxes)
-    frac_coords = (coords - cp.asarray(boundary[0])) * (1./box_size)
-    box_ids = cp.floor(frac_coords).astype(int)
-    box_ids[box_ids<-1] = -1
-    box_ids[box_ids[:,0] > boxes[0], 0] = boxes[0]
-    box_ids[box_ids[:,1] > boxes[1], 1] = boxes[1]
-    box_ids[box_ids[:,2] > boxes[2], 2] = boxes[2]
-
-    boxes *= 2 # for safety
-    box_id = box_ids[:,0] + box_ids[:,1] * boxes[0] + box_ids[:,2] * boxes[0] * boxes[1]
-    return cp.argsort(box_id)
-
 
 def arg_group_grids(mol, coords, box_size=GROUP_BOX_SIZE):
     """
@@ -109,6 +85,7 @@ def build_grids(grids, mol=None, with_non0tab=False, sort_grids=True, **kwargs):
     grids : Grid
         PySCF Grid object.
     """
+
     if mol is None: mol = grids.mol
     if grids.verbose >= 5:
         grids.check_sanity()
@@ -160,6 +137,79 @@ def build_grids(grids, mol=None, with_non0tab=False, sort_grids=True, **kwargs):
     grids._non0ao_idx = None
     return grids
 
+def generate_get_veff(mol):
+    from gpu4pyscf.dft.rks import initialize_grids
+    from gpu4pyscf.lib.cupy_helper import tag_array
+    def get_veff(ks, mol=None, dm=None, dm_last=0, vhf_last=0, hermi=1):
+        if mol is None: mol = ks.mol
+        if dm is None: dm = ks.make_rdm1()
+        t0 = (logger.process_clock(), logger.perf_counter())
+        initialize_grids(ks, mol, dm)
+
+        ground_state = getattr(dm, 'ndim', 0) == 2
+
+        ni = ks._numint
+        if hermi == 2:  # because rho = 0
+            n, exc, vxc = 0, 0, 0
+        else:
+            n, exc, vxc = ni.nr_rks(mol, ks.grids, ks.xc, dm)
+            if ks.do_nlc():
+                if ni.libxc.is_nlc(ks.xc):
+                    xc = ks.xc
+                else:
+                    assert ni.libxc.is_nlc(ks.nlc)
+                    xc = ks.nlc
+                n, enlc, vnlc = ni.nr_nlc_vxc(mol, ks.nlcgrids, xc, dm)
+
+                exc += enlc
+                vxc += vnlc
+            logger.debug(ks, 'nelec by numeric integration = %s', n)
+        t0 = logger.timer_debug1(ks, 'vxc tot', *t0)
+
+        if not ni.libxc.is_hybrid_xc(ks.xc):
+            vk = None
+            if (ks._eri is None and ks.direct_scf and
+                getattr(vhf_last, 'vj', None) is not None):
+                ddm = cp.asarray(dm) - cp.asarray(dm_last)
+                vj = ks.get_j(mol, ddm, hermi)
+                vj += vhf_last.vj
+            else:
+                vj = ks.get_j(mol, dm, hermi)
+
+            vxc += vj
+        else:
+            omega, alpha, hyb = ni.rsh_and_hybrid_coeff(ks.xc, spin=mol.spin)
+            if (ks._eri is None and ks.direct_scf and
+                getattr(vhf_last, 'vk', None) is not None):
+                ddm = cp.asarray(dm) - cp.asarray(dm_last)
+                vj, vk = ks.get_jk(mol, ddm, hermi)
+                vk *= hyb
+                if abs(omega) > 1e-10:  # For range separated Coulomb operator
+                    vklr = ks.get_k(mol, ddm, hermi, omega=omega)
+                    vklr *= (alpha - hyb)
+                    vk += vklr
+                vj += vhf_last.vj
+                vk += vhf_last.vk
+            else:
+                vj, vk = ks.get_jk(mol, dm, hermi)
+                vk *= hyb
+                if abs(omega) > 1e-10:
+                    vklr = ks.get_k(mol, dm, hermi, omega=omega)
+                    vklr *= (alpha - hyb)
+                    vk += vklr
+            vxc += vj - vk * .5
+            if ground_state:
+                exc -= cp.einsum('ij,ji', dm, vk).real * .5 * .5
+        
+        if ground_state:
+            ecoul = cp.einsum('ij,ji', dm, vj).real * .5
+        else:
+            ecoul = None
+        t0 = logger.timer_debug1(ks, 'veff', *t0)
+        vxc = tag_array(vxc, ecoul=ecoul, exc=exc, vj=vj, vk=vk)
+        return vxc
+    return get_veff
+
 def generate_nr_rks(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     rks_fun, _, _ = generate_rks_kernel(mol, cutoff_fp64, cutoff_fp32)
     return rks_fun
@@ -184,7 +234,7 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     nbas = nprims.shape[0]
     ao_loc = cp.asarray(ao_loc, dtype=np.int32)
     group_key, group_offset = group_info
-    log_cutoff = math.log(ao_cutoff)
+    log_ao_cutoff = math.log(ao_cutoff)
 
     log_cutoff_fp32 = np.log(cutoff_fp32).astype(np.float32)
     log_cutoff_fp64 = np.log(cutoff_fp64).astype(np.float32)
@@ -219,13 +269,7 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         # Evaluate rho on grids for given density matrix
         weights = grids.weights
         dm_diff = dm - dm_prev
-        #start = cp.cuda.Event()
-        #end = cp.cuda.Event()
-        #start.record()
         rho_diff = rho_fun(mol, grids, xctype, dm_diff)
-        #end.record()
-        #end.synchronize()
-        #print(f'rho_diff time: {cp.cuda.get_elapsed_time(start, end)} ms')
         rho = rho_prev + rho_diff
 
         # Evaluate vxc on grids via libxc
@@ -239,15 +283,9 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         nelec = float(den.sum())
         wv = vxc * weights
         wv_diff = wv - wv_prev
-        #start = cp.cuda.Event()
-        #end = cp.cuda.Event()
-        #start.record()
         vxcmat_diff = vxc_fun(mol, grids, xctype, wv_diff)
-        #end.record()
-        #end.synchronize()
-        #print(f'vxcmat_diff time: {cp.cuda.get_elapsed_time(start, end)} ms')
         vxcmat = vxcmat_prev + vxcmat_diff
-        #print(wv_diff.min(), wv_diff.max(), rho_diff.min(), rho_diff.max(), dm_diff.min(), dm_diff.max())
+
         _cache['dm_prev'] = dm.copy()
         _cache['rho_prev'] = rho
         _cache['wv_prev'] = wv
@@ -263,7 +301,7 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         dm_cond = cp.asarray(dm_cond, dtype=np.float32)
         log_dm_shell = cp.log(dm_cond + 1e-200, dtype=np.float32)
         log_dm = cp.max(log_dm_shell).item()
-        log_ao_cutoff = log_cutoff - log_dm # ao.T * dm * ao < cutoff
+        log_aodm_cutoff = log_ao_cutoff - log_dm # ao.T * dm * ao < cutoff
         n_groups = len(group_offset) - 1
         xctype = xctype.upper()
         ndim = DIM_BY_XC[xctype]
@@ -277,7 +315,7 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             e = exps_fp32[ish0:ish1]
             a = angs[ish0].item()
             n = nprims[ish0].item()
-            s = estimate_log_aovalue(grid_coords, x, c, e, a, n, log_cutoff=log_ao_cutoff)
+            s = estimate_log_aovalue(grid_coords, x, c, e, a, n, log_cutoff=log_aodm_cutoff)
             log_maxval, indices, nnz = s
             indices += ish0
             ao_sparsity[i] = (log_maxval, indices, nnz)
@@ -326,7 +364,7 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         wv_max = cp.max(cp.abs(wv)).item()
         wv_max = wv_max * ngrids_per_atom # roughly integrate(wv * ao.T * ao) < cutoff
         log_wv_max = math.log(wv_max)
-        log_ao_cutoff = log_cutoff - log_wv_max
+        log_aodm_cutoff = log_ao_cutoff - log_wv_max
         n_groups = len(group_offset) - 1
         xctype = xctype.upper()
         ndim = DIM_BY_XC[xctype]
@@ -340,7 +378,7 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             e = exps_fp32[ish0:ish1]
             a = angs[ish0].item()
             n = nprims[ish0].item()
-            s = estimate_log_aovalue(grid_coords, x, c, e, a, n, log_cutoff=log_ao_cutoff)
+            s = estimate_log_aovalue(grid_coords, x, c, e, a, n, log_cutoff=log_aodm_cutoff)
             log_maxval, indices, nnz = s
             indices += ish0
             ao_sparsity[i] = (log_maxval, indices, nnz)

@@ -126,6 +126,7 @@ select = [
 ignore = [
     "E501",  # line too long, handled by black
     "E731",  # do not assign a lambda expression, use a def
+    "N999",  # invalid module name (false positive with project name)
     "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
 ]
 
