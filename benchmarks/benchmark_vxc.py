@@ -92,7 +92,7 @@ end.synchronize()
 gpu4pyscf_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Time with GPU4PySCF, {gpu4pyscf_time_ms}")
 
-###### xQC / FP64 #######
+###### JQC / FP64 #######
 cutoff_a = np.log(1e-13)
 cutoff_b = np.log(1e6)
 _, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
@@ -107,16 +107,16 @@ vxc = vxc_kern(mol, grids, xctype, wv)
 mol.verbose = 4
 end.record()
 end.synchronize()
-xqc_time_ms = cp.cuda.get_elapsed_time(start, end)
+jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
 
 print("-------------------------------")
 print("Benchmark with FP64")
-print(f"Time with xQC, {xqc_time_ms}")
-print(f"Speedup: {gpu4pyscf_time_ms/xqc_time_ms}")
+print(f"Time with JQC, {jqc_time_ms}")
+print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
 vxc_diff = vxc_pyscf - vxc
 print('vxc diff:', cp.linalg.norm(vxc_diff))
 
-###### xQC / FP32 #######
+###### JQC / FP32 #######
 cutoff_a = np.log(1e-13)
 cutoff_b = np.log(1e6)
 _, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, cutoff_fp64=1e10, cutoff_fp32=1e-13)
@@ -131,16 +131,16 @@ vxc = vxc_kern(mol, grids, xctype, wv)
 mol.verbose = 4
 end.record()
 end.synchronize()
-xqc_time_ms = cp.cuda.get_elapsed_time(start, end)
+jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
 
 print("-------------------------------")
 print("Benchmark with FP32")
-print(f"Time with xQC, {xqc_time_ms}")
-print(f"Speedup: {gpu4pyscf_time_ms/xqc_time_ms}")
+print(f"Time with JQC, {jqc_time_ms}")
+print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
 vxc_diff = vxc_pyscf - vxc
 print('vxc diff:', cp.linalg.norm(vxc_diff))
 
-###### xQC / FP32 + FP64 #######
+###### JQC / FP32 + FP64 #######
 _, _, vxc_kern = rks.generate_rks_kernel(mol, cutoff_fp64=1e-7, cutoff_fp32=1e-13)
 # Warm up
 for i in range(n_warmup):
@@ -152,11 +152,11 @@ mol.verbose = 4
 vxc = vxc_kern(mol, grids, xctype, wv)
 end.record()
 end.synchronize()
-xqc_time_ms = cp.cuda.get_elapsed_time(start, end)
+jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
 
 print("-------------------------------")
 print("Benchmark with FP32 + FP64")
-print(f"Time with xQC, {xqc_time_ms}")
-print(f"Speedup: {gpu4pyscf_time_ms/xqc_time_ms}")
+print(f"Time with JQC, {jqc_time_ms}")
+print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
 vxc_diff = vxc_pyscf - vxc
 print('vxc diff:', cp.linalg.norm(vxc_diff))

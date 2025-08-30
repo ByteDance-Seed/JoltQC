@@ -47,7 +47,7 @@ print(f"Time with GPU4PySCF, {elapsed_time_ms/count} ms")
 print(f'Total energy by GPU4PySCF, {e_tot}')
 mf = None
 
-mol = pyscf.M(atom=atom, basis=basis, output=f'xqc-{basis}.log', verbose=4, cart=1)
+mol = pyscf.M(atom=atom, basis=basis, output=f'jqc-{basis}.log', verbose=4, cart=1)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
@@ -77,5 +77,5 @@ for i in range(count):
 end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
-print(f"Time with xQC, {elapsed_time_ms/count} ms")
-print(f'Total energy by xQC, {e_tot}')
+print(f"Time with JQC, {elapsed_time_ms/count} ms")
+print(f'Total energy by JQC, {e_tot}')

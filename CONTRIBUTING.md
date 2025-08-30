@@ -1,6 +1,6 @@
-# Contributing to xQC
+# Contributing to JQC
 
-Thank you for your interest in contributing to xQC! We welcome all contributions. By participating, you agree to abide by our guidelines.
+Thank you for your interest in contributing to JQC! We welcome all contributions. By participating, you agree to abide by our guidelines.
 
 ## How to Contribute
 
@@ -12,7 +12,7 @@ The best way to contribute is by opening an issue on GitHub.
 ### Pull Requests
 1.  **Fork & Clone:** Fork the repository and clone it locally.
     ```bash
-    git clone https://github.com/your-username/xqc.git
+    git clone https://github.com/your-username/jqc.git
     ```
 2.  **Create a Branch:** Create a new branch for your changes.
     ```bash

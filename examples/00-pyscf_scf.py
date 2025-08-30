@@ -36,7 +36,7 @@ mf.max_cycle = 50
 # Method 1:
 # Compile GPU4PySCF object (recommended)
 print("Compile GPU4PySCF object")
-mf = xqc.pyscf.compile(mf)
+mf = jqc.pyscf.compile(mf)
 print("Run compiled GPU4PySCF object")
 e_tot = mf.kernel()
 
@@ -49,6 +49,6 @@ e_tot = mf_cpu.kernel()
 # Method 2:
 # Compile PySCF object
 print("Compile PySCF object")
-mf = xqc.pyscf.compile(mf_cpu)
+mf = jqc.pyscf.compile(mf_cpu)
 print("Run compiled PySCF object")
 mf.kernel()
