@@ -58,7 +58,7 @@ This example shows how to use xQC as a JIT backend with GPU4PySCF:
 import numpy as np
 import pyscf
 from gpu4pyscf import scf
-from xqc.pyscf import jk
+import xqc.pyscf
 
 atom = '''
 O       0.0000000000    -0.0000000000     0.1174000000
@@ -72,8 +72,8 @@ mf.verbose = 1
 mf.conv_tol = 1e-10
 mf.max_cycle = 50
 
-# Overwrite PySCF's get_jk with the JIT-compiled kernel from xQC
-mf.get_jk = jk.generate_jk_kernel(dtype=np.float64) 
+# In-place overwrite PySCF kernels
+mf_jit = xqc.pyscf.compile(mf)
 e_tot = mf.kernel()
 print('Total energy with double precision:', e_tot)
 ```
