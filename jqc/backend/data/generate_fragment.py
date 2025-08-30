@@ -17,13 +17,7 @@ import json
 import numpy as np
 import cupy as cp
 from pyscf import gto, lib
-from xqc.backend import jk_1qnt as jk_algo1
-from xqc.backend import jk_1q1t as jk_algo0
-from xqc.pyscf.jk import TILE
-
-device_id = cp.cuda.Device().id
-props = cp.cuda.runtime.getDeviceProperties(device_id)
-device_name = props['name'].decode()
+from jqc.constants import TILE
 
 '''
 Script for greedy search the optimal fragmentation for the kernel.
@@ -74,11 +68,13 @@ def generate_fragments(ang, max_threads = 256):
                         continue
                     yield fragments
 
-from xqc.pyscf import jk
-from xqc.pyscf.mol import format_bas_cache
-from gpu4pyscf.scf.jk import _VHFOpt
-
 def update_frags(i,j,k,l,dtype_str):
+    from jqc.pyscf import jk
+    from jqc.pyscf.mol import format_bas_cache
+    from gpu4pyscf.scf.jk import _VHFOpt
+    from jqc.backend import jk_1qnt as jk_algo1
+    from jqc.backend import jk_1q1t as jk_algo0
+    
     if dtype_str=='fp32':
         dtype = np.float32
     elif dtype_str=='fp64':
@@ -138,8 +134,8 @@ def update_frags(i,j,k,l,dtype_str):
     best_time = 1e100
     best_frag = None
 
-    from xqc.backend.jk_tasks import gen_screen_jk_tasks_kernel
-    script, kernel, gen_tasks_fun = gen_screen_jk_tasks_kernel(tile=jk.TILE)
+    from jqc.backend.jk_tasks import generate_fill_tasks_kernel
+    script, kernel, gen_tasks_fun = generate_fill_tasks_kernel(tile=TILE)
     QUEUE_DEPTH = jk.QUEUE_DEPTH
     cp.get_default_memory_pool().free_all_blocks()
     pool = cp.empty((QUEUE_DEPTH), dtype=jk.ushort4_dtype)
@@ -201,7 +197,7 @@ def update_frags(i,j,k,l,dtype_str):
         print(f'{ang} : algorithm 1q1t takes {elapsed_time_ms:.3f}:ms, best time: {best_time:.3f}ms')
     print('Optimal frag:', best_frag)
 
-    filename = f'optimal_scheme_{device_name}_{dtype_str}.json'
+    filename = f'optimal_scheme_{dtype_str}.json'
     from pathlib import Path
     path = Path(filename)
     if not path.exists():

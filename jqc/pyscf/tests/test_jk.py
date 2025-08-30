@@ -20,7 +20,7 @@ import cupy as cp
 import pyscf
 from pyscf import lib, gto
 from pyscf.scf.hf import get_jk
-from xqc.pyscf import jk
+from jqc.pyscf import jk
 
 
 def setUpModule():

@@ -16,7 +16,7 @@
 import numpy as np
 import cupy as cp
 from pyscf import gto
-from xqc.backend.cart2sph import cart2sph, sph2cart
+from jqc.backend.cart2sph import cart2sph, sph2cart
 
 def test_cart2sph():
     basis = '''

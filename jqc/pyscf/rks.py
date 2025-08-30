@@ -29,16 +29,16 @@ from pyscf import lib
 from pyscf.lib import logger
 from pyscf.dft import libxc
 from pyscf.dft.gen_grid import GROUP_BOUNDARY_PENALTY
-from xqc.backend.linalg_helper import max_block_pooling, inplace_add_transpose
-from xqc.pyscf.mol import sort_group_basis
-from xqc.backend.rks import gen_rho_kernel, gen_vxc_kernel, estimate_log_aovalue
-from xqc.backend.cart2sph import mol2cart, cart2mol
+from jqc.backend.linalg_helper import max_block_pooling, inplace_add_transpose
+from jqc.pyscf.mol import sort_group_basis
+from jqc.backend.rks import gen_rho_kernel, gen_vxc_kernel, estimate_log_aovalue
+from jqc.backend.cart2sph import mol2cart, cart2mol
+from jqc.constants import LMAX
 
 __all__ = ['build_grids', 'generate_rks_kernel']
 
 ao_cutoff = 1e-13
 GROUP_BOX_SIZE = 3.0
-LMAX = 4
 DIM_BY_XC = {"LDA": 1, "GGA": 4, "MGGA": 5}
 
 def arg_group_grids(mol, coords, box_size=GROUP_BOX_SIZE):

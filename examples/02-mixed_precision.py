@@ -21,7 +21,7 @@
 import numpy as np
 import pyscf
 from gpu4pyscf import scf
-import xqc
+import jqc
 
 atom = '''
 O       0.0000000000    -0.0000000000     0.1174000000

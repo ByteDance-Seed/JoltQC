@@ -19,10 +19,9 @@ import numpy as np
 import cupy as cp
 from pyscf import gto, lib
 from pyscf.scf import _vhf
+from jqc.constants import NPRIM_MAX
 
 __all__ = ['format_bas_cache', 'create_sorted_basis']
-
-NPRIM_MAX = 16
 PTR_BAS_COORD = 7
 
 

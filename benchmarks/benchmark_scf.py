@@ -17,7 +17,7 @@ import cupy as cp
 import pyscf
 from pyscf import lib
 from gpu4pyscf.scf import hf
-import xqc.pyscf
+import jqc.pyscf
 
 #atom = 'molecules/h2o.xyz'
 atom = 'molecules/0031-irregular-nitrogenous.xyz'
@@ -50,7 +50,7 @@ start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mf = hf.RHF(mol)
-mf_jit = xqc.pyscf.compile(mf)
+mf_jit = jqc.pyscf.compile(mf)
 end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
@@ -62,7 +62,7 @@ end = cp.cuda.Event()
 start.record()
 for i in range(count):
     mf = hf.RHF(mol)
-    mf_jit = xqc.pyscf.compile(mf)
+    mf_jit = jqc.pyscf.compile(mf)
     e_tot = mf_jit.kernel()
 end.record()
 end.synchronize()
@@ -75,7 +75,7 @@ start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mf = hf.RHF(mol)
-mf_jit = xqc.pyscf.compile(mf, cutoff_fp32=1e-13, cutoff_fp64=1e100)
+mf_jit = jqc.pyscf.compile(mf, cutoff_fp32=1e-13, cutoff_fp64=1e100)
 end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
@@ -87,7 +87,7 @@ end = cp.cuda.Event()
 start.record()
 for i in range(count):
     mf = hf.RHF(mol)
-    mf_jit = xqc.pyscf.compile(mf, cutoff_fp32=1e-13, cutoff_fp64=1e100)
+    mf_jit = jqc.pyscf.compile(mf, cutoff_fp32=1e-13, cutoff_fp64=1e100)
     e_tot = mf_jit.kernel()
 end.record()
 end.synchronize()

@@ -19,8 +19,8 @@ import pyscf
 from pyscf import gto
 from pyscf.dft import libxc
 from gpu4pyscf import scf, dft
-from xqc.pyscf import rks
-from xqc.pyscf.rks import build_grids
+from jqc.pyscf import rks
+from jqc.pyscf.rks import build_grids
 from types import MethodType
 
 basis = gto.basis.parse('''

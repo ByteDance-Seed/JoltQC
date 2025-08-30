@@ -15,8 +15,7 @@
 
 import numpy as np
 import cupy as cp
-
-LMAX = 4
+from jqc.constants import LMAX
 
 def iter_cart_xyz(n):
     """Generates Cartesian exponents (lx, ly, lz) for a given angular momentum.
