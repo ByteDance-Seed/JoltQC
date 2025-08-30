@@ -19,7 +19,7 @@
 
 import pyscf
 from gpu4pyscf import dft
-import xqc.pyscf
+import jqc.pyscf
 
 atom = '''
 O       0.0000000000    -0.0000000000     0.1174000000

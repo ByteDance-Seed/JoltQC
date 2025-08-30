@@ -14,8 +14,8 @@
 #
 
 from types import MethodType
-from xqc.pyscf import rks, jk
-from xqc.pyscf.rks import build_grids
+from jqc.pyscf import rks, jk
+from jqc.pyscf.rks import build_grids
 
 def compile(obj, jit=True, cutoff_fp32=1e-13, cutoff_fp64=1e-13):
     '''

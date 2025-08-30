@@ -1,2 +1,2 @@
-from xqc import pyscf
+from jqc import pyscf
 

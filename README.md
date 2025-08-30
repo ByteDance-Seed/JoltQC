@@ -19,17 +19,20 @@
 
 ![seed logo](https://github.com/user-attachments/assets/c42e675e-497c-4508-8bb9-093ad4d1f216)
 
-# xQC: a JIT-compiled GPU backend for quantum chemistry calculations
+# JoltQC: a JIT-compiled GPU backend for quantum chemistry calculations
+*formerly xQC*
 <p align="center">
   <a href="https://opensource.org/licenses/Apache-2.0">
     <img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
+  <a href="https://github.com/ByteDance-Seed/joltqc/actions/workflows/lint.yml">
+    <img src="https://github.com/ByteDance-Seed/joltqc/actions/workflows/lint.yml/badge.svg"></a>
 </p>
 
 > ⚠️ **Experimental Project**  
 > This project is under active development and may change significantly. Use at your own risk.
 
 ## Overview
-xQC is not intended to be a complete quantum chemistry package, but rather a collection of standalone, optimized CUDA kernels designed specifically for quantum chemistry workloads. Please see [GPU4PySCF installation instructions](https://github.com/pyscf/gpu4pyscf) for full capabilities of quantum chemistry calculations.
+JoltQC is not intended to be a complete quantum chemistry package, but rather a collection of standalone, optimized CUDA kernels designed specifically for quantum chemistry workloads. Please see [GPU4PySCF installation instructions](https://github.com/pyscf/gpu4pyscf) for full capabilities of quantum chemistry calculations.
 
 ## Key Features
 
@@ -40,7 +43,7 @@ xQC is not intended to be a complete quantum chemistry package, but rather a col
 
 ## Recommendations
 
-- Use **PySCF/GPU4PySCF** for general-purpose workflows; xQC is a JIT backend
+- Use **PySCF/GPU4PySCF** for general-purpose workflows; JoltQC is a JIT backend
 - NVIDIA **Ampere or newer** GPUs are recommended
 - **Newer CUDA versions** (e.g., CUDA 12.4+) improve JIT compilation speed
 
@@ -52,13 +55,13 @@ pip3 install -e .
 
 ## Python Interface
 
-This example shows how to use xQC as a JIT backend with GPU4PySCF:
+This example shows how to use JoltQC as a JIT backend with GPU4PySCF:
 
 ```python
 import numpy as np
 import pyscf
 from gpu4pyscf import scf
-from xqc.pyscf import jk
+from jqc.pyscf import jk
 
 atom = '''
 O       0.0000000000    -0.0000000000     0.1174000000
@@ -72,7 +75,7 @@ mf.verbose = 1
 mf.conv_tol = 1e-10
 mf.max_cycle = 50
 
-# Overwrite PySCF's get_jk with the JIT-compiled kernel from xQC
+# Overwrite PySCF's get_jk with the JIT-compiled kernel from JoltQC
 mf.get_jk = jk.generate_jk_kernel(dtype=np.float64) 
 e_tot = mf.kernel()
 print('Total energy with double precision:', e_tot)

@@ -1,0 +1,181 @@
+[build-system]
+requires = ["setuptools>=60.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "joltqc"
+version = "0.1.0"
+description = "JoltQC: a JIT-compiled GPU backend for quantum chemistry calculations (formerly xQC)"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Xiaojie Wu", email = "wu.xiaojie@bytedance.com"},
+    {name = "Qiming Sun", email = "osirpt.sun@gmail.com"},
+    {name = "Yuanheng Wang", email = "yuanheng.wang@bytedance.com"},
+]
+maintainers = [
+    {name = "ByteDance Seed Team", email = "seed@bytedance.com"},
+]
+keywords = [
+    "quantum chemistry",
+    "computational chemistry",
+    "GPU",
+    "CUDA",
+    "JIT compilation",
+    "PySCF",
+    "DFT",
+    "Hartree-Fock",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: CUDA",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.19.0",
+    "cupy-cuda12x>=12.0.0",  # CUDA 12.x support
+    "pyscf>=2.3.0",
+    "gpu4pyscf-cuda12x>=1.0.0",  # GPU4PySCF with CUDA 12.x support
+]
+# dynamic = ["version"]  # Static version for now
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+docs = [
+    "sphinx>=7.0.0",
+    "sphinx-rtd-theme>=1.0.0",
+]
+benchmark = [
+    "matplotlib>=3.5.0",
+    "scipy>=1.8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/ByteDance-Seed/joltqc"
+Documentation = "https://github.com/ByteDance-Seed/joltqc/blob/main/README.md"
+Repository = "https://github.com/ByteDance-Seed/joltqc.git"
+Issues = "https://github.com/ByteDance-Seed/joltqc/issues"
+Changelog = "https://github.com/ByteDance-Seed/joltqc/releases"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["jqc*"]
+exclude = ["tests*", "benchmarks*", "examples*"]
+
+[tool.setuptools.package-data]
+"jqc.backend.data" = ["*.json"]
+"jqc.backend.cuda" = ["*.cu"]
+"jqc.backend.rys" = ["*.cu"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  | examples/tmp
+)/
+'''
+
+[tool.ruff]
+target-version = "py38"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "N",  # pep8-naming
+    "UP", # pyupgrade
+    "RUF", # Ruff-specific rules
+]
+ignore = [
+    "E501",  # line too long, handled by black
+    "E731",  # do not assign a lambda expression, use a def
+    "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # unused imports in __init__.py
+"examples/*.py" = ["F401", "E402"]  # Allow unused imports and imports after code
+"benchmarks/*.py" = ["F401", "E402"]  # Allow unused imports and imports after code
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers"
+testpaths = [
+    "jqc/backend/tests",
+    "jqc/pyscf/tests",
+]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "gpu: marks tests as requiring GPU hardware",
+    "integration: marks tests as integration tests",
+]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+exclude = [
+    "build/",
+    "dist/",
+    "examples/",
+    "benchmarks/",
+]
+
+[tool.coverage.run]
+source = ["jqc"]
+omit = [
+    "jqc/backend/tests/*",
+    "jqc/pyscf/tests/*",
+    "*/tests/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

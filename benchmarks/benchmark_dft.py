@@ -19,8 +19,8 @@ import numpy as np
 import pyscf
 from pyscf import lib
 from gpu4pyscf import dft
-from xqc.pyscf import jk, rks
-from xqc.pyscf.rks import build_grids
+from jqc.pyscf import jk, rks
+from jqc.pyscf.rks import build_grids
 
 #atom = 'molecules/h2o.xyz'
 atom = 'molecules/0031-irregular-nitrogenous.xyz'

@@ -16,7 +16,7 @@
 import cupy as cp
 import pyscf
 from gpu4pyscf.scf import hf
-from xqc.pyscf import jk
+from jqc.pyscf import jk
 
 #atom = 'molecules/h2o.xyz'
 atom = 'molecules/0031-irregular-nitrogenous.xyz'
