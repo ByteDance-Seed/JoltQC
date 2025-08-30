@@ -24,8 +24,8 @@ import json
 import cupy as cp
 from pathlib import Path
 from functools import lru_cache
-from xqc.backend.jk_1q1t import gen_kernel as jk_1q1t_kernel
-from xqc.backend.jk_1qnt import gen_kernel as jk_1qnt_kernel
+from jqc.backend.jk_1q1t import gen_kernel as jk_1q1t_kernel
+from jqc.backend.jk_1qnt import gen_kernel as jk_1qnt_kernel
 
 device_id = cp.cuda.Device().id
 props = cp.cuda.runtime.getDeviceProperties(device_id)
