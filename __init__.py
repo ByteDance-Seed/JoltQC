@@ -1,4 +1,2 @@
-from xqc import pyscf
-import cupy as cp
-
+from jqc import pyscf
 

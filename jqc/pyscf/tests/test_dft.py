@@ -18,8 +18,8 @@ import numpy as np
 import unittest
 from types import MethodType
 import cupy as cp
-import xqc.pyscf
-from xqc.pyscf import rks, jk
+import jqc.pyscf
+from jqc.pyscf import rks, jk
 from gpu4pyscf import dft
 
 atom = '''
@@ -112,7 +112,7 @@ class KnownValues(unittest.TestCase):
     
     def test_rks_compile(self):
         mf = dft.RKS(mol_sph, xc='PBE')
-        mf = xqc.pyscf.compile(mf)
+        mf = jqc.pyscf.compile(mf)
         e_tot = mf.kernel() 
         e_ref = dft.RKS(mol_sph, xc='PBE').kernel()
         print('| CPU - GPU | with compile:', e_tot - e_ref)
@@ -127,7 +127,7 @@ class KnownValues(unittest.TestCase):
             basis='def2-qzvpp', #'ccpvdz',
             unit='B', cart=0, output='/dev/null')
         mf = dft.RKS(mol, xc='PBE')
-        mf = xqc.pyscf.compile(mf)
+        mf = jqc.pyscf.compile(mf)
         e_tot = mf.kernel() 
         e_ref = dft.RKS(mol, xc='PBE').kernel()
         mol.stdout.close()

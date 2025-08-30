@@ -19,7 +19,7 @@ Cartesian to spherical, and spherical to cartesian basis transformations.
 
 import numpy as np
 import cupy as cp
-from xqc.backend.cuda_scripts import code_path
+from jqc.backend.cuda_scripts import code_path
 
 __all__ = ['cart2sph', 'sph2cart']
 

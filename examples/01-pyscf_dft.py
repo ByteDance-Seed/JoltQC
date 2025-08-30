@@ -19,7 +19,7 @@
 
 import pyscf
 from gpu4pyscf import dft
-import xqc.pyscf
+import jqc.pyscf
 
 atom = '''
 O       0.0000000000    -0.0000000000     0.1174000000
@@ -43,13 +43,13 @@ mf.conv_tol = 1e-10
 mf.max_cycle = 50
 
 # Compile GPU4PySCF object
-mf = xqc.pyscf.compile(mf)
-e_xqc = mf.kernel()
+mf = jqc.pyscf.compile(mf)
+e_jqc = mf.kernel()
 
 print('total energy with pyscf:', e_pyscf)
-print('total energy with xqc  :', e_xqc)
+print('total energy with jqc  :', e_jqc)
 
 # Compile PySCF object directly
 mf = pyscf.dft.RKS(mol, xc='wb97m-v')
-mf = xqc.pyscf.compile(mf)
+mf = jqc.pyscf.compile(mf)
 mf.kernel()

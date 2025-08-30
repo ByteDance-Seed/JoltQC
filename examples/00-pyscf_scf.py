@@ -19,8 +19,8 @@
 
 import pyscf
 from gpu4pyscf import scf
-import xqc
-import xqc.pyscf
+import jqc
+import jqc.pyscf
 
 atom = '''
 O       0.0000000000    -0.0000000000     0.1174000000
@@ -36,7 +36,7 @@ mf.max_cycle = 50
 # Method 1:
 # Compile GPU4PySCF object (recommended)
 print("Compile GPU4PySCF object")
-mf = xqc.pyscf.compile(mf)
+mf = jqc.pyscf.compile(mf)
 print("Run compiled GPU4PySCF object")
 e_tot = mf.kernel()
 
@@ -49,6 +49,6 @@ e_tot = mf_cpu.kernel()
 # Method 2:
 # Compile PySCF object
 print("Compile PySCF object")
-mf = xqc.pyscf.compile(mf_cpu)
+mf = jqc.pyscf.compile(mf_cpu)
 print("Run compiled PySCF object")
 mf.kernel()

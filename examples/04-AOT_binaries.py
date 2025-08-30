@@ -25,7 +25,7 @@ import time
 import os
 import pyscf
 from gpu4pyscf import scf
-import xqc.pyscf
+import jqc.pyscf
 
 atom = '''
 O       0.0000000000    -0.0000000000     0.1174000000
@@ -43,7 +43,7 @@ os.environ["CUPY_CACHE_DIR"] = "./tmp/"
 start = time.process_time()
 
 # Compile GPU4PySCF object
-mf = xqc.pyscf.compile(mf)
+mf = jqc.pyscf.compile(mf)
 e_tot = mf.kernel()
 print('total energy with double precision:', e_tot)
 

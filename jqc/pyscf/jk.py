@@ -27,11 +27,12 @@ import numpy as np
 import cupy as cp
 from collections import Counter
 from pyscf import lib
-from xqc.backend.linalg_helper import inplace_add_transpose, max_block_pooling
-from xqc.backend.jk_tasks import gen_screen_jk_tasks_kernel, MAX_PAIR_SIZE, QUEUE_DEPTH
-from xqc.backend.jk import gen_jk_kernel
-from xqc.backend.cart2sph import mol2cart, cart2mol
-from xqc.pyscf.mol import compute_q_matrix, sort_group_basis
+from jqc.backend.linalg_helper import inplace_add_transpose, max_block_pooling
+from jqc.backend.jk_tasks import gen_screen_jk_tasks_kernel, MAX_PAIR_SIZE, QUEUE_DEPTH
+from jqc.backend.jk import gen_jk_kernel
+from jqc.backend.cart2sph import mol2cart, cart2mol
+from jqc.pyscf.mol import compute_q_matrix, sort_group_basis
+from jqc.constants import LMAX, NPRIM_MAX, TILE
 
 __all__ = [
     'get_jk', 'get_j',
@@ -43,10 +44,7 @@ ushort4_dtype = np.dtype([
     ('z', np.uint16), 
     ('w', np.uint16)])
 
-LMAX = 4
-TILE = 4
 GROUP_SIZE = 256
-NPRIM_MAX = 16
 PAIR_CUTOFF = 1e-13
 
 def generate_get_j(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
@@ -66,6 +64,18 @@ def generate_get_jk(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     def get_jk(*args, **kwargs):
         return get_jk_kernel(*args, **kwargs)
     return get_jk
+
+def generate_get_veff(mol):
+    def get_veff(mf, mol=None, dm=None, dm_last=None, vhf_last=None, hermi=1):
+        if dm is None: dm = mf.make_rdm1()
+        if dm_last is not None and mf.direct_scf:
+            dm = cp.asarray(dm) - cp.asarray(dm_last)
+        vj, vk = mf.get_jk(mol, dm, hermi)
+        vhf = vj -.5 * vk
+        if vhf_last is not None:
+            vhf += cp.asarray(vhf_last)
+        return vhf
+    return get_veff
 
 def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     bas_cache, bas_mapping, padding_mask, group_info = sort_group_basis(mol, alignment=TILE)

@@ -23,8 +23,8 @@
 
 import time
 import numpy as np
-#from xqc.backend.jk_1qnt import gen_kernel
-from xqc.backend.jk_1q1t import gen_kernel
+from jqc.backend.jk_1qnt import gen_kernel
+#from jqc.backend.jk_1q1t import gen_kernel
 
 # angular momentum
 li, lj, lk, ll = 0, 0, 0, 0
@@ -64,7 +64,7 @@ subprocess.run(cmd, capture_output=True, text=True)
 # DFT kernels
 ############################
 
-from xqc.backend.rks import gen_rho_kernel
+from jqc.backend.rks import gen_rho_kernel
 code, mod, fun = gen_rho_kernel((li,lj), (npi,npj), np.float32)
 with open('tmp_rho.cu', 'w+') as f:
     f.write(code)

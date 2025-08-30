@@ -21,6 +21,7 @@ import os
 import threading
 import numpy as np
 import json
+<<<<<<< HEAD:xqc/backend/jk.py
 import cupy as cp
 from pathlib import Path
 from functools import lru_cache
@@ -30,6 +31,11 @@ from xqc.backend.jk_1qnt import gen_kernel as jk_1qnt_kernel
 device_id = cp.cuda.Device().id
 props = cp.cuda.runtime.getDeviceProperties(device_id)
 device_name = props['name'].decode()
+=======
+from jqc.backend.jk_1q1t import gen_kernel as jk_1q1t_kernel
+from jqc.backend.jk_1qnt import gen_kernel as jk_1qnt_kernel
+from functools import lru_cache
+>>>>>>> main:jqc/backend/jk.py
 
 __all__ = ['gen_jk_kernel']
 

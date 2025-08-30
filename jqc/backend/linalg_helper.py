@@ -16,7 +16,7 @@
 import cupy as cp
 import numpy as np
 
-__all__ = ['inplace_add_transpose', 'max_block_pooling']
+__all__ = ['inplace_add_transpose', 'max_block_pooling', 'l2_block_pooling']
 
 compile_options = ('-std=c++17','--use_fast_math', '--minimal')
 
@@ -177,7 +177,7 @@ def l2_block_pooling(matrix: cp.ndarray, offsets: cp.ndarray) -> cp.ndarray:
             for (int r = r0; r < r1; ++r) {
                 for (int c = c0; c < c1; ++c) {
                     const double val = mat[b * stride * stride + r * stride + c];
-                    l2_norm += abs_val * abs_val;
+                    l2_norm += val * val;
                 }
             }
         }
@@ -185,7 +185,7 @@ def l2_block_pooling(matrix: cp.ndarray, offsets: cp.ndarray) -> cp.ndarray:
     }
     '''
 
-    kernel = cp.RawKernel(kernel_code, 'block_l2_kernel', options=compile_options)
+    kernel = cp.RawKernel(kernel_code, 'block_max_kernel', options=compile_options)
 
     N = matrix.shape[-1]
     matrix = matrix.reshape([-1, N, N])

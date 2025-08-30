@@ -19,8 +19,8 @@
 
 import cupy as cp
 import numpy as np
-from xqc.backend.util import generate_lookup_table
-from xqc.backend.cuda_scripts import (rys_roots_data, rys_roots_parallel_code, 
+from jqc.backend.util import generate_lookup_table
+from jqc.backend.cuda_scripts import (rys_roots_data, rys_roots_parallel_code, 
                                       jk_1qnt_cuda_code)
 
 __all__ = ['gen_jk_kernel']

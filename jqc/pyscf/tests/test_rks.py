@@ -22,9 +22,9 @@ from pyscf import lib, gto
 from gpu4pyscf.scf.jk import _VHFOpt
 from gpu4pyscf import dft
 from gpu4pyscf.dft.rks import initialize_grids
-from xqc.pyscf import rks
-from xqc.backend.rks import estimate_log_aovalue
-from xqc.pyscf.mol import sort_group_basis
+from jqc.pyscf import rks
+from jqc.backend.rks import estimate_log_aovalue
+from jqc.pyscf.mol import sort_group_basis
 
 def setUpModule():
     global mol, grids, ni

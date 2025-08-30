@@ -20,7 +20,7 @@ The task is screened with Schwartz inequality and density matrix screening
 
 import cupy as cp
 import numpy as np
-from xqc.backend.cuda_scripts import screen_jk_tasks_code
+from jqc.backend.cuda_scripts import screen_jk_tasks_code
 from functools import lru_cache
 
 THREADSX = 16
