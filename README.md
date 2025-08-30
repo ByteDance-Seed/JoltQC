@@ -76,7 +76,7 @@ mf.conv_tol = 1e-10
 mf.max_cycle = 50
 
 # In-place overwrite PySCF kernels
-mf_jit = jqc.pyscf.compile(mf)
+mf_jit = jqc.pyscf.apply(mf)
 e_tot = mf.kernel()
 print('Total energy with double precision:', e_tot)
 ```

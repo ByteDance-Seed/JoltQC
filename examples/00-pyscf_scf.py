@@ -34,10 +34,10 @@ mf.conv_tol = 1e-10
 mf.max_cycle = 50
 
 # Method 1:
-# Compile GPU4PySCF object (recommended)
-print("Compile GPU4PySCF object")
-mf = jqc.pyscf.compile(mf)
-print("Run compiled GPU4PySCF object")
+# Apply JIT to GPU4PySCF object (recommended)
+print("Apply JIT to GPU4PySCF object")
+mf = jqc.pyscf.apply(mf)
+print("Run JIT GPU4PySCF object")
 e_tot = mf.kernel()
 
 # Convert GPU4PySCF object to PySCF object
@@ -47,8 +47,8 @@ print("Run PySCF object")
 e_tot = mf_cpu.kernel()
 
 # Method 2:
-# Compile PySCF object
-print("Compile PySCF object")
+# Apply JIT to PySCF object
+print("Apply JIT to PySCF object")
 mf = jqc.pyscf.compile(mf_cpu)
-print("Run compiled PySCF object")
+print("Run JIT PySCF object")
 mf.kernel()

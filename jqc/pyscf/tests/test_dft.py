@@ -110,12 +110,12 @@ class KnownValues(unittest.TestCase):
         print('| CPU - GPU | with cart:', e_tot - e_ref)
         assert np.abs(e_tot - e_ref) < 1e-5
     
-    def test_rks_compile(self):
+    def test_rks_apply(self):
         mf = dft.RKS(mol_sph, xc='PBE')
-        mf = jqc.pyscf.compile(mf)
+        mf = jqc.pyscf.apply(mf)
         e_tot = mf.kernel() 
         e_ref = dft.RKS(mol_sph, xc='PBE').kernel()
-        print('| CPU - GPU | with compile:', e_tot - e_ref)
+        print('| CPU - GPU | with apply:', e_tot - e_ref)
         assert np.abs(e_tot - e_ref) < 1e-5
     
     def test_rks_qz(self):
@@ -127,7 +127,7 @@ class KnownValues(unittest.TestCase):
             basis='def2-qzvpp', #'ccpvdz',
             unit='B', cart=0, output='/dev/null')
         mf = dft.RKS(mol, xc='PBE')
-        mf = jqc.pyscf.compile(mf)
+        mf = jqc.pyscf.apply(mf)
         e_tot = mf.kernel() 
         e_ref = dft.RKS(mol, xc='PBE').kernel()
         mol.stdout.close()
