@@ -27,7 +27,7 @@ from jqc.backend.jk_1qnt import gen_kernel
 #from jqc.backend.jk_1q1t import gen_kernel
 
 # angular momentum
-li, lj, lk, ll = 3, 3, 1, 1
+li, lj, lk, ll = 0, 0, 0, 0
 
 # number of primitives
 npi, npj, npk, npl = 1, 1, 1, 1
@@ -41,7 +41,7 @@ code, mod, fun = gen_kernel(
     (li,lj,lk,ll),
     (npi,npj,npk,npl),
     print_log=True,
-    frags=frags,
+    #frags=frags,
     dtype=np.float32)
 end = time.perf_counter()
 wall_time = (end - start) * 1000
