@@ -12,7 +12,7 @@ The best way to contribute is by opening an issue on GitHub.
 ### Pull Requests
 1.  **Fork & Clone:** Fork the repository and clone it locally.
     ```bash
-    git clone https://github.com/your-username/jqc.git
+    git clone https://github.com/ByteDance-Seed/JoltQC.git
     ```
 2.  **Create a Branch:** Create a new branch for your changes.
     ```bash

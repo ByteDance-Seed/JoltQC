@@ -38,7 +38,7 @@ JoltQC is not intended to be a complete quantum chemistry package, but rather a 
 
 - High-performance GPU kernels for quantum chemistry
 - Completely JIT compilation, without any pre-compiled kernels
-- Support FP64 and FP32
+- Support FP64, FP32, and mixed-precision schemes
 - Python interface to [GPU4PySCF](https://github.com/pyscf/gpu4pyscf)
 
 ## Recommendations
@@ -76,7 +76,7 @@ mf.conv_tol = 1e-10
 mf.max_cycle = 50
 
 # In-place overwrite PySCF kernels
-mf_jit = jqc.pyscf.compile(mf)
+mf_jit = jqc.pyscf.apply(mf)
 e_tot = mf.kernel()
 print('Total energy with double precision:', e_tot)
 ```

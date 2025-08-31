@@ -42,8 +42,8 @@ os.environ["CUPY_CACHE_DIR"] = "./tmp/"
 
 start = time.process_time()
 
-# Compile GPU4PySCF object
-mf = jqc.pyscf.compile(mf)
+# Apply JIT to GPU4PySCF object
+mf = jqc.pyscf.apply(mf)
 e_tot = mf.kernel()
 print('total energy with double precision:', e_tot)
 

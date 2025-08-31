@@ -33,7 +33,7 @@ mol = pyscf.M(atom=atom, basis='def2-tzvpp')
 mf = scf.RHF(mol)
 
 # Double precision algorithm (default)
-mf = jqc.pyscf.compile(mf)
+mf = jqc.pyscf.apply(mf)
 e_fp64 = mf.kernel()
 
 # Single precision algorithm

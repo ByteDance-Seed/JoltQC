@@ -17,9 +17,9 @@ from types import MethodType
 from jqc.pyscf import rks, jk
 from jqc.pyscf.rks import build_grids
 
-def compile(obj, cutoff_fp32=1e-13, cutoff_fp64=1e-13):
+def apply(obj, cutoff_fp32=None, cutoff_fp64=None):
     '''
-    Compile kernels and assign them to the corresponding PySCF Object.
+    Apply JIT kernels to the corresponding PySCF Object.
     If no JIT kernel is found, return the unchanged object
 
     Note: this is a in-place operation.
@@ -27,21 +27,28 @@ def compile(obj, cutoff_fp32=1e-13, cutoff_fp64=1e-13):
     Parameters
     ----------
     obj : PySCF Object
-        PySCF Object to be compiled.
+        PySCF Object to apply JIT kernels to.
     cutoff_fp32 : float, optional
-            Cutoff for single precision. The default is 1e-13.
+            Cutoff for single precision. The default is obj.direct_scf_tol.
     cutoff_fp64 : float, optional
-            Cutoff for double precision. The default is 1e-13.
+            Cutoff for double precision. The default is obj.direct_scf_tol.
 
     Returns
     -------
     obj : PySCF Object
-        PySCF Object with compiled kernels.
+        PySCF Object with JIT kernels applied.
 
     '''
+    # TODO: check supported object
     
     if 'gpu4pyscf' not in obj.__class__.__module__:
         obj = obj.to_gpu()
+
+    if cutoff_fp32 is None:
+        cutoff_fp32 = obj.direct_scf_tol
+    
+    if cutoff_fp64 is None:
+        cutoff_fp64 = obj.direct_scf_tol
 
     if not obj.istype('RHF'):
         return obj

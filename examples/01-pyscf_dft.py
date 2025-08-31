@@ -42,14 +42,14 @@ mf.grids.atom_grid = (99,590)
 mf.conv_tol = 1e-10
 mf.max_cycle = 50
 
-# Compile GPU4PySCF object
-mf = jqc.pyscf.compile(mf)
+# Apply JIT to GPU4PySCF object
+mf = jqc.pyscf.apply(mf)
 e_jqc = mf.kernel()
 
 print('total energy with pyscf:', e_pyscf)
 print('total energy with jqc  :', e_jqc)
 
-# Compile PySCF object directly
+# Apply JIT to PySCF object directly
 mf = pyscf.dft.RKS(mol, xc='wb97m-v')
-mf = jqc.pyscf.compile(mf)
+mf = jqc.pyscf.apply(mf)
 mf.kernel()
