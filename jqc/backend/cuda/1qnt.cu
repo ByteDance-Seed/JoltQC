@@ -117,8 +117,8 @@ void rys_jk(const int nbas,
     if (ksh == lsh) fac_sym *= half;
     if (ish*nbas+jsh == ksh*nbas+lsh) fac_sym *= half;
 
-    const DataType rij0 = coords[3*jsh] - coords[3*ish];
-    const DataType rij1 = coords[3*jsh+1] - coords[3*ish+1];
+    const DataType rij0 = coords[4*jsh] - coords[3*ish];
+    const DataType rij1 = coords[4*jsh+1] - coords[3*ish+1];
     const DataType rij2 = coords[3*jsh+2] - coords[3*ish+2];
     const DataType rjri[3] = {rij0, rij1, rij2};
     const DataType rr_ij = rjri[0]*rjri[0] + rjri[1]*rjri[1] + rjri[2]*rjri[2];

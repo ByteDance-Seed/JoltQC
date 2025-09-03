@@ -125,7 +125,8 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         if ang < 2:
             fac = ((2*ang + 1) / (4.0 * np.pi))**.5
             coeff *= fac
-        coord = _env[coord_ptr:coord_ptr+3]
+        coord = np.zeros(4, dtype=np.float64)
+        coord[:3] = _env[coord_ptr:coord_ptr+3]
         coeff = coeff.reshape(nctr, nprim)
         exp = exp.reshape(nctr, nprim)
         coeff = np.concatenate((coeff, np.zeros((nctr, NPRIM_MAX-nprim))), axis=1)
@@ -219,9 +220,6 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     splitted_group_offset.append(group_offset[-1])
     group_key = np.asarray(splitted_group_key)
     group_offset = np.asarray(splitted_group_offset)
-
-    #group_key = np.asarray(group_key)
-    #group_offset = np.asarray(group_offset)
     
     return bas_info, bas_id, pad_id, (group_key, group_offset)
 

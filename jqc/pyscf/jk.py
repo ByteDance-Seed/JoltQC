@@ -101,6 +101,19 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     nao = ao_loc[-1]
     ao_loc = cp.asarray(ao_loc, dtype=np.int32)
 
+    group_key, group_offset = group_info
+    uniq_l = group_key[:,0]
+    l_symb = [lib.param.ANGULAR[i] for i in uniq_l]
+    n_groups = np.count_nonzero(uniq_l <= LMAX)
+
+    if np.any(uniq_l > LMAX):
+        raise RuntimeError('LMAX > 4 is not supported')
+
+    tasks = [(i,j,k,l) for i in range(n_groups)
+                        for j in range(i+1)
+                        for k in range(i+1)
+                        for l in range(k+1)]
+    
     def get_jk(mol_ref, dm, hermi=0, vhfopt=None,
             with_j=True, with_k=True, omega=None, verbose=None):
         '''
@@ -122,14 +135,6 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
         assert mol_ref == mol, "mol_ref must be the same as mol"
         cputime_start  = time.perf_counter()
-        
-        group_key, group_offset = group_info
-        uniq_l = group_key[:,0]
-        l_symb = [lib.param.ANGULAR[i] for i in uniq_l]
-        n_groups = np.count_nonzero(uniq_l <= LMAX)
-
-        if np.any(uniq_l > LMAX):
-            raise RuntimeError('LMAX > 4 is not supported')
         
         logger.debug1(f"Compute J/K matrices with do_j={with_j} and do_k={with_k}, omega={omega}")
         
@@ -177,10 +182,6 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         timing_counter = Counter()
         kern_counts = 0
         quartet_list = cp.empty((QUEUE_DEPTH), dtype=ushort4_dtype)
-        tasks = [(i,j,k,l) for i in range(n_groups)
-                            for j in range(i+1)
-                            for k in range(i+1)
-                            for l in range(k+1)]
         
         stream = cp.cuda.stream.get_current_stream()
         with stream:

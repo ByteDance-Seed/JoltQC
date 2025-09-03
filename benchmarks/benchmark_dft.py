@@ -35,7 +35,7 @@ lib.num_threads(8)
 # GPU4PySCF
 ##################
 
-verbose = 5
+verbose = 6
 
 mol = pyscf.M(atom=atom, basis=basis, output=f'gpu4pyscf-{basis}.log', verbose=verbose)
 mf = dft.RKS(mol, xc=xc)
@@ -52,7 +52,7 @@ for i in range(count):
     e_tot = mf.kernel()
 end.record()
 end.synchronize()
- 
+
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Time with GPU4PySCF, {elapsed_time_ms/count} ms")
 print(f'Total energy by GPU4PySCF, {e_tot}')
