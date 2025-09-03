@@ -32,7 +32,7 @@ from jqc.backend.jk_tasks import gen_screen_jk_tasks_kernel, MAX_PAIR_SIZE, QUEU
 from jqc.backend.jk import gen_jk_kernel
 from jqc.backend.cart2sph import mol2cart, cart2mol
 from jqc.pyscf.mol import compute_q_matrix, sort_group_basis
-from jqc.constants import LMAX, NPRIM_MAX, TILE
+from jqc.constants import LMAX, TILE
 
 __all__ = [
     'get_jk', 'get_j',

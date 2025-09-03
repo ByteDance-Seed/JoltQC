@@ -90,15 +90,17 @@ void rys_jk(const int nbas,
     const DataType rkx = rk.x;//__ldg(coords + 4*ksh);
     const DataType rky = rk.y;//__ldg(coords + 4*ksh+1);
     const DataType rkz = rk.z;//__ldg(coords + 4*ksh+2);
-    
-    const DataType rij0 = rj.x - ri.x;//__ldg(coords + 4*jsh)   - rix;
-    const DataType rij1 = rj.y - ri.y;//__ldg(coords + 4*jsh+1) - riy;
-    const DataType rij2 = rj.z - ri.z;//__ldg(coords + 4*jsh+2) - riz;
+
+    const DataType rij0 = rj.x - rix;//__ldg(coords + 4*jsh)   - rix;
+    const DataType rij1 = rj.y - riy;//__ldg(coords + 4*jsh+1) - riy;
+    const DataType rij2 = rj.z - riz;//__ldg(coords + 4*jsh+2) - riz;
+
     const DataType rjri[3] = {rij0, rij1, rij2};
     const DataType rr_ij = rjri[0]*rjri[0] + rjri[1]*rjri[1] + rjri[2]*rjri[2];
-    const DataType rkl0 = rl.x - rk.x;//__ldg(coords + 4*lsh)   - rkx;
-    const DataType rkl1 = rl.y - rk.y;//__ldg(coords + 4*lsh+1) - rky;
-    const DataType rkl2 = rl.z - rk.z;//__ldg(coords + 4*lsh+2) - rkz;
+    const DataType rkl0 = rl.x - rkx;//__ldg(coords + 4*lsh)   - rkx;
+    const DataType rkl1 = rl.y - rky;//__ldg(coords + 4*lsh+1) - rky;
+    const DataType rkl2 = rl.z - rkz;//__ldg(coords + 4*lsh+2) - rkz;
+
     const DataType rlrk[3] = {rkl0, rkl1, rkl2};
     const DataType rr_kl = rlrk[0]*rlrk[0] + rlrk[1]*rlrk[1] + rlrk[2]*rlrk[2];
     DataType integral[integral_size] = {zero};

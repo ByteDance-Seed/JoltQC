@@ -23,7 +23,7 @@ extern "C" __global__
 void estimate_log_aovalue(
     const double* __restrict__ grid_coords,
     const int ngrids,
-    const float* __restrict__ shell_coords,
+    const float4* __restrict__ shell_coords,
     const float* __restrict__ coeffs,
     const float* __restrict__ exps,
     const int nbas,
@@ -52,9 +52,10 @@ void estimate_log_aovalue(
     __syncthreads();
 
     for (int ish = thread_id; ish < nbas; ish += ng_per_thread){
-        float bas_x = shell_coords[3*ish];
-        float bas_y = shell_coords[3*ish + 1];
-        float bas_z = shell_coords[3*ish + 2];
+        float4 xi = shell_coords[ish];
+        float bas_x = xi.x;// //shell_coords[4*ish];
+        float bas_y = xi.y;// //shell_coords[4*ish + 1];
+        float bas_z = xi.z;// //shell_coords[4*ish + 2];
         float coeffs_reg[nprim_max], exps_reg[nprim_max];
         for (int ip = 0; ip < nprim; ip++){
             const int offset = nprim_max * ish + ip;

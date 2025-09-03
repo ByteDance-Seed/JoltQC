@@ -25,10 +25,14 @@ constexpr DataType one = 1.0;
 constexpr DataType two = 2.0;
 constexpr DataType half = 0.5;
 
+struct __align__(4*sizeof(DataType)) DataType4 {
+    DataType x, y, z, w;
+};
+
 extern "C" __global__
 void eval_rho(
     const double* __restrict__ grid_coords,
-    const DataType* __restrict__ shell_coords,
+    const DataType4* __restrict__ shell_coords,
     const DataType* __restrict__ coeffs,
     const DataType* __restrict__ exps,
     const int nbas,
@@ -78,9 +82,10 @@ void eval_rho(
             if (ish > jsh) continue;
             if (log_rho_est < log_cutoff_a || log_rho_est >= log_cutoff_b) continue;
 
-        const DataType gjx = gx[0] - __ldg(shell_coords + 3*jsh);
-        const DataType gjy = gx[1] - __ldg(shell_coords + 3*jsh + 1);
-        const DataType gjz = gx[2] - __ldg(shell_coords + 3*jsh + 2);
+        const DataType4 xj = shell_coords[jsh];
+        const DataType gjx = gx[0] - xj.x;//__ldg(shell_coords + 4*jsh);
+        const DataType gjy = gx[1] - xj.y;//__ldg(shell_coords + 4*jsh + 1);
+        const DataType gjz = gx[2] - xj.z;//__ldg(shell_coords + 4*jsh + 2);
         const DataType rr_gj = gjx*gjx + gjy*gjy + gjz*gjz;
 
         DataType cej = zero;
@@ -139,9 +144,10 @@ void eval_rho(
             }
         }
 
-            const DataType gix = gx[0] - __ldg(shell_coords + 3*ish);
-            const DataType giy = gx[1] - __ldg(shell_coords + 3*ish + 1);
-            const DataType giz = gx[2] - __ldg(shell_coords + 3*ish + 2);
+            const DataType4 xi = shell_coords[ish];
+            const DataType gix = gx[0] - xi.x;//__ldg(shell_coords + 4*ish);
+            const DataType giy = gx[1] - xi.y;//__ldg(shell_coords + 4*ish + 1);
+            const DataType giz = gx[2] - xi.z;//__ldg(shell_coords + 4*ish + 2);
             const DataType rr_gi = gix*gix + giy*giy + giz*giz;
 
             DataType cei = zero;
