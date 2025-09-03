@@ -65,7 +65,7 @@ void rys_jk(const int nbas,
     if (active) {
         sq = shl_quartet_idx[task_id];
     }
-    
+
     const int ish = (int)sq.x;
     const int jsh = (int)sq.y;
     const int ksh = (int)sq.z;
@@ -121,6 +121,7 @@ void rys_jk(const int nbas,
             reg_cicj[ip + jp*npi] = cicj;
         }
     }
+
 #pragma unroll
     for (int kp = 0; kp < npk; kp++)
     for (int lp = 0; lp < npl; lp++){
@@ -404,12 +405,12 @@ void rys_jk(const int nbas,
                             off += gstride_k;
                         }
                         const int offset = j*nao + i;
-                        atomicAdd(vj_ptr + offset, (double)vj_ji);
+                        atomicAdd(vj_ptr + offset, (double)vj_ji); 
                     }
                 }
             }
         }
-
+        
         if constexpr(do_k){
             // ijkl, jl -> ik
             {

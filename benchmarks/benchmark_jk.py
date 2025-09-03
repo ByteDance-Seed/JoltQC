@@ -79,7 +79,7 @@ n_warmup = 3
 mol = pyscf.M(atom=atom,
               basis=basis,#'6-31g',#'def2-tzvpp',#'6-31g', 
               output='pyscf_test.log',
-              verbose=4,
+              verbose=6,
               spin=None)
 
 mf = scf.RHF(mol)
@@ -98,9 +98,9 @@ for i in range(n_warmup):
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
-mol.verbose = 4
+mol.verbose = 6
 vj, vk = scf.jk.get_jk(mol, dm, hermi=1, vhfopt=vhfopt)
-mol.verbose = 4
+mol.verbose = 6
 end.record()
 end.synchronize()
 gpu4pyscf_time_ms = cp.cuda.get_elapsed_time(start, end)
@@ -135,14 +135,14 @@ for i in range(n_warmup):
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
-mol.verbose = 4
+mol.verbose = 6
 get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e6, cutoff_fp32=1e-13)
 vj_jit, vk_jit = get_jk(mol, dm, hermi=1)
-mol.verbose = 4
+mol.verbose = 6
 end.record()
 end.synchronize()
 jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
-print("------- Benchmark FP64 -----------")
+print("------- Benchmark FP32 -----------")
 print(f"Time with JQC / FP32, {jqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
 print('vj diff:', cp.linalg.norm(vj - vj_jit))
@@ -156,15 +156,57 @@ for i in range(n_warmup):
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
-mol.verbose = 4
+mol.verbose = 6
 get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e-7, cutoff_fp32=1e-13)
 vj_jit, vk_jit = get_jk(mol, dm, hermi=1)
-mol.verbose = 4
+mol.verbose = 6
 end.record()
 end.synchronize()
 jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
 print("------- Benchmark mixed precision -------- ")
 print(f"Time with JQC / FP32 + FP64, {jqc_time_ms}")
+print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
+print('vj diff:', cp.linalg.norm(vj - vj_jit))
+print('vk diff:', cp.linalg.norm(vk - vk_jit))
+
+###### JQC / FP32 #######
+# Warm up
+for i in range(n_warmup):
+    get_j = jk.generate_get_j(mol, cutoff_fp64=1e6, cutoff_fp32=1e-13)
+    vj_jit = get_j(mol, dm, hermi=1)
+start = cp.cuda.Event()
+end = cp.cuda.Event()
+start.record()
+mol.verbose = 6
+get_j = jk.generate_get_j(mol, cutoff_fp64=1e6, cutoff_fp32=1e-13)
+vj_jit = get_j(mol, dm, hermi=1)
+mol.verbose = 6
+end.record()
+end.synchronize()
+jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
+print("------- Benchmark FP32 -----------")
+print(f"Time with JQC / FP32, {jqc_time_ms}")
+print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
+print('vj diff:', cp.linalg.norm(vj - vj_jit))
+print('vk diff:', cp.linalg.norm(vk - vk_jit))
+
+###### JQC / FP32 #######
+# Warm up
+for i in range(n_warmup):
+    get_k = jk.generate_get_k(mol, cutoff_fp64=1e6, cutoff_fp32=1e-13)
+    vk_jit = get_k(mol, dm, hermi=1)
+start = cp.cuda.Event()
+end = cp.cuda.Event()
+start.record()
+mol.verbose = 6
+get_k = jk.generate_get_k(mol, cutoff_fp64=1e6, cutoff_fp32=1e-13)
+vk_jit = get_k(mol, dm, hermi=1)
+mol.verbose = 6
+end.record()
+end.synchronize()
+jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
+print("------- Benchmark FP32 -----------")
+print(f"Time with JQC / FP32, {jqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
 print('vj diff:', cp.linalg.norm(vj - vj_jit))
 print('vk diff:', cp.linalg.norm(vk - vk_jit))

@@ -98,10 +98,11 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
     const int tile_kl = tile_kl_mapping[kl];
     
     const int nbas_tiles = nbas / TILE;
+    // Optimize division and modulo operations
     const int tile_i = tile_ij / nbas_tiles;
-    const int tile_j = tile_ij % nbas_tiles;
+    const int tile_j = tile_ij - tile_i * nbas_tiles;  // Replace modulo with subtraction
     const int tile_k = tile_kl / nbas_tiles;
-    const int tile_l = tile_kl % nbas_tiles;
+    const int tile_l = tile_kl - tile_k * nbas_tiles;  // Replace modulo with subtraction
     
     const int ish0 = tile_i * TILE;
     const int jsh0 = tile_j * TILE;
@@ -111,8 +112,9 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
     const int jsh1 = jsh0 + TILE;
     const int ksh1 = ksh0 + TILE;
     const int lsh1 = lsh0 + TILE;
+    constexpr int TILE4 = TILE*TILE*TILE*TILE*TILE;
 
-    constexpr int mask_size = (TILE*TILE*TILE*TILE) / 64;
+    constexpr int mask_size = TILE4 / 64;
     uint64_t mask_bits_fp32[mask_size] = {0};
     uint64_t mask_bits_fp64[mask_size] = {0};
 
@@ -121,27 +123,40 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
     if (active){
         for (int i = 0; i < TILE; ++i){
             const int ish = ish0 + i;
+            // Optimize memory indexing with base address calculation
+            const int ish_base = ish * nbas;
+            
             for (int j = 0; j < TILE; ++j){
                 const int jsh = jsh0 + j;
                 if (jsh >= ish+1 || jsh >= jsh1) continue;
-                const int bas_ij = ish * nbas + jsh;
-                const float q_ij = q_cond [bas_ij];
+                
+                const int jsh_base = jsh * nbas;
+                const int bas_ij = ish_base + jsh;
+                const float q_ij = q_cond[bas_ij];
                 const float d_ij = dm_cond[bas_ij];
+                
                 for (int k = 0; k < TILE; ++k){
                     const int ksh = ksh0 + k;
                     if (ksh >= ish+1 || ksh >= ksh1) continue;
-                    const float d_ik = dm_cond[ish*nbas+ksh];
-                    const float d_jk = dm_cond[jsh*nbas+ksh];
+                    
+                    const float d_ik = dm_cond[ish_base + ksh];
+                    const float d_jk = dm_cond[jsh_base + ksh];
+                    
                     for (int l = 0; l < TILE; ++l){
                         const int lsh = lsh0 + l;
                         if (lsh >= ksh+1 || lsh >= lsh1) continue;
-                        const int bas_kl = ksh * nbas + lsh;
+                        
+                        // Optimize memory indexing
+                        const int ksh_base = ksh * nbas;
+                        const int bas_kl = ksh_base + lsh;
                         if (bas_ij < bas_kl) continue;
+                        
                         const float q_ijkl = q_ij + q_cond[bas_kl];
                         float d_large = -36.8f;
+                        
                         if constexpr(do_k){
-                            const float d_il = dm_cond[ish*nbas+lsh];
-                            const float d_jl = dm_cond[jsh*nbas+lsh];
+                            const float d_il = dm_cond[ish_base + lsh];
+                            const float d_jl = dm_cond[jsh_base + lsh];
                             d_large = max(d_large, d_ik);
                             d_large = max(d_large, d_jk);
                             d_large = max(d_large, d_il);
@@ -152,26 +167,21 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
                             d_large = max(d_large, d_ij);
                             d_large = max(d_large, d_kl);
                         }
-                        float dq = q_ijkl + d_large;
-                        bool selected = (dq > cutoff) && (dq <= cutoff_fp64);
-                        if (selected){
-                            uint64_t idx = i*TILE*TILE*TILE + j*TILE*TILE + k*TILE + l;
-                            uint64_t word = idx >> 6; // divide 64
-                            uint64_t bit = idx & 63;
-                            uint64_t bitmask = 1ull << bit;
-                            mask_bits_fp32[word] |= bitmask;
-                        }
-                        count_fp32 += selected;
                         
-                        selected = (dq > cutoff_fp64);
-                        if (selected){
-                            uint64_t idx = i*TILE*TILE*TILE + j*TILE*TILE + k*TILE + l;
-                            uint64_t word = idx >> 6; // divide 64
-                            uint64_t bit = idx & 63;
-                            uint64_t bitmask = 1ull << bit;
-                            mask_bits_fp64[word] |= bitmask;
-                        }
-                        count_fp64 += selected;
+                        const float dq = q_ijkl + d_large;
+                        const bool sel_fp32 = (dq > cutoff) && (dq <= cutoff_fp64);
+                        const bool sel_fp64 = (dq > cutoff_fp64);
+                        
+                        // Optimized bit operations using fast arithmetic
+                        const uint64_t idx = ((i * TILE + j) * TILE + k) * TILE + l;  // Horner's method
+                        const uint64_t word = idx >> 6;  // Fast division by 64
+                        const uint64_t bit = idx & 63;   // Fast modulo 64
+                        const uint64_t bitmask = 1ull << bit;
+                        
+                        if (sel_fp32) mask_bits_fp32[word] |= bitmask;
+                        if (sel_fp64) mask_bits_fp64[word] |= bitmask;
+                        count_fp32 += sel_fp32;
+                        count_fp64 += sel_fp64;
                     }
                 }
             }
@@ -181,31 +191,33 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
     int offset_fp64 = global_offset(batch_head+2, -count_fp64) - 1;
 
     if (active){
+        // Optimized output generation with reduced branching
 #pragma unroll
         for (int i = 0; i < TILE; i++){
             for (int j = 0; j < TILE; j++){
                 for (int k = 0; k < TILE; k++){
                     for (int l = 0; l < TILE; l++){
-                        uint64_t idx = i*TILE*TILE*TILE + j*TILE*TILE + k*TILE + l;
-                        uint64_t word = idx >> 6; // divide 64
-                        uint64_t bit = idx & 63;
-                        bool selected = (mask_bits_fp32[word] >> bit) & 1ull;
-                        if (selected){
-                            ushort4 sq;
-                            sq.x = ish0 + i; 
-                            sq.y = jsh0 + j; 
-                            sq.z = ksh0 + k; 
-                            sq.w = lsh0 + l;
+                        const uint64_t idx = ((i * TILE + j) * TILE + k) * TILE + l;  // Horner's method
+                        const uint64_t word = idx >> 6; // Fast division by 64
+                        const uint64_t bit = idx & 63;  // Fast modulo 64
+                        
+                        // Check both selections once with optimized bit testing
+                        const bool sel_fp32 = (mask_bits_fp32[word] >> bit) & 1ull;
+                        const bool sel_fp64 = (mask_bits_fp64[word] >> bit) & 1ull;
+                        
+                        // Prepare quartet data once
+                        ushort4 sq;
+                        sq.x = ish0 + i; 
+                        sq.y = jsh0 + j; 
+                        sq.z = ksh0 + k; 
+                        sq.w = lsh0 + l;
+                        
+                        // Use predication to reduce branch divergence
+                        if (sel_fp32) {
                             shl_quartet_idx[offset_fp32] = sq;
                             ++offset_fp32;
                         }
-                        selected = (mask_bits_fp64[word] >> bit) & 1ull;
-                        if (selected){
-                            ushort4 sq;
-                            sq.x = ish0 + i; 
-                            sq.y = jsh0 + j; 
-                            sq.z = ksh0 + k; 
-                            sq.w = lsh0 + l;
+                        if (sel_fp64) {
                             shl_quartet_idx[offset_fp64] = sq;
                             --offset_fp64;
                         }

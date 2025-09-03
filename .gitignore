@@ -15,6 +15,7 @@ output/
 .pytest_cache/
 .vscode/
 .claude/
+.ruff_cache/
 .venv
 *.swo
 *.swp
