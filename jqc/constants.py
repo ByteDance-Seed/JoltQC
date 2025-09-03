@@ -26,7 +26,4 @@ NPRIM_MAX = 16
 # Tile size for block-based algorithms
 TILE = 4
 
-# Task queue depth for JK calculations
-QUEUE_DEPTH = 268435456  # 2^28, corresponds to 2GB for int4 dtype
-
-__all__ = ["LMAX", "NPRIM_MAX", "QUEUE_DEPTH", "TILE"]
+__all__ = ["LMAX", "NPRIM_MAX", "TILE"]

@@ -222,7 +222,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         info_cpu = info.get()
                         
                         # FP32 tasks
-                        n_quartets_fp32 = info_cpu[1]
+                        n_quartets_fp32 = int(info_cpu[1].item())
                         if n_quartets_fp32 > 0:
                             jk_fp32_kernel = gen_jk_kernel(ang, nprim, do_j=with_j, do_k=with_k, 
                                                            dtype=np.float32, n_dm=n_dm, omega=omega_fp32)
@@ -233,7 +233,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                             ntasks_fp32 += n_quartets_fp32
 
                         # FP64 tasks
-                        offset = info_cpu[2]
+                        offset = int(info_cpu[2].item())
                         n_quartets_fp64 = QUEUE_DEPTH - offset
                         if n_quartets_fp64 > 0:
                             jk_fp64_kernel = gen_jk_kernel(ang, nprim, do_j=with_j, do_k=with_k, 
@@ -305,17 +305,18 @@ def make_tile_pairs(l_ctr_bas_loc, q_matrix, cutoff, tile=TILE):
     ntiles = q_matrix.shape[0] // tile
     tile_loc = l_ctr_bas_loc // tile
     tiled_q_matrix = q_matrix.reshape([ntiles, tile, ntiles, tile]).max(axis=(1,3))
+    q_idx = tiled_q_matrix#.astype(int) - 1
     for i in range(n_groups):
         i0, i1 = tile_loc[i], tile_loc[i+1]
         for j in range(i+1):
             j0, j1 = tile_loc[j], tile_loc[j+1]
-            sub_tile_q = tiled_q_matrix[i0:i1,j0:j1]
-            mask = sub_tile_q > cutoff
+            sub_q_idx = q_idx[i0:i1,j0:j1]
+            mask = sub_q_idx > cutoff
             if i == j:
                 mask = cp.tril(mask)
             t_ij = (cp.arange(i0, i1, dtype=np.int32)[:,None] * ntiles +
                     cp.arange(j0, j1, dtype=np.int32))
-            idx = cp.argsort(sub_tile_q[mask])[::-1]
-            tile_pairs[i,j] = t_ij[mask][idx]
+            #idx = cp.argsort(sub_q_idx[mask])[::-1]
+            tile_pairs[i,j] = t_ij[mask]#[idx]
     return tile_pairs
 

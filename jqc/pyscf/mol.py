@@ -117,7 +117,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
 
         iatm = _bas[i, gto.ATOM_OF]
         coord_ptr = _atm[iatm, gto.PTR_COORD]
-
+ 
         exp_ptr = _bas[i, gto.PTR_EXP]
         coeff_ptr = _bas[i, gto.PTR_COEFF]
         coeff = _env[coeff_ptr:coeff_ptr+nprim*nctr].copy()
@@ -145,12 +145,19 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         coord = coords_by_pattern[key]
         bas_id = bas_id_by_pattern[key]
         
+        coord = np.concatenate(coord)
+        idx = cluster_into_tile(coord)
+        exp = [exp[i] for i in idx]
+        coeff = [coeff[i] for i in idx]
+        bas_id = [bas_id[i] for i in idx]
+        coord = coord[idx]
+        
         # Pad the arrays with first basis in the group
         exp.append(np.tile(exp[0], (pad, 1)))
         coeff.append(np.tile(coeff[0], (pad, 1)))
-        coord.append(np.tile(coord[0], (pad, 1)))
+        coord = [coord, np.tile(coord[0], (pad, 1))]
         bas_id.append(np.ones(pad, dtype=np.int32) * bas_id[0])
-        
+
         exponents_by_pattern[key] = np.concatenate(exp, axis=0)
         coeffs_by_pattern[key] = np.concatenate(coeff, axis=0)
         bas_id_by_pattern[key] = np.concatenate(bas_id, axis=0)
@@ -202,8 +209,19 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     # Store info at basis level
     bas_info = (coeffs, exponents, coords, angs, nprims)
     
-    group_key = np.asarray(group_key)
-    group_offset = np.asarray(group_offset)
+    group_size = 256
+    splitted_group_key = []
+    splitted_group_offset = []
+    for group_id in range(len(group_key)):
+        for offset in range(group_offset[group_id], group_offset[group_id+1], group_size):
+            splitted_group_key.append(group_key[group_id])
+            splitted_group_offset.append(offset)
+    splitted_group_offset.append(group_offset[-1])
+    group_key = np.asarray(splitted_group_key)
+    group_offset = np.asarray(splitted_group_offset)
+
+    #group_key = np.asarray(group_key)
+    #group_offset = np.asarray(group_offset)
     
     return bas_info, bas_id, pad_id, (group_key, group_offset)
 
@@ -229,6 +247,28 @@ def compute_q_matrix(mol):
     q_matrix = np.log(q_matrix + 1e-300).astype(np.float32)
     return q_matrix
 
+def cluster_into_tile(coords, tile=4):
+    """
+    Greedy heuristic of grouping coords into tiles 
+    """
+    from scipy.spatial.distance import pdist, squareform
+    coords = np.asarray(coords)
+
+    distance_matrix = squareform(pdist(coords, metric='euclidean')) 
+    n = distance_matrix.shape[0]
+    unassigned = set(range(n))
+    clusters = []
+
+    while unassigned:
+        i = unassigned.pop()
+        # find nearest 3 among remaining
+        dists = [(j, distance_matrix[i, j]) for j in unassigned]
+        nearest = sorted(dists, key=lambda x: x[1])[:tile-1]
+        cluster = [i] + [j for j, _ in nearest]
+        for j, _ in nearest:
+            unassigned.remove(j)
+        clusters += cluster
+    return clusters
 
 if __name__ == '__main__':
     from pyscf import gto

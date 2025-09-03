@@ -49,6 +49,6 @@ e_tot = mf_cpu.kernel()
 # Method 2:
 # Apply JIT to PySCF object
 print("Apply JIT to PySCF object")
-mf = jqc.pyscf.compile(mf_cpu)
+mf = jqc.pyscf.apply(mf_cpu)
 print("Run JIT PySCF object")
 mf.kernel()
