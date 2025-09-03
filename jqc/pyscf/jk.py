@@ -306,7 +306,7 @@ def make_tile_pairs(l_ctr_bas_loc, q_matrix, cutoff, tile=TILE):
     ntiles = q_matrix.shape[0] // tile
     tile_loc = l_ctr_bas_loc // tile
     tiled_q_matrix = q_matrix.reshape([ntiles, tile, ntiles, tile]).max(axis=(1,3))
-    q_idx = tiled_q_matrix#.astype(int) - 1
+    q_idx = tiled_q_matrix
     for i in range(n_groups):
         i0, i1 = tile_loc[i], tile_loc[i+1]
         for j in range(i+1):
@@ -317,7 +317,6 @@ def make_tile_pairs(l_ctr_bas_loc, q_matrix, cutoff, tile=TILE):
                 mask = cp.tril(mask)
             t_ij = (cp.arange(i0, i1, dtype=np.int32)[:,None] * ntiles +
                     cp.arange(j0, j1, dtype=np.int32))
-            #idx = cp.argsort(sub_q_idx[mask])[::-1]
-            tile_pairs[i,j] = t_ij[mask]#[idx]
+            tile_pairs[i,j] = t_ij[mask]
     return tile_pairs
 

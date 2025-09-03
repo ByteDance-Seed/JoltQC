@@ -40,7 +40,7 @@ void rys_jk(const int nbas,
         double* vj, 
         double* vk, 
         const DataType omega,
-        ushort4* __restrict__ shl_quartet_idx, 
+        const ushort4* __restrict__ shl_quartet_idx, 
         const int ntasks) // rename
 {
     if (ntasks == 0) return;
@@ -90,7 +90,7 @@ void rys_jk(const int nbas,
     const DataType rkx = rk.x;//__ldg(coords + 4*ksh);
     const DataType rky = rk.y;//__ldg(coords + 4*ksh+1);
     const DataType rkz = rk.z;//__ldg(coords + 4*ksh+2);
-
+    
     const DataType rij0 = rj.x - ri.x;//__ldg(coords + 4*jsh)   - rix;
     const DataType rij1 = rj.y - ri.y;//__ldg(coords + 4*jsh+1) - riy;
     const DataType rij2 = rj.z - ri.z;//__ldg(coords + 4*jsh+2) - riz;

@@ -26,10 +26,14 @@ constexpr DataType one = 1.0;
 constexpr DataType zero = 0.0;
 constexpr int nprim_max = 16;
 
+struct __align__(4*sizeof(DataType)) DataType4 {
+    DataType x, y, z, w;
+};
+
 extern "C" __global__
 void rys_jk(const int nbas,  
         const int* __restrict__ ao_loc, 
-        const DataType* __restrict__ coords,
+        const DataType4* __restrict__ coords,
         const DataType* __restrict__ exponents, 
         const DataType* __restrict__ coeffs,
         DataType* dm, 
@@ -116,15 +120,26 @@ void rys_jk(const int nbas,
     if (ish == jsh) fac_sym *= half;
     if (ksh == lsh) fac_sym *= half;
     if (ish*nbas+jsh == ksh*nbas+lsh) fac_sym *= half;
+    const DataType4 ri = coords[ish];
+    const DataType4 rj = coords[jsh];
+    const DataType4 rk = coords[ksh];
+    const DataType4 rl = coords[lsh];
 
-    const DataType rij0 = coords[4*jsh] - coords[3*ish];
-    const DataType rij1 = coords[4*jsh+1] - coords[3*ish+1];
-    const DataType rij2 = coords[3*jsh+2] - coords[3*ish+2];
+    const DataType rix = ri.x;//__ldg(coords + 4*ish);
+    const DataType riy = ri.y;//__ldg(coords + 4*ish+1);
+    const DataType riz = ri.z;//__ldg(coords + 4*ish+2);
+    const DataType rkx = rk.x;//__ldg(coords + 4*ksh);
+    const DataType rky = rk.y;//__ldg(coords + 4*ksh+1);
+    const DataType rkz = rk.z;//__ldg(coords + 4*ksh+2);
+
+    const DataType rij0 = rj.x - rix;//coords[4*jsh] - coords[3*ish];
+    const DataType rij1 = rj.y - riy;//coords[4*jsh+1] - coords[3*ish+1];
+    const DataType rij2 = rj.z - riz;//coords[3*jsh+2] - coords[3*ish+2];
     const DataType rjri[3] = {rij0, rij1, rij2};
     const DataType rr_ij = rjri[0]*rjri[0] + rjri[1]*rjri[1] + rjri[2]*rjri[2];
-    const DataType rkl0 = coords[3*lsh] - coords[3*ksh];
-    const DataType rkl1 = coords[3*lsh+1] - coords[3*ksh+1];
-    const DataType rkl2 = coords[3*lsh+2] - coords[3*ksh+2];
+    const DataType rkl0 = rl.x - rkx; //coords[3*lsh] - coords[3*ksh];
+    const DataType rkl1 = rl.y - rky; //coords[3*lsh+1] - coords[3*ksh+1];
+    const DataType rkl2 = rl.z - rkz; //coords[3*lsh+2] - coords[3*ksh+2];
     const DataType rlrk[3] = {rkl0, rkl1, rkl2};
     const DataType rr_kl = rlrk[0]*rlrk[0] + rlrk[1]*rlrk[1] + rlrk[2]*rlrk[2];
 
@@ -157,12 +172,12 @@ void rys_jk(const int nbas,
             const DataType cj = __ldg(coeffs + jsh_jp);
             const DataType cicj = fac_sym * ci * cj * Kab;
             
-            const DataType xij = rjri[0] * aj_aij + __ldg(coords + 3*ish);
-            const DataType yij = rjri[1] * aj_aij + __ldg(coords + 3*ish+1);
-            const DataType zij = rjri[2] * aj_aij + __ldg(coords + 3*ish+2);
-            const DataType xkl = rlrk[0] * al_akl + __ldg(coords + 3*ksh);
-            const DataType ykl = rlrk[1] * al_akl + __ldg(coords + 3*ksh+1);
-            const DataType zkl = rlrk[2] * al_akl + __ldg(coords + 3*ksh+2);
+            const DataType xij = rjri[0] * aj_aij + rix;//__ldg(coords + 3*ish);
+            const DataType yij = rjri[1] * aj_aij + riy;//__ldg(coords + 3*ish+1);
+            const DataType zij = rjri[2] * aj_aij + riz;//__ldg(coords + 3*ish+2);
+            const DataType xkl = rlrk[0] * al_akl + rkx;//__ldg(coords + 3*ksh);
+            const DataType ykl = rlrk[1] * al_akl + rky;//__ldg(coords + 3*ksh+1);
+            const DataType zkl = rlrk[2] * al_akl + rkz;//__ldg(coords + 3*ksh+2);
             const DataType Rpq[3] = {xij-xkl, yij-ykl, zij-zkl};
 
             const DataType rr = Rpq[0]*Rpq[0] + Rpq[1]*Rpq[1] + Rpq[2]*Rpq[2];

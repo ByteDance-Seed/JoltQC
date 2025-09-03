@@ -21,15 +21,15 @@
 
 template <int L> __device__
 static void _sph2cart_kernel(double *gcart, double *gsph){
-    if (L == 0) {
+    if constexpr(L == 0) {
         gcart[0] = gsph[0]; // 0.282094791773878143
     }
-    if (L == 1) {
+    if constexpr(L == 1) {
         gcart[0] = gsph[0]; // 0.488602511902919921
         gcart[1] = gsph[1]; // 0.488602511902919921
         gcart[2] = gsph[2]; // 0.488602511902919921
     }
-    if (L == 2){
+    if constexpr(L == 2){
         gcart[0] = -0.31539156525252*gsph[2] + 0.5462742152960396*gsph[4];
         gcart[1] = 1.0925484305920792*gsph[0];
         gcart[2] = 1.0925484305920792*gsph[3];
@@ -37,7 +37,7 @@ static void _sph2cart_kernel(double *gcart, double *gsph){
         gcart[4] = 1.0925484305920792*gsph[1];
         gcart[5] = 0.63078313050504*gsph[2];
     }
-    if (L == 3){
+    if constexpr(L == 3){
         gcart[0] = -0.4570457994644657*gsph[4] + 0.5900435899266435*gsph[6];
         gcart[1] = 1.7701307697799304*gsph[0] + -0.4570457994644657*gsph[2];
         gcart[2] = -1.1195289977703462*gsph[3] + 1.4453057213202771*gsph[5];
@@ -49,7 +49,7 @@ static void _sph2cart_kernel(double *gcart, double *gsph){
         gcart[8] = 1.8281831978578629*gsph[2];
         gcart[9] = 0.7463526651802308*gsph[3];
     }
-    if (L == 4){
+    if constexpr(L == 4){
         gcart[0] = 0.31735664074561293*gsph[4] + -0.47308734787878*gsph[6] + 0.6258357354491761*gsph[8];
         gcart[1] = 2.5033429417967046*gsph[0] + -0.94617469575756*gsph[2];
         gcart[2] = -2.0071396306718676*gsph[5] + 1.7701307697799304*gsph[7];
@@ -66,7 +66,7 @@ static void _sph2cart_kernel(double *gcart, double *gsph){
         gcart[13] = 2.676186174229157*gsph[3];
         gcart[14] = 0.8462843753216345*gsph[4];
     }
-    if (L == 5){
+    if constexpr(L == 5){
         gcart[0] = 0.45294665119569694*gsph[6] + -0.4892382994352504*gsph[8] + 0.6563820568401701*gsph[10];
         gcart[1] = 3.2819102842008507*gsph[0] + -1.467714898305751*gsph[2] + 0.45294665119569694*gsph[4];
         gcart[2] = 1.754254836801354*gsph[5] + -2.396768392486662*gsph[7] + 2.075662314881041*gsph[9];
@@ -89,7 +89,7 @@ static void _sph2cart_kernel(double *gcart, double *gsph){
         gcart[19] = 3.6235732095655755*gsph[4];
         gcart[20] = 0.9356025796273888*gsph[5];
     }
-    if (L == 6){
+    if constexpr(L == 6){
         gcart[0] = -0.3178460113381421*gsph[6] + 0.4606026297574618*gsph[8] + -0.5045649007287241*gsph[10] + 0.6831841051919144*gsph[12];
         gcart[1] = 4.099104631151486*gsph[0] + -2.0182596029148963*gsph[2] + 0.9212052595149236*gsph[4];
         gcart[2] = 2.913106812593657*gsph[7] + -2.7636157785447706*gsph[9] + 2.3666191622317525*gsph[11];
@@ -119,7 +119,7 @@ static void _sph2cart_kernel(double *gcart, double *gsph){
         gcart[26] = 4.6609709001498505*gsph[5];
         gcart[27] = 1.0171072362820548*gsph[6];
     }
-    if (L == 7){
+    if constexpr(L == 7){
         gcart[0] = -0.4516580379125866*gsph[8] + 0.4693768015868821*gsph[10] + -0.5189155787202604*gsph[12] + 0.7071627325245963*gsph[14];
         gcart[1] = 4.950139127672174*gsph[0] + -2.594577893601302*gsph[2] + 1.4081304047606462*gsph[4] + -0.4516580379125866*gsph[6];
         gcart[2] = -2.389949691920173*gsph[7] + 3.3189951933373707*gsph[9] + -3.1134934723215624*gsph[11] + 2.6459606618019*gsph[13];
@@ -157,7 +157,7 @@ static void _sph2cart_kernel(double *gcart, double *gsph){
         gcart[34] = 5.781222885281109*gsph[6];
         gcart[35] = 1.092548430592079*gsph[7];
     }
-    if (L == 8){
+    if constexpr(L == 8){
         gcart[0] = 0.3180369672047749*gsph[8] + -0.4561522584349095*gsph[10] + 0.4784165247593308*gsph[12] + -0.5323327660595425*gsph[14] + 0.72892666017483*gsph[16];
         gcart[1] = 5.83141328139864*gsph[0] + -3.193996596357255*gsph[2] + 1.913666099037323*gsph[4] + -0.912304516869819*gsph[6];
         gcart[2] = -3.8164436064573*gsph[9] + 3.705798465886632*gsph[11] + -3.449910622098108*gsph[13] + 2.91570664069932*gsph[15];
@@ -205,7 +205,7 @@ static void _sph2cart_kernel(double *gcart, double *gsph){
         gcart[44] = 1.16310662292032*gsph[8];
     }
 
-    if (L == 9){
+    if constexpr(L == 9){
         gcart[0] = 0.451093112065591*gsph[10] + -0.4617085200161945*gsph[12] + 0.4873782790390186*gsph[14] + -0.5449054813440533*gsph[16] + 0.7489009518531882*gsph[18];
         gcart[1] = 6.740108566678694*gsph[0] + -3.814338369408373*gsph[2] + 2.436891395195093*gsph[4] + -1.385125560048583*gsph[6] + 0.451093112065591*gsph[8];
         gcart[2] = 3.026024588281776*gsph[9] + -4.23162848396049*gsph[11] + 4.077699238729173*gsph[13] + -3.775215916042701*gsph[15] + 3.177317648954698*gsph[17];
@@ -262,7 +262,7 @@ static void _sph2cart_kernel(double *gcart, double *gsph){
         gcart[53] = 8.248559763485094*gsph[8];
         gcart[54] = 1.229622689841484*gsph[9];
     }
-    if (L == 10){
+    if constexpr(L == 10){
         gcart[0] = -0.3181304937373671*gsph[10] + 0.4540511313802278*gsph[12] + -0.4677441816782422*gsph[14] + 0.4961176240878564*gsph[16] + -0.5567269327204184*gsph[18] + 0.7673951182219901*gsph[20];
         gcart[1] = 7.673951182219901*gsph[0] + -4.453815461763347*gsph[2] + 2.976705744527138*gsph[4] + -1.870976726712969*gsph[6] + 0.9081022627604556*gsph[8];
         gcart[2] = 4.718637772708116*gsph[11] + -4.630431158153326*gsph[13] + 4.437410929184535*gsph[15] + -4.091090733689417*gsph[17] + 3.431895299891715*gsph[19];
@@ -339,8 +339,8 @@ void sph2cart(double *gcart, double* gsph, int nao, int nbas,
     constexpr int nf_cart = (ang+1)*(ang+2)/2;
     constexpr int nf_sph = 2*ang+1;
     
-    int iao = blockIdx.x * blockDim.x + threadIdx.x;
-    int jsh = blockIdx.y * blockDim.y + threadIdx.y;
+    const int iao = blockIdx.x * blockDim.x + threadIdx.x;
+    const int jsh = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (iao >= nao || jsh >= nbas) return;
 

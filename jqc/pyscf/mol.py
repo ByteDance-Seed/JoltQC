@@ -203,9 +203,9 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     angs = np.concatenate(angs, axis=0)
     nprims = np.concatenate(nprims, axis=0)
 
-    exponents = cp.asarray(exponents)
-    coeffs = cp.asarray(coeffs)
-    coords = cp.asarray(coords)
+    exponents = cp.asarray(exponents, order='C')
+    coeffs = cp.asarray(coeffs, order='C')
+    coords = cp.asarray(coords, order='C')
 
     # Store info at basis level
     bas_info = (coeffs, exponents, coords, angs, nprims)
