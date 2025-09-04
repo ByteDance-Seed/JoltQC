@@ -103,8 +103,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     _atm = mol._atm
 
     coords_by_pattern = defaultdict(list)
-    exponents_by_pattern = defaultdict(list)
-    coeffs_by_pattern = defaultdict(list)
+    ce_by_pattern = defaultdict(list)
     bas_id_by_pattern = defaultdict(list)
     pad_id_by_pattern = defaultdict(list)
 
@@ -120,47 +119,55 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
  
         exp_ptr = _bas[i, gto.PTR_EXP]
         coeff_ptr = _bas[i, gto.PTR_COEFF]
-        coeff = _env[coeff_ptr:coeff_ptr+nprim*nctr].copy()
-        exp = _env[exp_ptr:exp_ptr+nprim*nctr]
+        #coeff = _env[coeff_ptr:coeff_ptr+nprim*nctr].copy()
+        #exp = _env[exp_ptr:exp_ptr+nprim*nctr]
+        ce = np.empty(2*nprim*nctr)
+        ce[0::2] = _env[coeff_ptr:coeff_ptr+nprim*nctr]
+        ce[1::2] = _env[exp_ptr:exp_ptr+nprim*nctr]
         if ang < 2:
             fac = ((2*ang + 1) / (4.0 * np.pi))**.5
-            coeff *= fac
+            ce[0::2] *= fac
         coord = np.zeros(4, dtype=np.float64)
         coord[:3] = _env[coord_ptr:coord_ptr+3]
-        coeff = coeff.reshape(nctr, nprim)
-        exp = exp.reshape(nctr, nprim)
-        coeff = np.concatenate((coeff, np.zeros((nctr, NPRIM_MAX-nprim))), axis=1)
-        exp = np.concatenate((exp, np.zeros((nctr, NPRIM_MAX-nprim))), axis=1)
-
+        #coeff = coeff.reshape(nctr, nprim)
+        #exp = exp.reshape(nctr, nprim)
+        ce = ce.reshape(nctr, 2*nprim)
+        #coeff = np.concatenate((coeff, np.zeros((nctr, NPRIM_MAX-nprim))), axis=1)
+        #exp = np.concatenate((exp, np.zeros((nctr, NPRIM_MAX-nprim))), axis=1)
+        ce_pad = np.zeros((nctr, 2*NPRIM_MAX))
+        ce_pad[:,:2*nprim] = ce
         coords_by_pattern[ang, nprim].append(np.tile(coord, (nctr, 1)))
-        exponents_by_pattern[ang, nprim].append(exp)
-        coeffs_by_pattern[ang, nprim].append(coeff)
+        ce_by_pattern[ang, nprim].append(ce_pad)
         bas_id_by_pattern[ang, nprim].append(np.ones(nctr, dtype=np.int32) * i)
 
     # Pad the arrays for basis information
     for key in coords_by_pattern:
         nbas = sum([len(x) for x in coords_by_pattern[key]])
         pad = (alignment - nbas % alignment) % alignment
-        exp = exponents_by_pattern[key]
-        coeff = coeffs_by_pattern[key]
+        #exp = exponents_by_pattern[key]
+        #coeff = coeffs_by_pattern[key]
+        ce = ce_by_pattern[key]
         coord = coords_by_pattern[key]
         bas_id = bas_id_by_pattern[key]
         
         coord = np.concatenate(coord)
         idx = cluster_into_tile(coord)
-        exp = [exp[i] for i in idx]
-        coeff = [coeff[i] for i in idx]
+        #exp = [exp[i] for i in idx]
+        #coeff = [coeff[i] for i in idx]
+        ce = [ce[i] for i in idx]
         bas_id = [bas_id[i] for i in idx]
         coord = coord[idx]
         
         # Pad the arrays with first basis in the group
-        exp.append(np.tile(exp[0], (pad, 1)))
-        coeff.append(np.tile(coeff[0], (pad, 1)))
+        #exp.append(np.tile(exp[0], (pad, 1)))
+        #coeff.append(np.tile(coeff[0], (pad, 1)))
+        ce.append(np.tile(ce[0], (pad,1)))
         coord = [coord, np.tile(coord[0], (pad, 1))]
         bas_id.append(np.ones(pad, dtype=np.int32) * bas_id[0])
 
-        exponents_by_pattern[key] = np.concatenate(exp, axis=0)
-        coeffs_by_pattern[key] = np.concatenate(coeff, axis=0)
+        #exponents_by_pattern[key] = np.concatenate(exp, axis=0)
+        #coeffs_by_pattern[key] = np.concatenate(coeff, axis=0)
+        ce_by_pattern[key] = np.concatenate(ce, axis=0)
         bas_id_by_pattern[key] = np.concatenate(bas_id, axis=0)
         coords_by_pattern[key] = np.concatenate(coord, axis=0)
 
@@ -171,8 +178,9 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     # Sort the basis by angular momentum and number of primitives
     # Reverse the order of primitives, to be consistent with GPU4PySCF
     sorted_keys = sorted(coords_by_pattern.keys(), key=lambda x: (x[0], -x[1]))
-    exponents = []
-    coeffs = []
+    #exponents = []
+    #coeffs = []
+    ce = []
     coords = []
     bas_id = []
     pad_id = []
@@ -182,8 +190,9 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     group_offset = []
     offset = 0
     for key in sorted_keys:
-        exponents.append(exponents_by_pattern[key])
-        coeffs.append(coeffs_by_pattern[key])
+        #exponents.append(exponents_by_pattern[key])
+        #coeffs.append(coeffs_by_pattern[key])
+        ce.append(ce_by_pattern[key])
         coords.append(coords_by_pattern[key])
         bas_id.append(bas_id_by_pattern[key])
         pad_id.append(pad_id_by_pattern[key])
@@ -195,20 +204,22 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         offset += bas_count
     group_offset.append(offset)
 
-    exponents = np.concatenate(exponents, axis=0, dtype=dtype)
-    coeffs = np.concatenate(coeffs, axis=0, dtype=dtype)
+    #exponents = np.concatenate(exponents, axis=0, dtype=dtype)
+    #coeffs = np.concatenate(coeffs, axis=0, dtype=dtype)
+    ce = np.concatenate(ce, axis=0, dtype=dtype)
     coords = np.concatenate(coords, axis=0, dtype=dtype)
     bas_id = np.concatenate(bas_id, axis=0, dtype=np.int32)
     pad_id = np.concatenate(pad_id, axis=0, dtype=np.bool)
     angs = np.concatenate(angs, axis=0)
     nprims = np.concatenate(nprims, axis=0)
 
-    exponents = cp.asarray(exponents, order='C')
-    coeffs = cp.asarray(coeffs, order='C')
+    #exponents = cp.asarray(exponents, order='C')
+    #coeffs = cp.asarray(coeffs, order='C')
+    ce = cp.asarray(ce, order='C')
     coords = cp.asarray(coords, order='C')
 
     # Store info at basis level
-    bas_info = (coeffs, exponents, coords, angs, nprims)
+    bas_info = (ce, coords, angs, nprims)
     
     group_size = 256
     splitted_group_key = []

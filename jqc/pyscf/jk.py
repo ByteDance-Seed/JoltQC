@@ -92,9 +92,10 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     log_cutoff_fp64 = np.float32(math.log(cutoff_fp64))
     log_cutoff_fp32 = np.float32(math.log(cutoff_fp32))
 
-    coeffs_fp64, exponents_fp64, coords_fp64, angs, _ = bas_cache
-    coeffs_fp32 = coeffs_fp64.astype(np.float32)
-    exponents_fp32 = exponents_fp64.astype(np.float32)
+    ce_fp64, coords_fp64, angs, _ = bas_cache
+    #coeffs_fp32 = coeffs_fp64.astype(np.float32)
+    #exponents_fp32 = exponents_fp64.astype(np.float32)
+    ce_fp32 = ce_fp64.astype(np.float32)
     coords_fp32 = coords_fp64.astype(np.float32)
 
     ao_loc = np.concatenate(([0], np.cumsum((angs+1)*(angs+2)//2)))
@@ -226,7 +227,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         if n_quartets_fp32 > 0:
                             jk_fp32_kernel = gen_jk_kernel(ang, nprim, do_j=with_j, do_k=with_k, 
                                                            dtype=np.float32, n_dm=n_dm, omega=omega_fp32)
-                            jk_fp32_kernel(nbas, ao_loc, coords_fp32, exponents_fp32, coeffs_fp32,
+                            jk_fp32_kernel(nbas, ao_loc, coords_fp32, ce_fp32,
                                            dms_fp32, vj, vk, omega_fp32, quartet_list,
                                            n_quartets_fp32)
                             kern_counts += 1
@@ -238,7 +239,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         if n_quartets_fp64 > 0:
                             jk_fp64_kernel = gen_jk_kernel(ang, nprim, do_j=with_j, do_k=with_k, 
                                                            dtype=np.float64, n_dm=n_dm, omega=omega_fp64)
-                            jk_fp64_kernel(nbas, ao_loc, coords_fp64, exponents_fp64, coeffs_fp64,
+                            jk_fp64_kernel(nbas, ao_loc, coords_fp64, ce_fp64,
                                            dms, vj, vk, omega_fp64, quartet_list[offset:],
                                            n_quartets_fp64)
                             kern_counts += 1

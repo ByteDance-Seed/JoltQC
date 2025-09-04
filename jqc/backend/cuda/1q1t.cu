@@ -30,12 +30,15 @@ struct __align__(4*sizeof(DataType)) DataType4 {
     DataType x, y, z, w;
 };
 
+struct __align__(2*sizeof(DataType)) DataType2 {
+    DataType c, e;
+};
+
 extern "C" __global__
 void rys_jk(const int nbas,
         const int * __restrict__ ao_loc, 
         const DataType4* __restrict__ coords,
-        const DataType* __restrict__ exponents, 
-        const DataType* __restrict__ coeffs,
+        const DataType2* __restrict__ coeff_exp, 
         DataType* dm, 
         double* vj, 
         double* vk, 
@@ -105,29 +108,32 @@ void rys_jk(const int nbas,
     const DataType rr_kl = rlrk[0]*rlrk[0] + rlrk[1]*rlrk[1] + rlrk[2]*rlrk[2];
     DataType integral[integral_size] = {zero};
 
-    DataType reg_ai[npi], reg_aj[npj], reg_ci[npi], reg_cj[npj];
+    //DataType reg_ai[npi], reg_aj[npj], reg_ci[npi], reg_cj[npj];
+    DataType2 reg_cei[npi], reg_cej[npj];
     for (int ip = 0; ip < npi; ip++){
         const int ish_ip = ip + ish*nprim_max;
-        reg_ai[ip] = __ldg(exponents + ish_ip);
-        reg_ci[ip] = __ldg(coeffs + ish_ip);
+        //reg_ai[ip] = __ldg(exponents + ish_ip);
+        //reg_ci[ip] = __ldg(coeffs + ish_ip);
+        reg_cei[ip] = coeff_exp[ish_ip];
     }
     for (int jp = 0; jp < npj; jp++){
         const int jsh_jp = jp + jsh*nprim_max;
-        reg_aj[jp] = __ldg(exponents + jsh_jp);
-        reg_cj[jp] = __ldg(coeffs + jsh_jp);
+        //reg_aj[jp] = __ldg(exponents + jsh_jp);
+        //reg_cj[jp] = __ldg(coeffs + jsh_jp);
+        reg_cej[jp] = coeff_exp[jsh_jp];
     }
     DataType reg_cicj[npi*npj];
 #pragma unroll
     for (int ip = 0; ip < npi; ip++){
         for (int jp = 0; jp < npj; jp++){
-            const DataType ai = reg_ai[ip];
-            const DataType aj = reg_aj[jp];
+            const DataType ai = reg_cei[ip].e;
+            const DataType aj = reg_cej[jp].e;
             const DataType aij = ai + aj;
             const DataType aj_aij = aj / aij;
             const DataType theta_ij = ai * aj_aij;
             const DataType Kab = exp(-theta_ij * rr_ij);
-            const DataType ci = reg_ci[ip];
-            const DataType cj = reg_cj[jp];
+            const DataType ci = reg_cei[ip].c;
+            const DataType cj = reg_cej[jp].c;
             const DataType cicj = fac_sym * ci * cj * Kab;
             reg_cicj[ip + jp*npi] = cicj;
         }
@@ -138,21 +144,25 @@ void rys_jk(const int nbas,
     for (int lp = 0; lp < npl; lp++){
         const int ksh_kp = kp + ksh*nprim_max;
         const int lsh_lp = lp + lsh*nprim_max;
-        const DataType ak = __ldg(exponents + ksh_kp);
-        const DataType al = __ldg(exponents + lsh_lp);
+        const DataType2 cek = coeff_exp[ksh_kp];
+        const DataType2 cel = coeff_exp[lsh_lp];
+        const DataType ak = cek.e;//__ldg(exponents + ksh_kp);
+        const DataType al = cel.e;//__ldg(exponents + lsh_lp);
         const DataType akl = ak + al;
         const DataType al_akl = al / akl;
         const DataType theta_kl = ak * al_akl;
         const DataType Kcd = exp(-theta_kl * rr_kl);
-        const DataType ck = __ldg(coeffs + ksh_kp);
-        const DataType cl = __ldg(coeffs + lsh_lp);
+        const DataType ck = cek.c;//__ldg(coeffs + ksh_kp);
+        const DataType cl = cel.c;//__ldg(coeffs + lsh_lp);
         const DataType ckcl = ck * cl * Kcd;
         for (int ip = 0; ip < npi; ip++)
         for (int jp = 0; jp < npj; jp++){
             const int ip_offset = ip + ish*nprim_max;
             const int jp_offset = jp + jsh*nprim_max;
-            const DataType ai = __ldg(exponents + ip_offset);
-            const DataType aj = __ldg(exponents + jp_offset);
+            const DataType2 cei = coeff_exp[ip_offset];
+            const DataType2 cej = coeff_exp[jp_offset];
+            const DataType ai = cei.e;//__ldg(exponents + ip_offset);
+            const DataType aj = cej.e;//__ldg(exponents + jp_offset);
             const DataType aij = ai + aj;
             const DataType aj_aij = aj / aij;
             const DataType cicj = reg_cicj[ip + jp*npi];

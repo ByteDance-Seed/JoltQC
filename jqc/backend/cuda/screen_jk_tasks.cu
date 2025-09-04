@@ -55,7 +55,7 @@ int global_offset(int* batch_head, int val){
     __syncthreads();
 
     const int ntasks = cum_count[threads-1];
-    if (ntasks == 0) return; 
+    if (ntasks == 0) return 0; 
     
     // Calculate the global offset
     int offset = 0;
@@ -118,52 +118,66 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
     uint64_t mask_bits_fp32[mask_size] = {0};
     uint64_t mask_bits_fp64[mask_size] = {0};
 
+    float dm_kl[TILE*TILE];
+    float q_kl[TILE*TILE];
+    for (int k = 0; k < TILE; k++){
+        for (int l = 0; l < TILE; l++){
+            const int lsh = lsh0 + l;
+            const int ksh = ksh0 + k;
+            const int bas_kl = ksh * nbas + lsh;
+            const int kl = k * TILE + l;
+            dm_kl[kl] = dm_cond[bas_kl];
+            q_kl[kl] = q_cond[bas_kl];
+        }
+    }
+
     int count_fp32 = 0;
     int count_fp64 = 0;
     if (active){
         for (int i = 0; i < TILE; ++i){
             const int ish = ish0 + i;
-            // Optimize memory indexing with base address calculation
             const int ish_base = ish * nbas;
             
             for (int j = 0; j < TILE; ++j){
                 const int jsh = jsh0 + j;
-                if (jsh >= ish+1 || jsh >= jsh1) continue;
-                
                 const int jsh_base = jsh * nbas;
                 const int bas_ij = ish_base + jsh;
                 const float q_ij = q_cond[bas_ij];
                 const float d_ij = dm_cond[bas_ij];
-                
+                float dm_il[TILE], dm_jl[TILE];
+                for (int l = 0; l < TILE; l++){
+                    const int lsh = lsh0 + l;
+                    dm_il[l] = dm_cond[ish*nbas + lsh];
+                    dm_jl[l] = dm_cond[jsh*nbas + lsh];
+                }
+
                 for (int k = 0; k < TILE; ++k){
                     const int ksh = ksh0 + k;
-                    if (ksh >= ish+1 || ksh >= ksh1) continue;
-                    
                     const float d_ik = dm_cond[ish_base + ksh];
                     const float d_jk = dm_cond[jsh_base + ksh];
                     
                     for (int l = 0; l < TILE; ++l){
                         const int lsh = lsh0 + l;
-                        if (lsh >= ksh+1 || lsh >= lsh1) continue;
+                        bool mask = (jsh >= ish+1);
+                        mask |= (ksh >= ish+1);
+                        mask |= (lsh >= ksh+1);
+                        const int bas_kl = ksh * nbas + lsh;
+                        mask |= (bas_ij < bas_kl);
+                        if (mask) continue;
                         
-                        // Optimize memory indexing
-                        const int ksh_base = ksh * nbas;
-                        const int bas_kl = ksh_base + lsh;
-                        if (bas_ij < bas_kl) continue;
-                        
-                        const float q_ijkl = q_ij + q_cond[bas_kl];
+                        const float q_ijkl = q_ij + q_kl[k * TILE + l];
                         float d_large = -36.8f;
                         
                         if constexpr(do_k){
-                            const float d_il = dm_cond[ish_base + lsh];
-                            const float d_jl = dm_cond[jsh_base + lsh];
+                            const float d_il = dm_il[l];
+                            const float d_jl = dm_jl[l];
                             d_large = max(d_large, d_ik);
                             d_large = max(d_large, d_jk);
                             d_large = max(d_large, d_il);
                             d_large = max(d_large, d_jl);
                         }
                         if constexpr(do_j){
-                            const float d_kl = dm_cond[bas_kl];
+                            const float d_kl = dm_kl[k * TILE + l];
                             d_large = max(d_large, d_ij);
                             d_large = max(d_large, d_kl);
                         }

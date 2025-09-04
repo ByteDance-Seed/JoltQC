@@ -29,12 +29,15 @@ struct __align__(4*sizeof(DataType)) DataType4 {
     DataType x, y, z, w;
 };
 
+struct __align__(2*sizeof(DataType)) DataType2 {
+    DataType c, e;
+};
+
 extern "C" __global__
 void eval_rho(
     const double* __restrict__ grid_coords,
     const DataType4* __restrict__ shell_coords,
-    const DataType* __restrict__ coeffs,
-    const DataType* __restrict__ exps,
+    const DataType2* __restrict__ coeff_exp,
     const int nbas,
     DataType* __restrict__ dm,
     float* __restrict__ log_dm_shell,
@@ -92,9 +95,10 @@ void eval_rho(
         DataType cej_2e = zero;
         for (int jp = 0; jp < npj; jp++){
             const int jp_offset = jp + jsh*nprim_max;
-            const DataType e = __ldg(exps + jp_offset);
+            const DataType2 coeff_expj = coeff_exp[jp_offset];
+            const DataType e = coeff_expj.e;
             const DataType e_rr = e * rr_gj;
-            const DataType c = __ldg(coeffs + jp_offset);
+            const DataType c = coeff_expj.c;
             const DataType ce = e_rr < exp_cutoff ? c * exp(-e_rr) : zero;
             cej += ce;
             cej_2e += ce * e;
@@ -155,9 +159,10 @@ void eval_rho(
             
             for (int ip = 0; ip < npi; ip++){
                 const int offset = ip + ish*nprim_max;
-                const DataType e = __ldg(exps + offset);
+                const DataType2 coeff_expi = coeff_exp[offset];
+                const DataType e = coeff_expi.e;//(exps + offset);
                 const DataType e_rr = e * rr_gi;
-                const DataType c = __ldg(coeffs + offset);
+                const DataType c = coeff_expi.c;//(coeffs + offset);
                 const DataType ce = e_rr < exp_cutoff ? c * exp(-e_rr) : zero;
                 cei += ce;
                 cei_2e += ce * e;

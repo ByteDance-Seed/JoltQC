@@ -145,7 +145,7 @@ local memory: {kernel.local_size_bytes:4d} Bytes')
 with open(f'{code_path}/cuda/estimate_log_aovalue.cu', 'r') as f:
     estimate_aovalue_script = f.read()
 
-def estimate_log_aovalue(grid_coords, coords, coeffs, exps, ang, nprim, log_cutoff=-36.8):
+def estimate_log_aovalue(grid_coords, coords, coeff_exp, ang, nprim, log_cutoff=-36.8):
     """Estimate the maximum log-value of atomic orbitals on grid blocks, 256 grids per block.
 
     This function performs a pre-screening step to identify which atomic
@@ -158,11 +158,9 @@ def estimate_log_aovalue(grid_coords, coords, coeffs, exps, ang, nprim, log_cuto
     grid_coords : cp.ndarray
         Grid coordinates, shape (3, ngrids).
     coords : cp.ndarray
-        Shell coordinates, shape (nbas, 3).
-    coeffs : cp.ndarray
-        Coefficients of primitive Gaussians.
-    exps : cp.ndarray
-        Exponents of primitive Gaussians.
+        Shell coordinates, shape (nbas, 4).
+    coeff_exp : cp.ndarray
+        Coefficients and exponents of primitive Gaussians.
     ang : int
         Angular momentum for each shell.
     nprim : int
@@ -185,8 +183,7 @@ def estimate_log_aovalue(grid_coords, coords, coeffs, exps, ang, nprim, log_cuto
     """
     grid_coords = cp.asarray(grid_coords, dtype=np.float64)
     coords = cp.asarray(coords, dtype=np.float32)
-    coeffs = cp.asarray(coeffs, dtype=np.float32)
-    exps = cp.asarray(exps, dtype=np.float32)
+    coeff_exp = cp.asarray(coeff_exp, dtype=np.float32)
     ngrids = grid_coords.shape[1]
     assert ngrids % nthreads == 0
     
@@ -207,7 +204,7 @@ constexpr int nprim = {nprim};
         (ngrids//nthreads,),
         (nthreads,),
         (grid_coords, ngrids, 
-         coords, coeffs, exps, nbas, 
+         coords, coeff_exp, nbas, 
          log_aovalue, nnz_indices, nnz_per_block, 
          np.float32(log_cutoff)),
     )

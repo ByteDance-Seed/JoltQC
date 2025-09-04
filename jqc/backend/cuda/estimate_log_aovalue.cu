@@ -24,8 +24,7 @@ void estimate_log_aovalue(
     const double* __restrict__ grid_coords,
     const int ngrids,
     const float4* __restrict__ shell_coords,
-    const float* __restrict__ coeffs,
-    const float* __restrict__ exps,
+    const float2* __restrict__ coeff_exp,
     const int nbas,
     float* __restrict__ log_maxval,
     int * __restrict__ nnz_idx,
@@ -59,8 +58,9 @@ void estimate_log_aovalue(
         float coeffs_reg[nprim_max], exps_reg[nprim_max];
         for (int ip = 0; ip < nprim; ip++){
             const int offset = nprim_max * ish + ip;
-            coeffs_reg[ip] = __ldg(coeffs + offset);
-            exps_reg[ip] = __ldg(exps + offset);
+            const float2 ce = coeff_exp[offset];
+            coeffs_reg[ip] = ce.x;
+            exps_reg[ip] = ce.y;
         }
         
         float log_gto_maxval = -1e38f;

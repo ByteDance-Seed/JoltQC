@@ -30,6 +30,10 @@ struct __align__(4*sizeof(DataType)) DataType4 {
     DataType x, y, z, w;
 };
 
+struct __align__(2*sizeof(DataType)) DataType2 {
+    DataType c, e;
+};
+ 
 __forceinline__ __device__
 DataType warp_reduce(DataType val) {
 #pragma unroll
@@ -62,8 +66,7 @@ extern "C" __global__
 void eval_vxc(
     const double* __restrict__ grid_coords,
     const DataType4* __restrict__ shell_coords,
-    const DataType* __restrict__ coeffs,
-    const DataType* __restrict__ exps,
+    const DataType2* __restrict__ coeff_exp,
     const int nbas,
     double* __restrict__ vxc_mat,
     const int* __restrict__ ao_loc,
@@ -144,9 +147,10 @@ void eval_vxc(
         DataType cej_2e = zero;
         for (int jp = 0; jp < npj; jp++){
             const int offset = nprim_max * jsh + jp;
-            const DataType e = __ldg(exps + offset);
+            const DataType2 coeff_expj = coeff_exp[offset];
+            const DataType e = coeff_expj.e;//__ldg(exps + offset);
             const DataType e_rr = e * rr_gj;
-            const DataType c = __ldg(coeffs + offset);
+            const DataType c = coeff_expj.c;//__ldg(coeffs + offset);
             const DataType ce = e_rr < exp_cutoff ? c * exp(-e_rr) : zero;
             cej += ce;
             cej_2e += ce * e;
@@ -208,9 +212,10 @@ void eval_vxc(
             DataType cei_2e = zero;
             for (int ip = 0; ip < npi; ip++){
                 const int ip_offset = ip + ish*nprim_max;
-                const DataType e = __ldg(exps + ip_offset);
+                const DataType2 coeff_expi = coeff_exp[ip_offset];
+                const DataType e = coeff_expi.e;//__ldg(exps + ip_offset);
                 const DataType e_rr = e * rr_gi;
-                const DataType c = __ldg(coeffs + ip_offset);
+                const DataType c = coeff_expi.c;//__ldg(coeffs + ip_offset);
                 const DataType ce = e_rr < exp_cutoff ? c * exp(-e_rr) : zero;
                 cei += ce;
                 cei_2e += ce * e;
