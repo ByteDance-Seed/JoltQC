@@ -87,39 +87,27 @@ void rys_jk(const int nbas,
     const DataType4 rk = coords[ksh];
     const DataType4 rl = coords[lsh];
 
-    const DataType rix = ri.x;//__ldg(coords + 4*ish);
-    const DataType riy = ri.y;//__ldg(coords + 4*ish+1);
-    const DataType riz = ri.z;//__ldg(coords + 4*ish+2);
-    const DataType rkx = rk.x;//__ldg(coords + 4*ksh);
-    const DataType rky = rk.y;//__ldg(coords + 4*ksh+1);
-    const DataType rkz = rk.z;//__ldg(coords + 4*ksh+2);
-
-    const DataType rij0 = rj.x - rix;//__ldg(coords + 4*jsh)   - rix;
-    const DataType rij1 = rj.y - riy;//__ldg(coords + 4*jsh+1) - riy;
-    const DataType rij2 = rj.z - riz;//__ldg(coords + 4*jsh+2) - riz;
+    const DataType rij0 = rj.x - ri.x;
+    const DataType rij1 = rj.y - ri.y;
+    const DataType rij2 = rj.z - ri.z;
 
     const DataType rjri[3] = {rij0, rij1, rij2};
     const DataType rr_ij = rjri[0]*rjri[0] + rjri[1]*rjri[1] + rjri[2]*rjri[2];
-    const DataType rkl0 = rl.x - rkx;//__ldg(coords + 4*lsh)   - rkx;
-    const DataType rkl1 = rl.y - rky;//__ldg(coords + 4*lsh+1) - rky;
-    const DataType rkl2 = rl.z - rkz;//__ldg(coords + 4*lsh+2) - rkz;
+    const DataType rkl0 = rl.x - rk.x;
+    const DataType rkl1 = rl.y - rk.y;
+    const DataType rkl2 = rl.z - rk.z;
 
     const DataType rlrk[3] = {rkl0, rkl1, rkl2};
     const DataType rr_kl = rlrk[0]*rlrk[0] + rlrk[1]*rlrk[1] + rlrk[2]*rlrk[2];
     DataType integral[integral_size] = {zero};
 
-    //DataType reg_ai[npi], reg_aj[npj], reg_ci[npi], reg_cj[npj];
     DataType2 reg_cei[npi], reg_cej[npj];
     for (int ip = 0; ip < npi; ip++){
         const int ish_ip = ip + ish*nprim_max;
-        //reg_ai[ip] = __ldg(exponents + ish_ip);
-        //reg_ci[ip] = __ldg(coeffs + ish_ip);
         reg_cei[ip] = coeff_exp[ish_ip];
     }
     for (int jp = 0; jp < npj; jp++){
         const int jsh_jp = jp + jsh*nprim_max;
-        //reg_aj[jp] = __ldg(exponents + jsh_jp);
-        //reg_cj[jp] = __ldg(coeffs + jsh_jp);
         reg_cej[jp] = coeff_exp[jsh_jp];
     }
     DataType reg_cicj[npi*npj];
@@ -146,14 +134,14 @@ void rys_jk(const int nbas,
         const int lsh_lp = lp + lsh*nprim_max;
         const DataType2 cek = coeff_exp[ksh_kp];
         const DataType2 cel = coeff_exp[lsh_lp];
-        const DataType ak = cek.e;//__ldg(exponents + ksh_kp);
-        const DataType al = cel.e;//__ldg(exponents + lsh_lp);
+        const DataType ak = cek.e;
+        const DataType al = cel.e;
         const DataType akl = ak + al;
         const DataType al_akl = al / akl;
         const DataType theta_kl = ak * al_akl;
         const DataType Kcd = exp(-theta_kl * rr_kl);
-        const DataType ck = cek.c;//__ldg(coeffs + ksh_kp);
-        const DataType cl = cel.c;//__ldg(coeffs + lsh_lp);
+        const DataType ck = cek.c;
+        const DataType cl = cel.c;
         const DataType ckcl = ck * cl * Kcd;
         for (int ip = 0; ip < npi; ip++)
         for (int jp = 0; jp < npj; jp++){
@@ -161,18 +149,18 @@ void rys_jk(const int nbas,
             const int jp_offset = jp + jsh*nprim_max;
             const DataType2 cei = coeff_exp[ip_offset];
             const DataType2 cej = coeff_exp[jp_offset];
-            const DataType ai = cei.e;//__ldg(exponents + ip_offset);
-            const DataType aj = cej.e;//__ldg(exponents + jp_offset);
+            const DataType ai = cei.e;
+            const DataType aj = cej.e;
             const DataType aij = ai + aj;
             const DataType aj_aij = aj / aij;
             const DataType cicj = reg_cicj[ip + jp*npi];
 
-            const DataType xij = rjri[0] * aj_aij + rix;
-            const DataType yij = rjri[1] * aj_aij + riy;
-            const DataType zij = rjri[2] * aj_aij + riz;
-            const DataType xkl = rlrk[0] * al_akl + rkx;
-            const DataType ykl = rlrk[1] * al_akl + rky;
-            const DataType zkl = rlrk[2] * al_akl + rkz;
+            const DataType xij = rjri[0] * aj_aij + ri.x;
+            const DataType yij = rjri[1] * aj_aij + ri.y;
+            const DataType zij = rjri[2] * aj_aij + ri.z;
+            const DataType xkl = rlrk[0] * al_akl + rk.x;
+            const DataType ykl = rlrk[1] * al_akl + rk.y;
+            const DataType zkl = rlrk[2] * al_akl + rk.z;
             const DataType Rpq[3] = {xij-xkl, yij-ykl, zij-zkl};
 
             const DataType rr = Rpq[0]*Rpq[0] + Rpq[1]*Rpq[1] + Rpq[2]*Rpq[2];

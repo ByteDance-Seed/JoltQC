@@ -52,9 +52,9 @@ void estimate_log_aovalue(
 
     for (int ish = thread_id; ish < nbas; ish += ng_per_thread){
         float4 xi = shell_coords[ish];
-        float bas_x = xi.x;// //shell_coords[4*ish];
-        float bas_y = xi.y;// //shell_coords[4*ish + 1];
-        float bas_z = xi.z;// //shell_coords[4*ish + 2];
+        float bas_x = xi.x;
+        float bas_y = xi.y;
+        float bas_z = xi.z;
         float coeffs_reg[nprim_max], exps_reg[nprim_max];
         for (int ip = 0; ip < nprim; ip++){
             const int offset = nprim_max * ish + ip;

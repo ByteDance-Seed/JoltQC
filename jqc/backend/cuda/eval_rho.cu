@@ -86,9 +86,9 @@ void eval_rho(
             if (log_rho_est < log_cutoff_a || log_rho_est >= log_cutoff_b) continue;
 
         const DataType4 xj = shell_coords[jsh];
-        const DataType gjx = gx[0] - xj.x;//__ldg(shell_coords + 4*jsh);
-        const DataType gjy = gx[1] - xj.y;//__ldg(shell_coords + 4*jsh + 1);
-        const DataType gjz = gx[2] - xj.z;//__ldg(shell_coords + 4*jsh + 2);
+        const DataType gjx = gx[0] - xj.x;
+        const DataType gjy = gx[1] - xj.y;
+        const DataType gjz = gx[2] - xj.z;
         const DataType rr_gj = gjx*gjx + gjy*gjy + gjz*gjz;
 
         DataType cej = zero;
@@ -149,9 +149,9 @@ void eval_rho(
         }
 
             const DataType4 xi = shell_coords[ish];
-            const DataType gix = gx[0] - xi.x;//__ldg(shell_coords + 4*ish);
-            const DataType giy = gx[1] - xi.y;//__ldg(shell_coords + 4*ish + 1);
-            const DataType giz = gx[2] - xi.z;//__ldg(shell_coords + 4*ish + 2);
+            const DataType gix = gx[0] - xi.x;
+            const DataType giy = gx[1] - xi.y;
+            const DataType giz = gx[2] - xi.z;
             const DataType rr_gi = gix*gix + giy*giy + giz*giz;
 
             DataType cei = zero;
@@ -160,9 +160,9 @@ void eval_rho(
             for (int ip = 0; ip < npi; ip++){
                 const int offset = ip + ish*nprim_max;
                 const DataType2 coeff_expi = coeff_exp[offset];
-                const DataType e = coeff_expi.e;//(exps + offset);
+                const DataType e = coeff_expi.e;
                 const DataType e_rr = e * rr_gi;
-                const DataType c = coeff_expi.c;//(coeffs + offset);
+                const DataType c = coeff_expi.c;
                 const DataType ce = e_rr < exp_cutoff ? c * exp(-e_rr) : zero;
                 cei += ce;
                 cei_2e += ce * e;

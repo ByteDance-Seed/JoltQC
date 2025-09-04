@@ -138,9 +138,9 @@ void eval_vxc(
             if (log_aoi + log_aoj < log_cutoff_a || log_aoi + log_aoj >= log_cutoff_b) continue;
 
         const DataType4 xj = shell_coords[jsh];
-        const DataType gjx = gx[0] - xj.x;//__ldg(shell_coords + 4*jsh);
-        const DataType gjy = gx[1] - xj.y;//__ldg(shell_coords + 4*jsh + 1);
-        const DataType gjz = gx[2] - xj.z;//__ldg(shell_coords + 4*jsh + 2);
+        const DataType gjx = gx[0] - xj.x;
+        const DataType gjy = gx[1] - xj.y;
+        const DataType gjz = gx[2] - xj.z;
         const DataType rr_gj = gjx*gjx + gjy*gjy + gjz*gjz;
         
         DataType cej = zero;
@@ -148,9 +148,9 @@ void eval_vxc(
         for (int jp = 0; jp < npj; jp++){
             const int offset = nprim_max * jsh + jp;
             const DataType2 coeff_expj = coeff_exp[offset];
-            const DataType e = coeff_expj.e;//__ldg(exps + offset);
+            const DataType e = coeff_expj.e;
             const DataType e_rr = e * rr_gj;
-            const DataType c = coeff_expj.c;//__ldg(coeffs + offset);
+            const DataType c = coeff_expj.c;
             const DataType ce = e_rr < exp_cutoff ? c * exp(-e_rr) : zero;
             cej += ce;
             cej_2e += ce * e;
@@ -203,9 +203,9 @@ void eval_vxc(
             }
         }
             const DataType4 xi = shell_coords[ish];
-            const DataType gix = gx[0] - xi.x;//__ldg(shell_coords + 4*ish);
-            const DataType giy = gx[1] - xi.y;//__ldg(shell_coords + 4*ish + 1);
-            const DataType giz = gx[2] - xi.z;//__ldg(shell_coords + 4*ish + 2);
+            const DataType gix = gx[0] - xi.x;
+            const DataType giy = gx[1] - xi.y;
+            const DataType giz = gx[2] - xi.z;
             const DataType rr_gi = gix*gix + giy*giy + giz*giz;
 
             DataType cei = zero;
@@ -213,9 +213,9 @@ void eval_vxc(
             for (int ip = 0; ip < npi; ip++){
                 const int ip_offset = ip + ish*nprim_max;
                 const DataType2 coeff_expi = coeff_exp[ip_offset];
-                const DataType e = coeff_expi.e;//__ldg(exps + ip_offset);
+                const DataType e = coeff_expi.e;
                 const DataType e_rr = e * rr_gi;
-                const DataType c = coeff_expi.c;//__ldg(coeffs + ip_offset);
+                const DataType c = coeff_expi.c;
                 const DataType ce = e_rr < exp_cutoff ? c * exp(-e_rr) : zero;
                 cei += ce;
                 cei_2e += ce * e;

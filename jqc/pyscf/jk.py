@@ -93,8 +93,6 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     log_cutoff_fp32 = np.float32(math.log(cutoff_fp32))
 
     ce_fp64, coords_fp64, angs, _ = bas_cache
-    #coeffs_fp32 = coeffs_fp64.astype(np.float32)
-    #exponents_fp32 = exponents_fp64.astype(np.float32)
     ce_fp32 = ce_fp64.astype(np.float32)
     coords_fp32 = coords_fp64.astype(np.float32)
 
