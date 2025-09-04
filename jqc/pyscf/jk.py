@@ -32,7 +32,7 @@ from jqc.backend.jk_tasks import gen_screen_jk_tasks_kernel, MAX_PAIR_SIZE, QUEU
 from jqc.backend.jk import gen_jk_kernel
 from jqc.backend.cart2sph import mol2cart, cart2mol
 from jqc.pyscf.mol import compute_q_matrix, sort_group_basis
-from jqc.constants import LMAX, NPRIM_MAX, TILE
+from jqc.constants import LMAX, TILE
 
 __all__ = [
     'get_jk', 'get_j',
@@ -92,15 +92,27 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     log_cutoff_fp64 = np.float32(math.log(cutoff_fp64))
     log_cutoff_fp32 = np.float32(math.log(cutoff_fp32))
 
-    coeffs_fp64, exponents_fp64, coords_fp64, angs, _ = bas_cache
-    coeffs_fp32 = coeffs_fp64.astype(np.float32)
-    exponents_fp32 = exponents_fp64.astype(np.float32)
+    ce_fp64, coords_fp64, angs, _ = bas_cache
+    ce_fp32 = ce_fp64.astype(np.float32)
     coords_fp32 = coords_fp64.astype(np.float32)
 
     ao_loc = np.concatenate(([0], np.cumsum((angs+1)*(angs+2)//2)))
     nao = ao_loc[-1]
     ao_loc = cp.asarray(ao_loc, dtype=np.int32)
 
+    group_key, group_offset = group_info
+    uniq_l = group_key[:,0]
+    l_symb = [lib.param.ANGULAR[i] for i in uniq_l]
+    n_groups = np.count_nonzero(uniq_l <= LMAX)
+
+    if np.any(uniq_l > LMAX):
+        raise RuntimeError('LMAX > 4 is not supported')
+
+    tasks = [(i,j,k,l) for i in range(n_groups)
+                        for j in range(i+1)
+                        for k in range(i+1)
+                        for l in range(k+1)]
+    
     def get_jk(mol_ref, dm, hermi=0, vhfopt=None,
             with_j=True, with_k=True, omega=None, verbose=None):
         '''
@@ -122,14 +134,6 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
         assert mol_ref == mol, "mol_ref must be the same as mol"
         cputime_start  = time.perf_counter()
-        
-        group_key, group_offset = group_info
-        uniq_l = group_key[:,0]
-        l_symb = [lib.param.ANGULAR[i] for i in uniq_l]
-        n_groups = np.count_nonzero(uniq_l <= LMAX)
-
-        if np.any(uniq_l > LMAX):
-            raise RuntimeError('LMAX > 4 is not supported')
         
         logger.debug1(f"Compute J/K matrices with do_j={with_j} and do_k={with_k}, omega={omega}")
         
@@ -158,7 +162,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         n_dm = dms.shape[0]
 
         vj = vk = 0
-        if with_k:
+        if with_k: 
             vk = cp.zeros(dms.shape)
         if with_j:
             vj = cp.zeros(dms.shape)
@@ -166,28 +170,23 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         # J: q_ab * q_cd * p_cd < cutoff_min
         # K: q_ac * q_bd * p_cd < cutoff_min
         # cutoff absorbs sqrt(p_cd)
-        cutoff = np.log(PAIR_CUTOFF) - log_max_dm
+        cutoff = np.log(PAIR_CUTOFF) - log_max_dm / 2
         tile_pairs = make_tile_pairs(group_offset, q_matrix, cutoff)
-        
+
         info = cp.empty(4, dtype=np.uint32)
         logger.debug1(f'Calculate dm_cond and AO pairs')
-
         _, _, gen_tasks_fun = gen_screen_jk_tasks_kernel(do_j=with_j, do_k=with_k, tile=TILE)
-        logger.debug1(f'Generate tasks kernel')
+        logger.debug1(f'Generate tasks kernel') 
         timing_counter = Counter()
         kern_counts = 0
         quartet_list = cp.empty((QUEUE_DEPTH), dtype=ushort4_dtype)
-        tasks = [(i,j,k,l) for i in range(n_groups)
-                            for j in range(i+1)
-                            for k in range(i+1)
-                            for l in range(k+1)]
         
         stream = cp.cuda.stream.get_current_stream()
         with stream:
             for task in tasks[::-1]:
                 i, j, k, l = task
                 li, ip = group_key[i]
-                lj, jp = group_key[j]
+                lj, jp = group_key[j] 
                 lk, kp = group_key[k]
                 ll, lp = group_key[l]
                 ang = (li, lj, lk, ll)
@@ -220,13 +219,13 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                             log_cutoff_fp32, log_cutoff_fp64)
                         kern_counts += 1
                         info_cpu = info.get()
-                        
+
                         # FP32 tasks
                         n_quartets_fp32 = int(info_cpu[1].item())
                         if n_quartets_fp32 > 0:
                             jk_fp32_kernel = gen_jk_kernel(ang, nprim, do_j=with_j, do_k=with_k, 
                                                            dtype=np.float32, n_dm=n_dm, omega=omega_fp32)
-                            jk_fp32_kernel(nbas, ao_loc, coords_fp32, exponents_fp32, coeffs_fp32,
+                            jk_fp32_kernel(nbas, ao_loc, coords_fp32, ce_fp32,
                                            dms_fp32, vj, vk, omega_fp32, quartet_list,
                                            n_quartets_fp32)
                             kern_counts += 1
@@ -238,7 +237,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         if n_quartets_fp64 > 0:
                             jk_fp64_kernel = gen_jk_kernel(ang, nprim, do_j=with_j, do_k=with_k, 
                                                            dtype=np.float64, n_dm=n_dm, omega=omega_fp64)
-                            jk_fp64_kernel(nbas, ao_loc, coords_fp64, exponents_fp64, coeffs_fp64,
+                            jk_fp64_kernel(nbas, ao_loc, coords_fp64, ce_fp64,
                                            dms, vj, vk, omega_fp64, quartet_list[offset:],
                                            n_quartets_fp64)
                             kern_counts += 1
@@ -305,7 +304,7 @@ def make_tile_pairs(l_ctr_bas_loc, q_matrix, cutoff, tile=TILE):
     ntiles = q_matrix.shape[0] // tile
     tile_loc = l_ctr_bas_loc // tile
     tiled_q_matrix = q_matrix.reshape([ntiles, tile, ntiles, tile]).max(axis=(1,3))
-    q_idx = tiled_q_matrix#.astype(int) - 1
+    q_idx = tiled_q_matrix
     for i in range(n_groups):
         i0, i1 = tile_loc[i], tile_loc[i+1]
         for j in range(i+1):
@@ -316,7 +315,6 @@ def make_tile_pairs(l_ctr_bas_loc, q_matrix, cutoff, tile=TILE):
                 mask = cp.tril(mask)
             t_ij = (cp.arange(i0, i1, dtype=np.int32)[:,None] * ntiles +
                     cp.arange(j0, j1, dtype=np.int32))
-            #idx = cp.argsort(sub_q_idx[mask])[::-1]
-            tile_pairs[i,j] = t_ij[mask]#[idx]
+            tile_pairs[i,j] = t_ij[mask]
     return tile_pairs
 

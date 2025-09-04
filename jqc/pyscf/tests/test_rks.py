@@ -186,12 +186,12 @@ class KnownValues(unittest.TestCase):
 
         grid_coords = cp.asarray(grids.coords.T, order='C')
         bas_cache, _, _, _ = sort_group_basis(mol, alignment=1, dtype=np.float32)
-        coeffs, exps, coords, angs, nprims = bas_cache
+        ce, coords, angs, nprims = bas_cache
         ao_gpu = ni.eval_ao(sorted_mol, grids.coords, deriv=0, transpose=False)
         
         ang = angs[0]
         nprim = nprims[0]
-        sparsity = estimate_log_aovalue(grid_coords, coords, coeffs, exps, ang, nprim)
+        sparsity = estimate_log_aovalue(grid_coords, coords, ce, ang, nprim)
         log_maxval, _, _ = sparsity
         ao_gpu_max = cp.max(ao_gpu.reshape(nao, -1, 256), axis=-1)
         log_ao_gpu = cp.log(cp.abs(ao_gpu_max))

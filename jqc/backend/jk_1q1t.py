@@ -35,10 +35,8 @@ def gen_code(keys):
     ang, nprim, dtype, rys_type, n_dm, do_j, do_k, nsq_per_block = keys
     if dtype == np.float64:
         dtype_cuda = 'double'
-        dtype4_cuda = 'double4'
     elif dtype == np.float32:
         dtype_cuda = 'float'
-        dtype4_cuda = 'float4'
     else:
         raise RuntimeError('Data type is not supported')
 
@@ -48,7 +46,6 @@ def gen_code(keys):
     const = f'''
 typedef unsigned int uint32_t;
 using DataType = {dtype_cuda};
-using DataType4 = {dtype4_cuda};
 constexpr int li = {li};
 constexpr int lj = {lj};
 constexpr int lk = {lk};

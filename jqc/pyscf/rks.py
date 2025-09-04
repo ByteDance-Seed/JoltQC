@@ -224,9 +224,8 @@ def generate_get_rho(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
 def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     bas_cache, bas_mapping, _, group_info = sort_group_basis(mol, alignment=1)
-    coeffs_fp64, exps_fp64, coords_fp64, angs, nprims = bas_cache
-    coeffs_fp32 = coeffs_fp64.astype(np.float32)
-    exps_fp32 = exps_fp64.astype(np.float32)
+    ce_fp64, coords_fp64, angs, nprims = bas_cache
+    ce_fp32 = ce_fp64.astype(np.float32)
     coords_fp32 = coords_fp64.astype(np.float32)
 
     ao_loc = np.concatenate(([0], np.cumsum((angs+1)*(angs+2)//2)))
@@ -315,11 +314,10 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         for i in range(n_groups):
             ish0, ish1 = group_offset[i], group_offset[i+1]
             x = coords_fp32[ish0:ish1]
-            c = coeffs_fp32[ish0:ish1]
-            e = exps_fp32[ish0:ish1]
+            ce = ce_fp32[ish0:ish1]
             a = angs[ish0].item()
             n = nprims[ish0].item()
-            s = estimate_log_aovalue(grid_coords, x, c, e, a, n, log_cutoff=log_aodm_cutoff)
+            s = estimate_log_aovalue(grid_coords, x, ce, a, n, log_cutoff=log_aodm_cutoff)
             log_maxval, indices, nnz = s
             indices += ish0
             ao_sparsity[i] = (log_maxval, indices, nnz)
@@ -341,7 +339,7 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 nbas_j = indices_j.shape[1]
                 _, _, fun = gen_rho_kernel(ang, nprim, np.float64, ndim)
                 fun(grid_coords, 
-                    coords_fp64, coeffs_fp64, exps_fp64, nbas,
+                    coords_fp64, ce_fp64, nbas,
                     dm, log_dm_shell, ao_loc, nao, 
                     rho,
                     log_maxval_i, indices_i, nnz_i, nbas_i,
@@ -351,7 +349,7 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 if cutoff_fp64 > cutoff_fp32:
                     _, _, fun = gen_rho_kernel(ang, nprim, np.float32, ndim)
                     fun(grid_coords, 
-                        coords_fp32, coeffs_fp32, exps_fp32, nbas,
+                        coords_fp32, ce_fp32, nbas,
                         dm_fp32, log_dm_shell, ao_loc, nao, 
                         rho,
                         log_maxval_i, indices_i, nnz_i, nbas_i,
@@ -378,11 +376,10 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         for i in range(n_groups):
             ish0, ish1 = group_offset[i], group_offset[i+1]
             x = coords_fp32[ish0:ish1]
-            c = coeffs_fp32[ish0:ish1]
-            e = exps_fp32[ish0:ish1]
+            ce = ce_fp32[ish0:ish1]
             a = angs[ish0].item()
             n = nprims[ish0].item()
-            s = estimate_log_aovalue(grid_coords, x, c, e, a, n, log_cutoff=log_aodm_cutoff)
+            s = estimate_log_aovalue(grid_coords, x, ce, a, n, log_cutoff=log_aodm_cutoff)
             log_maxval, indices, nnz = s
             indices += ish0
             ao_sparsity[i] = (log_maxval, indices, nnz)
@@ -400,7 +397,7 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 nbas_j = indices_j.shape[1]
                 _, _, fun = gen_vxc_kernel(ang, nprim, np.float64, ndim)
                 fun(grid_coords, 
-                    coords_fp64, coeffs_fp64, exps_fp64, nbas,
+                    coords_fp64, ce_fp64, nbas,
                     vxc, ao_loc, nao,
                     wv, 
                     log_maxval_i, indices_i, nnz_i, nbas_i,
@@ -410,7 +407,7 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 if cutoff_fp64 > cutoff_fp32:
                     _, _, fun = gen_vxc_kernel(ang, nprim, np.float32, ndim)
                     fun(grid_coords, 
-                        coords_fp32, coeffs_fp32, exps_fp32, nbas,
+                        coords_fp32, ce_fp32, nbas,
                         vxc, ao_loc, nao,
                         wv, 
                         log_maxval_i, indices_i, nnz_i, nbas_i,

@@ -26,6 +26,14 @@ constexpr DataType one = 1.0;
 constexpr DataType two = 2.0;
 constexpr DataType half = 0.5;
 
+struct __align__(4*sizeof(DataType)) DataType4 {
+    DataType x, y, z, w;
+};
+
+struct __align__(2*sizeof(DataType)) DataType2 {
+    DataType c, e;
+};
+ 
 __forceinline__ __device__
 DataType warp_reduce(DataType val) {
 #pragma unroll
@@ -57,9 +65,8 @@ void block_reduce_max(float val, float* maxval) {
 extern "C" __global__
 void eval_vxc(
     const double* __restrict__ grid_coords,
-    const DataType* __restrict__ shell_coords,
-    const DataType* __restrict__ coeffs,
-    const DataType* __restrict__ exps,
+    const DataType4* __restrict__ shell_coords,
+    const DataType2* __restrict__ coeff_exp,
     const int nbas,
     double* __restrict__ vxc_mat,
     const int* __restrict__ ao_loc,
@@ -130,18 +137,20 @@ void eval_vxc(
             if (ish > jsh) continue;
             if (log_aoi + log_aoj < log_cutoff_a || log_aoi + log_aoj >= log_cutoff_b) continue;
 
-        const DataType gjx = gx[0] - __ldg(shell_coords + 3*jsh);
-        const DataType gjy = gx[1] - __ldg(shell_coords + 3*jsh + 1);
-        const DataType gjz = gx[2] - __ldg(shell_coords + 3*jsh + 2);
+        const DataType4 xj = shell_coords[jsh];
+        const DataType gjx = gx[0] - xj.x;
+        const DataType gjy = gx[1] - xj.y;
+        const DataType gjz = gx[2] - xj.z;
         const DataType rr_gj = gjx*gjx + gjy*gjy + gjz*gjz;
         
         DataType cej = zero;
         DataType cej_2e = zero;
         for (int jp = 0; jp < npj; jp++){
             const int offset = nprim_max * jsh + jp;
-            const DataType e = __ldg(exps + offset);
+            const DataType2 coeff_expj = coeff_exp[offset];
+            const DataType e = coeff_expj.e;
             const DataType e_rr = e * rr_gj;
-            const DataType c = __ldg(coeffs + offset);
+            const DataType c = coeff_expj.c;
             const DataType ce = e_rr < exp_cutoff ? c * exp(-e_rr) : zero;
             cej += ce;
             cej_2e += ce * e;
@@ -193,19 +202,20 @@ void eval_vxc(
                 }
             }
         }
-
-            const DataType gix = gx[0] - __ldg(shell_coords + 3*ish);
-            const DataType giy = gx[1] - __ldg(shell_coords + 3*ish + 1);
-            const DataType giz = gx[2] - __ldg(shell_coords + 3*ish + 2);
+            const DataType4 xi = shell_coords[ish];
+            const DataType gix = gx[0] - xi.x;
+            const DataType giy = gx[1] - xi.y;
+            const DataType giz = gx[2] - xi.z;
             const DataType rr_gi = gix*gix + giy*giy + giz*giz;
 
             DataType cei = zero;
             DataType cei_2e = zero;
             for (int ip = 0; ip < npi; ip++){
                 const int ip_offset = ip + ish*nprim_max;
-                const DataType e = __ldg(exps + ip_offset);
+                const DataType2 coeff_expi = coeff_exp[ip_offset];
+                const DataType e = coeff_expi.e;
                 const DataType e_rr = e * rr_gi;
-                const DataType c = __ldg(coeffs + ip_offset);
+                const DataType c = coeff_expi.c;
                 const DataType ce = e_rr < exp_cutoff ? c * exp(-e_rr) : zero;
                 cei += ce;
                 cei_2e += ce * e;
