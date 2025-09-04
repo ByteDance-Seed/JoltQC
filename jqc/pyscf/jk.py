@@ -163,7 +163,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         n_dm = dms.shape[0]
 
         vj = vk = 0
-        if with_k:
+        if with_k: 
             vk = cp.zeros(dms.shape)
         if with_j:
             vj = cp.zeros(dms.shape)
@@ -171,14 +171,13 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         # J: q_ab * q_cd * p_cd < cutoff_min
         # K: q_ac * q_bd * p_cd < cutoff_min
         # cutoff absorbs sqrt(p_cd)
-        cutoff = np.log(PAIR_CUTOFF) - log_max_dm
+        cutoff = np.log(PAIR_CUTOFF) - log_max_dm / 2
         tile_pairs = make_tile_pairs(group_offset, q_matrix, cutoff)
-        
+
         info = cp.empty(4, dtype=np.uint32)
         logger.debug1(f'Calculate dm_cond and AO pairs')
-
         _, _, gen_tasks_fun = gen_screen_jk_tasks_kernel(do_j=with_j, do_k=with_k, tile=TILE)
-        logger.debug1(f'Generate tasks kernel')
+        logger.debug1(f'Generate tasks kernel') 
         timing_counter = Counter()
         kern_counts = 0
         quartet_list = cp.empty((QUEUE_DEPTH), dtype=ushort4_dtype)
@@ -188,7 +187,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             for task in tasks[::-1]:
                 i, j, k, l = task
                 li, ip = group_key[i]
-                lj, jp = group_key[j]
+                lj, jp = group_key[j] 
                 lk, kp = group_key[k]
                 ll, lp = group_key[l]
                 ang = (li, lj, lk, ll)
@@ -221,7 +220,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                             log_cutoff_fp32, log_cutoff_fp64)
                         kern_counts += 1
                         info_cpu = info.get()
-                        
+
                         # FP32 tasks
                         n_quartets_fp32 = int(info_cpu[1].item())
                         if n_quartets_fp32 > 0:

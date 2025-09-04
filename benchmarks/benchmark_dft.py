@@ -20,8 +20,8 @@ from pyscf import lib
 from gpu4pyscf import dft
 import jqc.pyscf
 
-atom = 'molecules/h2o.xyz'
-#atom = 'molecules/0031-irregular-nitrogenous.xyz'
+#atom = 'molecules/h2o.xyz'
+atom = 'molecules/0031-irregular-nitrogenous.xyz'
 #atom = 'molecules/0051-elongated-halogenated.xyz'
 #atom = 'molecules/0084-elongated-halogenated.xyz'
 basis = 'def2-tzvpp'
@@ -35,7 +35,7 @@ lib.num_threads(8)
 # GPU4PySCF
 ##################
 
-verbose = 6
+verbose = 4
 
 mol = pyscf.M(atom=atom, basis=basis, output=f'gpu4pyscf-{basis}.log', verbose=verbose)
 mf = dft.RKS(mol, xc=xc)

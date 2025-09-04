@@ -56,7 +56,6 @@ constexpr int TILE = {tile};
     '''
     mod = cp.RawModule(code=const + screen_jk_tasks_code, options=compile_options)
     kernel = mod.get_function('screen_jk_tasks')
-    print(kernel.num_regs)
     def fun(quartet_idx, info, nbas, 
             tile_ij_mapping, tile_kl_mapping, 
             q_cond, dm_cond, log_cutoff_a, log_cutoff_b):
