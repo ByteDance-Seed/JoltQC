@@ -46,8 +46,6 @@ void rys_jk(const int nbas,
         const ushort4* __restrict__ shl_quartet_idx, 
         const int ntasks)
 {
-    if (ntasks == 0) return;
-
     const int tx = threadIdx.x;
     const int ty = threadIdx.y;
     const int task_id = blockIdx.x * blockDim.x + threadIdx.x;

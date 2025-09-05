@@ -143,10 +143,10 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         bas_id = bas_id_by_pattern[key]
         
         coord = np.concatenate(coord)
-        idx = cluster_into_tile(coord)
-        ce = [ce[i] for i in idx]
-        bas_id = [bas_id[i] for i in idx]
-        coord = coord[idx]
+        #idx = cluster_into_tile(coord)
+        #ce = [ce[i] for i in idx]
+        #bas_id = [bas_id[i] for i in idx]
+        #coord = coord[idx]
         
         # Pad the arrays with first basis in the group
         ce.append(np.tile(ce[0], (pad,1)))
@@ -199,7 +199,8 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     # Store info at basis level
     bas_info = (ce, coords, angs, nprims)
     
-    group_size = 256
+    '''
+    group_size = 25600
     splitted_group_key = []
     splitted_group_offset = []
     for group_id in range(len(group_key)):
@@ -209,7 +210,9 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     splitted_group_offset.append(group_offset[-1])
     group_key = np.asarray(splitted_group_key)
     group_offset = np.asarray(splitted_group_offset)
-    
+    '''
+    group_key = np.asarray(group_key)
+    group_offset = np.asarray(group_offset)
     return bas_info, bas_id, pad_id, (group_key, group_offset)
 
 def compute_q_matrix(mol):

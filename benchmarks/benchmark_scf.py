@@ -20,11 +20,12 @@ from gpu4pyscf.scf import hf
 import jqc.pyscf
 
 #atom = 'molecules/h2o.xyz'
-#atom = 'molecules/0031-irregular-nitrogenous.xyz'
-atom = 'molecules/0084-elongated-halogenated.xyz'
+atom = 'molecules/0031-irregular-nitrogenous.xyz'
+#atom = 'molecules/0084-elongated-halogenated.xyz'
 #atom = 'molecules/0112-elongated-nitrogenous.xyz'
+#atom = 'molecules/0401-globular-nitrogenous.xyz'
 basis = 'def2-tzvpp'#'6-31gs'
-count = 3
+count = 1
 verbose = 6
 
 lib.num_threads(8)

@@ -46,7 +46,6 @@ void rys_jk(const int nbas,
         const ushort4* __restrict__ shl_quartet_idx, 
         const int ntasks) // rename
 {
-    if (ntasks == 0) return;
     const int task_id = blockIdx.x * blockDim.x + threadIdx.x;
 
     constexpr int stride_i = 1;
@@ -168,7 +167,7 @@ void rys_jk(const int nbas,
 
             DataType gy0 = cicj / (aij*akl*sqrt(aij+akl));
             DataType rw[2*nroots];
-
+            
             rys_roots(rr, rw, theta, omega);
 #pragma unroll
             for (int irys = 0; irys < nroots; irys++){
