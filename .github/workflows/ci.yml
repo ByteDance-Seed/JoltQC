@@ -9,7 +9,7 @@ on:
 jobs:
   test-gpu:
     runs-on: [self-hosted]
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'gpu-tests'))
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     
     steps:
     - uses: actions/checkout@v4
