@@ -17,9 +17,9 @@ jobs:
     
     - name: Install dependencies
       run: |
-        python3 -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple/
-        pip3 install pytest pytest-cov -i https://pypi.tuna.tsinghua.edu.cn/simple/
-        pip3 install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple/
+        python3 -m pip install --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com || python3 -m pip install --upgrade pip
+        pip3 install pytest pytest-cov -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com || pip3 install pytest pytest-cov
+        pip3 install -e . -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com || pip3 install -e .
     
     - name: Run GPU tests
       run: |
