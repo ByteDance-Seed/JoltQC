@@ -302,7 +302,8 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         dm = mol2cart(dm, angs, ao_loc, bas_mapping, mol)
         dm_cond = max_block_pooling(dm, ao_loc)
         dm_cond = cp.asarray(dm_cond, dtype=np.float32)
-        log_dm_shell = cp.log(dm_cond + 1e-200, dtype=np.float32)
+        # Cast after log; CuPy's log does not accept dtype kwarg
+        log_dm_shell = cp.log(dm_cond + 1e-200).astype(cp.float32)
         log_dm = cp.max(log_dm_shell).item()
         log_aodm_cutoff = log_ao_cutoff - log_dm # ao.T * dm * ao < cutoff
         n_groups = len(group_offset) - 1

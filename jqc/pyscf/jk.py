@@ -218,8 +218,12 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                     kern_counts += 1
                     info_cpu = info.get()
 
-                    # FP32 tasks
+                    # Get task counts
                     n_quartets_fp32 = int(info_cpu[1].item())
+                    offset = int(info_cpu[2].item())
+                    n_quartets_fp64 = QUEUE_DEPTH - offset
+
+                    # Launch FP32 and FP64 kernels asynchronously
                     if n_quartets_fp32 > 0:
                         jk_fp32_kernel = gen_jk_kernel(ang, nprim, do_j=with_j, do_k=with_k, 
                                                         dtype=np.float32, n_dm=n_dm, omega=omega_fp32)
@@ -229,9 +233,6 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         kern_counts += 1
                         ntasks_fp32 += n_quartets_fp32
 
-                    # FP64 tasks
-                    offset = int(info_cpu[2].item())
-                    n_quartets_fp64 = QUEUE_DEPTH - offset
                     if n_quartets_fp64 > 0:
                         jk_fp64_kernel = gen_jk_kernel(ang, nprim, do_j=with_j, do_k=with_k, 
                                                         dtype=np.float64, n_dm=n_dm, omega=omega_fp64)
@@ -240,6 +241,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                                         n_quartets_fp64)
                         kern_counts += 1
                         ntasks_fp64 += n_quartets_fp64
+            
             if logger.verbose > lib.logger.INFO:
                 end.record()
                 end.synchronize()

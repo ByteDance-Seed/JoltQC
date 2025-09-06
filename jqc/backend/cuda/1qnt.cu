@@ -118,9 +118,9 @@ void rys_jk(const int nbas,
     const int lsh = (int)sq.w;
     
     DataType fac_sym = active ? PI_FAC : zero;
-    if (ish == jsh) fac_sym *= half;
-    if (ksh == lsh) fac_sym *= half;
-    if (ish*nbas+jsh == ksh*nbas+lsh) fac_sym *= half;
+    fac_sym *= (ish == jsh) ? half : one;
+    fac_sym *= (ksh == lsh) ? half : one;
+    fac_sym *= (ish*nbas+jsh == ksh*nbas+lsh) ? half : one;
     const DataType4 ri = coords[ish];
     const DataType4 rj = coords[jsh];
     const DataType4 rk = coords[ksh];
@@ -181,9 +181,10 @@ void rys_jk(const int nbas,
             const DataType rr = Rpq[0]*Rpq[0] + Rpq[1]*Rpq[1] + Rpq[2]*Rpq[2];
             const DataType theta = aij * akl / (aij + akl);
             
-            DataType rjri_x = (ty == 0 ? rjri[0] : (ty == 1 ? rjri[1] : rjri[2])); 
-            DataType Rpq_x =  (ty == 0 ? Rpq[0] : (ty == 1 ? Rpq[1] : Rpq[2]));
-            DataType rlrk_x = (ty == 0 ? rlrk[0] : (ty == 1 ? rlrk[1] : rlrk[2]));
+            const int coord_idx = (ty < 3) ? ty : 0;
+            DataType rjri_x = rjri[coord_idx]; 
+            DataType Rpq_x = Rpq[coord_idx];
+            DataType rlrk_x = rlrk[coord_idx];
 
             DataType *rw = shared_memory + tx;
             DataType *g = shared_memory +  nroots * 2 * gx_stride + tx; 
@@ -193,11 +194,12 @@ void rys_jk(const int nbas,
             DataType g0xyz;
             if (ty == 0) g0xyz = ckcl; 
             if (ty == 1) g0xyz = cicj / (aij*akl*sqrt(aij+akl));
+            if (ty >= 2) g0xyz = zero;
             
             __syncthreads();
             for (int irys = 0; irys < nroots; irys++){
                 DataType rt_aa;
-                if (ty == 2) g0xyz = rw[(irys*2+1) * gx_stride];
+                g0xyz = (ty == 2) ? rw[(irys*2+1) * gx_stride] : g0xyz;
                 if (ty < 3){
                     const DataType rt = rw[(irys*2)*gx_stride];
                     rt_aa = rt / (aij + akl);
@@ -277,12 +279,11 @@ void rys_jk(const int nbas,
                             s1x += ib00 * gx[i_off_minus];
                             gx[i_off_plus_k] = s1x;
 
-                            DataType kb01 = zero;
                             //for k in range(1, lkl):
                             //    for i in range(lij+1):
                             //        trr(i,k+1) = cp * trr(i,k) + k*b01 * trr(i,k-1) + i*b00 * trr(i-1,k)
                             for (int k = 1; k < lkl; ++k) {
-                                kb01 += b01;
+                                const DataType kb01 = k * b01;
                                 s2x = cpx*s1x + kb01*s0x;
                                 s2x += ib00 * gx[i_off_minus + k*stride_k];
                                 gx[i_off_plus_k + k*stride_k] = s2x;

@@ -78,9 +78,9 @@ void rys_jk(const int nbas,
     const int lsh = (int)sq.w;
 
     DataType fac_sym = active ? PI_FAC : zero;
-    if (ish == jsh) fac_sym *= half;
-    if (ksh == lsh) fac_sym *= half;
-    if (ish*nbas+jsh == ksh*nbas+lsh) fac_sym *= half;
+    fac_sym *= (ish == jsh) ? half : one;
+    fac_sym *= (ksh == lsh) ? half : one;
+    fac_sym *= (ish*nbas+jsh == ksh*nbas+lsh) ? half : one;
     const DataType4 ri = coords[ish];
     const DataType4 rj = coords[jsh];
     const DataType4 rk = coords[ksh];
@@ -144,12 +144,8 @@ void rys_jk(const int nbas,
         const DataType ckcl = ck * cl * Kcd;
         for (int ip = 0; ip < npi; ip++)
         for (int jp = 0; jp < npj; jp++){
-            const int ip_offset = ip + ish*nprim_max;
-            const int jp_offset = jp + jsh*nprim_max;
-            const DataType2 cei = coeff_exp[ip_offset];
-            const DataType2 cej = coeff_exp[jp_offset];
-            const DataType ai = cei.e;
-            const DataType aj = cej.e;
+            const DataType ai = reg_cei[ip].e;
+            const DataType aj = reg_cej[jp].e;
             const DataType aij = ai + aj;
             const DataType aj_aij = aj / aij;
             const DataType cicj = reg_cicj[ip + jp*npi];
@@ -247,18 +243,19 @@ void rys_jk(const int nbas,
                             s1x += ib00 * _gix[i_off_minus];
                             _gix[i_off_plus_k] = s1x;
 
-                            DataType kb01 = zero;
                             //for k in range(1, lkl):
                             //    for i in range(lij+1):
                             //        trr(i,k+1) = cp * trr(i,k) + k*b01 * trr(i,k-1) + i*b00 * trr(i-1,k)
+                            const int base_i_off_minus = i_off_minus;
+                            const int base_i_off_plus_k = i_off_plus_k;
                             for (int k = 1; k < lkl; ++k) {
-                                i_off_minus += stride_k;
-                                i_off_plus_k += stride_k;
-                                kb01 += b01;
+                                const int k_i_off_minus = base_i_off_minus + k * stride_k;
+                                const int k_i_off_plus_k = base_i_off_plus_k + k * stride_k;
+                                const DataType kb01 = k * b01;
 
                                 s2x = cpx*s1x + kb01*s0x;
-                                s2x += ib00 * _gix[i_off_minus];
-                                _gix[i_off_plus_k] = s2x;
+                                s2x += ib00 * _gix[k_i_off_minus];
+                                _gix[k_i_off_plus_k] = s2x;
                                 s0x = s1x;
                                 s1x = s2x;
                             }
