@@ -21,7 +21,7 @@ from pyscf import gto, lib
 from pyscf.scf import _vhf
 from jqc.constants import NPRIM_MAX
 
-__all__ = ['format_bas_cache', 'create_sorted_basis']
+__all__ = ['format_bas_cache', 'sort_group_basis', 'compute_q_matrix']
 PTR_BAS_COORD = 7
 
 
@@ -143,10 +143,10 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         bas_id = bas_id_by_pattern[key]
         
         coord = np.concatenate(coord)
-        idx = cluster_into_tile(coord)
-        ce = [ce[i] for i in idx]
-        bas_id = [bas_id[i] for i in idx]
-        coord = coord[idx]
+        #idx = cluster_into_tile(coord)
+        #ce = [ce[i] for i in idx]
+        #bas_id = [bas_id[i] for i in idx]
+        #coord = coord[idx]
         
         # Pad the arrays with first basis in the group
         ce.append(np.tile(ce[0], (pad,1)))
@@ -157,8 +157,8 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         bas_id_by_pattern[key] = np.concatenate(bas_id, axis=0)
         coords_by_pattern[key] = np.concatenate(coord, axis=0)
 
-        active_id = np.zeros(nbas, dtype=np.bool)
-        pad_id = np.ones(pad, dtype=np.bool)
+        active_id = np.zeros(nbas, dtype=bool)
+        pad_id = np.ones(pad, dtype=bool)
         pad_id_by_pattern[key] = np.concatenate([active_id, pad_id])
 
     # Sort the basis by angular momentum and number of primitives
@@ -186,10 +186,10 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         offset += bas_count
     group_offset.append(offset)
 
-    ce = np.concatenate(ce, axis=0, dtype=dtype)
-    coords = np.concatenate(coords, axis=0, dtype=dtype)
-    bas_id = np.concatenate(bas_id, axis=0, dtype=np.int32)
-    pad_id = np.concatenate(pad_id, axis=0, dtype=np.bool)
+    ce = np.concatenate(ce, axis=0).astype(dtype, copy=False)
+    coords = np.concatenate(coords, axis=0).astype(dtype, copy=False)
+    bas_id = np.concatenate(bas_id, axis=0).astype(np.int32, copy=False)
+    pad_id = np.concatenate(pad_id, axis=0).astype(bool, copy=False)
     angs = np.concatenate(angs, axis=0)
     nprims = np.concatenate(nprims, axis=0)
 
@@ -199,7 +199,8 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     # Store info at basis level
     bas_info = (ce, coords, angs, nprims)
     
-    group_size = 256
+    '''
+    group_size = 25600
     splitted_group_key = []
     splitted_group_offset = []
     for group_id in range(len(group_key)):
@@ -209,7 +210,9 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     splitted_group_offset.append(group_offset[-1])
     group_key = np.asarray(splitted_group_key)
     group_offset = np.asarray(splitted_group_offset)
-    
+    '''
+    group_key = np.asarray(group_key)
+    group_offset = np.asarray(group_offset)
     return bas_info, bas_id, pad_id, (group_key, group_offset)
 
 def compute_q_matrix(mol):
