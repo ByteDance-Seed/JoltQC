@@ -89,7 +89,7 @@ void rys_jk(const int nbas,
     constexpr int stride_k = stride_j * (lj+1);
     constexpr int stride_l = stride_k * (lk+1);
 
-    // shared memory buffer will be fragmented into three parts
+    // Dynamic shared memory buffer
     extern __shared__ DataType shared_memory[];
 
     int kl_idx[fragk*fragl], kl_idy[fragk*fragl], kl_idz[fragk*fragl];
@@ -141,6 +141,34 @@ void rys_jk(const int nbas,
     const DataType rlrk[3] = {rkl0, rkl1, rkl2};
     const DataType rr_kl = rlrk[0]*rlrk[0] + rlrk[1]*rlrk[1] + rlrk[2]*rlrk[2];
 
+    // Cache coefficients and precompute cicj values in shared memory for better performance
+    DataType2 reg_cei[npi], reg_cej[npj];
+    for (int ip = 0; ip < npi; ip++){
+        const int ish_ip = ip + ish*nprim_max;
+        reg_cei[ip] = coeff_exp[ish_ip];
+    }
+    for (int jp = 0; jp < npj; jp++){
+        const int jsh_jp = jp + jsh*nprim_max;
+        reg_cej[jp] = coeff_exp[jsh_jp];
+    }
+    
+    DataType reg_cicj[npi*npj];
+#pragma unroll
+    for (int ip = 0; ip < npi; ip++){
+        for (int jp = 0; jp < npj; jp++){
+            const DataType ai = reg_cei[ip].e;
+            const DataType aj = reg_cej[jp].e;
+            const DataType aij = ai + aj;
+            const DataType aj_aij = aj / aij;
+            const DataType theta_ij = ai * aj_aij;
+            const DataType Kab = exp(-theta_ij * rr_ij);
+            const DataType ci = reg_cei[ip].c;
+            const DataType cj = reg_cej[jp].c;
+            const DataType cicj = fac_sym * ci * cj * Kab;
+            reg_cicj[ip + jp*npi] = cicj;
+        }
+    }
+
     DataType integral_frag[frag_size] = {0.0};
     for (int kp = 0; kp < npk; kp++)
     for (int lp = 0; lp < npl; lp++){
@@ -160,21 +188,12 @@ void rys_jk(const int nbas,
         const DataType ckcl = ck * cl * Kcd;
         for (int ip = 0; ip < npi; ip++)
         for (int jp = 0; jp < npj; jp++){
-            const int ish_ip = ip + ish*nprim_max;
-            const int jsh_jp = jp + jsh*nprim_max;
-            const DataType2 cei = coeff_exp[ish_ip];
-            const DataType2 cej = coeff_exp[jsh_jp];
-            const DataType ai = cei.e;
-            const DataType aj = cej.e;
+            const DataType ai = reg_cei[ip].e;
+            const DataType aj = reg_cej[jp].e;
             const DataType aij = ai + aj;
             const DataType inv_aij = one / aij;
             const DataType aj_aij = aj * inv_aij;
-            
-            const DataType theta_ij = ai * aj_aij;
-            const DataType Kab = exp(-theta_ij * rr_ij);
-            const DataType ci = cei.c;
-            const DataType cj = cej.c;
-            const DataType cicj = fac_sym * ci * cj * Kab;
+            const DataType cicj = reg_cicj[ip + jp*npi];
             
             const DataType xij = rjri[0] * aj_aij + ri.x;
             const DataType yij = rjri[1] * aj_aij + ri.y;
@@ -193,14 +212,13 @@ void rys_jk(const int nbas,
             DataType rlrk_x = (ty == 0 ? rlrk[0] : (ty == 1 ? rlrk[1] : rlrk[2]));
 
             DataType *rw = shared_memory + tx;
-            DataType *g = shared_memory +  nroots * 2 * gx_stride + tx; 
+            DataType *g = shared_memory + nroots * 2 * gx_stride + tx; 
 
             rys_roots(rr, rw, ty, gx_stride, theta, omega);
             
             DataType g0xyz;
             if (ty == 0) g0xyz = ckcl; 
             if (ty == 1) g0xyz = cicj / (aij*akl*sqrt(aij+akl));
-            if (ty >= 2) g0xyz = zero;
             
             __syncthreads();
             for (int irys = 0; irys < nroots; irys++){

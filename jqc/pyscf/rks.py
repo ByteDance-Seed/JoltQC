@@ -364,7 +364,7 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         grid_coords = cp.asarray(grids.coords.T, dtype=np.float64, order='C')
         vxc = cp.zeros([1, nao, nao], dtype=np.float64)
         ngrids_per_atom = ngrids / mol.natm
-        wv_max = cp.max(cp.abs(wv)).item()
+        wv_max = cp.max(cp.abs(wv)).item() + 1e-300
         wv_max = wv_max * ngrids_per_atom # roughly integrate(wv * ao.T * ao) < cutoff
         log_wv_max = math.log(wv_max)
         log_aodm_cutoff = log_ao_cutoff - log_wv_max
