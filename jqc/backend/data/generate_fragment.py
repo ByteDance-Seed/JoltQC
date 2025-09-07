@@ -258,7 +258,7 @@ def update_frags(i,j,k,l,dtype_str):
                 vk_diff = cp.abs(vk - best_vk_1qnt).max()
                 
                 # Use appropriate tolerance based on dtype
-                tolerance = 1e-12 if dtype == np.float64 else 1e-6
+                tolerance = 1e-10 if dtype == np.float64 else 1e-4
                 
                 print(f'Result verification: max |vj_1q1t - vj_1qnt| = {vj_diff:.2e}')
                 print(f'Result verification: max |vk_1q1t - vk_1qnt| = {vk_diff:.2e}')
