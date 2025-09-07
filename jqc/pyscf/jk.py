@@ -81,7 +81,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     bas_cache, bas_mapping, padding_mask, group_info = sort_group_basis(mol, alignment=TILE)
     # TODO: Q matrix for short-range
     q_matrix = compute_q_matrix(mol)
-    nbas = bas_mapping.shape[0]
+    nbas = np.asarray(bas_mapping.shape[0])
     nao_orig = mol.nao
     q_matrix = q_matrix[bas_mapping[:,None], bas_mapping]
     q_matrix[padding_mask, :] = -100
@@ -183,10 +183,10 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         
         for task in tasks[::-1]:
             i, j, k, l = task
-            li, ip = group_key[i]
-            lj, jp = group_key[j] 
-            lk, kp = group_key[k]
-            ll, lp = group_key[l]
+            li, ip = group_key[i].tolist()
+            lj, jp = group_key[j].tolist() 
+            lk, kp = group_key[k].tolist()
+            ll, lp = group_key[l].tolist()
             ang = (li, lj, lk, ll)
             nprim = (ip, jp, kp, lp)
             
@@ -225,20 +225,24 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
                     # Launch FP32 and FP64 kernels asynchronously
                     if n_quartets_fp32 > 0:
-                        jk_fp32_kernel = gen_jk_kernel(ang, nprim, do_j=with_j, do_k=with_k, 
-                                                        dtype=np.float32, n_dm=n_dm, omega=omega_fp32)
-                        jk_fp32_kernel(nbas, ao_loc, coords_fp32, ce_fp32,
-                                        dms_fp32, vj, vk, omega_fp32, quartet_list,
-                                        n_quartets_fp32)
+                        jk_fp32_kernel = gen_jk_kernel(
+                            ang, nprim, do_j=with_j, do_k=with_k, 
+                            dtype=np.float32, n_dm=n_dm, omega=omega_fp32)
+                        jk_fp32_kernel(
+                            nbas, ao_loc, coords_fp32, ce_fp32,
+                            dms_fp32, vj, vk, omega_fp32, quartet_list,
+                            n_quartets_fp32)
                         kern_counts += 1
                         ntasks_fp32 += n_quartets_fp32
 
                     if n_quartets_fp64 > 0:
-                        jk_fp64_kernel = gen_jk_kernel(ang, nprim, do_j=with_j, do_k=with_k, 
-                                                        dtype=np.float64, n_dm=n_dm, omega=omega_fp64)
-                        jk_fp64_kernel(nbas, ao_loc, coords_fp64, ce_fp64,
-                                        dms, vj, vk, omega_fp64, quartet_list[offset:],
-                                        n_quartets_fp64)
+                        jk_fp64_kernel = gen_jk_kernel(
+                            ang, nprim, do_j=with_j, do_k=with_k, 
+                            dtype=np.float64, n_dm=n_dm, omega=omega_fp64)
+                        jk_fp64_kernel(
+                            nbas, ao_loc, coords_fp64, ce_fp64,
+                            dms, vj, vk, omega_fp64, quartet_list[offset:],
+                            n_quartets_fp64)
                         kern_counts += 1
                         ntasks_fp64 += n_quartets_fp64
             

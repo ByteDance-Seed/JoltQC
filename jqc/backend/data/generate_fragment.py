@@ -74,6 +74,7 @@ def update_frags(i,j,k,l,dtype_str):
     from gpu4pyscf.scf.jk import _VHFOpt
     from jqc.backend import jk_1qnt as jk_algo1
     from jqc.backend import jk_1q1t as jk_algo0
+    from pathlib import Path
     
     if dtype_str=='fp32':
         dtype = np.float32
@@ -99,6 +100,8 @@ def update_frags(i,j,k,l,dtype_str):
         0.05700000             1.0000000
                                 ''')
     xyz = 'gly30.xyz'
+    if not Path(xyz).exists():
+        raise FileNotFoundError(f'Required file {xyz} not found in current directory')
     mol = gto.M(atom=xyz, basis=basis, unit='Angstrom')
     opt = _VHFOpt(mol)
     opt.tile = TILE
@@ -134,8 +137,8 @@ def update_frags(i,j,k,l,dtype_str):
     best_time = 1e100
     best_frag = None
 
-    from jqc.backend.jk_tasks import generate_fill_tasks_kernel
-    script, kernel, gen_tasks_fun = generate_fill_tasks_kernel(tile=TILE)
+    from jqc.backend.jk_tasks import gen_screen_jk_tasks_kernel
+    script, kernel, gen_tasks_fun = gen_screen_jk_tasks_kernel(tile=TILE)
     QUEUE_DEPTH = jk.QUEUE_DEPTH
     cp.get_default_memory_pool().free_all_blocks()
     pool = cp.empty((QUEUE_DEPTH), dtype=jk.ushort4_dtype)
@@ -173,11 +176,12 @@ def update_frags(i,j,k,l,dtype_str):
         if elapsed_time_ms < best_time:
             best_time = elapsed_time_ms
             best_frag = frag
-        print(f'{ang}/{nprim} : algorithm 1qnt with frag {frag} takes \
-{elapsed_time_ms:.3f}ms, best time: {best_time:.3f}ms')
+        print(f'{ang}/{nprim} : algorithm 1qnt with frag {frag} takes '
+              f'{elapsed_time_ms:.3f}ms, best time: {best_time:.3f}ms')
     
-    # No need to check 1q1t algorithm for low-angular momentum
-    if (li+lj+lk+ll)//2 + 1 < 5:
+    # Check 1q1t algorithm for low-angular momentum cases
+    # Skip for high angular momentum to avoid excessive computation time
+    if sum(ang) <= 8:
         # Measure time of algorithm 0
         script, kernel, fun = jk_algo0.gen_kernel(ang, nprim, dtype=dtype)
         kernel.compile()
@@ -194,11 +198,14 @@ def update_frags(i,j,k,l,dtype_str):
         if elapsed_time_ms < best_time:
             best_time = elapsed_time_ms
             best_frag = np.array([-1])
-        print(f'{ang} : algorithm 1q1t takes {elapsed_time_ms:.3f}:ms, best time: {best_time:.3f}ms')
+        print(f'{ang} : algorithm 1q1t takes {elapsed_time_ms:.3f}ms, best time: {best_time:.3f}ms')
+    if best_frag is None:
+        print('Warning: No optimal fragment found')
+        return
+    
     print('Optimal frag:', best_frag)
 
     filename = f'optimal_scheme_{dtype_str}.json'
-    from pathlib import Path
     path = Path(filename)
     if not path.exists():
         with open(path, "w") as f:

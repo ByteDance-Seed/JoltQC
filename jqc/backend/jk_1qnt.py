@@ -17,6 +17,7 @@
 1qnt algorithm for JK calculations
 '''
 
+import warnings
 import cupy as cp
 import numpy as np
 from jqc.backend.util import generate_lookup_table
@@ -209,6 +210,10 @@ constexpr int nroots = ((li+lj+lk+ll)/2+1);
     
     mod = cp.RawModule(code=script, options=compile_options)
     kernel = mod.get_function('rys_jk')
+    if kernel.local_size_bytes > 256:
+        msg = f'Local memory usage is high in 1qnt: {kernel.local_size_bytes} Bytes,'
+        msg += f'    ang = {ang}, nprim = {nprim}, frags = {frags}, dtype = {dtype}, n_dm = {n_dm}'
+        warnings.warn(msg)
     kernel.max_dynamic_shared_size_bytes = dynamic_shared_memory
     if print_log:
         print(f'Type: ({li}{lj}|{lk}{ll}), \
