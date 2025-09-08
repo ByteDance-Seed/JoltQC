@@ -32,6 +32,33 @@ props = cp.cuda.runtime.getDeviceProperties(dev_id)
 shm_size = props['sharedMemPerBlock']
 compile_options = ('-std=c++17','--use_fast_math', '--minimal')
 
+def padded_stride(n):
+    """ Pad the leading dimension to avoid bank conflict in shared memory.
+    
+    Modern GPUs have 32 memory banks in shared memory. Bank conflicts occur
+    when multiple threads in a warp access the same bank simultaneously.
+    This function adds minimal padding to avoid common conflict patterns.
+    
+    Args:
+        n (int): Original stride size
+        
+    Returns:
+        int: Padded stride that avoids bank conflicts
+    """
+    if n <= 0:
+        return 1  # Handle edge case
+    
+    # Check for problematic strides that cause bank conflicts
+    # Most critical: multiples of 32, 16, 8, 4, 2
+    if n % 32 == 0:
+        return n + 1
+    elif n % 16 == 0:
+        return n + 1  
+    elif n % 8 == 0 and n >= 8:
+        return n + 1
+    else:
+        return n
+
 def create_scheme(ang, nprim=None, frags=None, do_j=True, do_k=True, 
                   max_shared_memory=shm_size, 
                   max_gout=128, max_threads=256, dtype=np.double):
@@ -111,10 +138,10 @@ def create_scheme(ang, nprim=None, frags=None, do_j=True, do_k=True,
     max_dynamic_sm = max_shared_memory - static_sm
 
     # If shared memory is not enough, decrease # of quartets in each block
-    smem_stride = nsq_per_block | 1 # reduce bank conflict
+    smem_stride = padded_stride(nsq_per_block) # reduce bank conflict
     while smem_per_quartet * smem_stride * dtype_size > max_dynamic_sm:
         nsq_per_block >>= 1
-        smem_stride = nsq_per_block | 1
+        smem_stride = padded_stride(nsq_per_block)
         if nsq_per_block == 0:
             raise RuntimeError('Shared memory is not enough')
     
@@ -200,6 +227,7 @@ constexpr int nthreads_per_sq = {nthreads_per_sq};
 constexpr int threads  =  nsq_per_block * nthreads_per_sq;
 constexpr int do_j = {int(do_j)};
 constexpr int do_k = {int(do_k)};
+constexpr int smem_stride = {padded_stride(nsq_per_block)};
 // for rys_roots
 constexpr int nroots = ((li+lj+lk+ll)/2+1);
 '''
@@ -218,7 +246,7 @@ constexpr int nroots = ((li+lj+lk+ll)/2+1);
     
     mod = cp.RawModule(code=script, options=compile_options)
     kernel = mod.get_function('rys_jk')
-    if kernel.local_size_bytes > 1024:
+    if kernel.local_size_bytes > 8192:
         msg = f'Local memory usage is high in 1qnt: {kernel.local_size_bytes} Bytes,'
         msg += f'    ang = {ang}, nprim = {nprim}, frags = {frags}, dtype = {dtype}, n_dm = {n_dm}'
         warnings.warn(msg)

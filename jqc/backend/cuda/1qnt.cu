@@ -80,7 +80,7 @@ void rys_jk(const int nbas,
     const int t_l = (ty / (nti*ntj*ntk));
 
     const int tid = threadIdx.y * blockDim.x + threadIdx.x;
-    constexpr int gx_stride = nsq_per_block | 1; // reduce bank conflict
+    constexpr int gx_stride = smem_stride;
     constexpr int g_stride = 3 * gx_stride;
 
     // shape of g, (gsize, 3, nsq_per_block)
@@ -408,7 +408,6 @@ void rys_jk(const int nbas,
     const int l0 = ao_loc[lsh];
 
     DataType *smem = shared_memory + tx;
-    constexpr int smem_stride = nsq_per_block | 1;
     const bool ty_active = (ty < nt_active);
     for (int i_dm = 0; i_dm < n_dm; ++i_dm) {
         // ijkl, ij -> kl

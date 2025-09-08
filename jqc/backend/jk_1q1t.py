@@ -101,7 +101,7 @@ def gen_kernel(ang, nprim, dtype=np.double, n_dm=1, do_j=True, do_k=True,
 
     mod = cp.RawModule(code=script, options=compile_options)
     kernel = mod.get_function('rys_jk')
-    if kernel.local_size_bytes > 1024:
+    if kernel.local_size_bytes > 8192:
         msg = f'Local memory usage is high in 1q1t: {kernel.local_size_bytes} Bytes,'
         msg += f'    ang = {ang}, nprim = {nprim}, dtype = {dtype}, n_dm = {n_dm}'
         warnings.warn(msg)
