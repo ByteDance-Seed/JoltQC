@@ -17,7 +17,7 @@ import json
 import numpy as np
 import cupy as cp
 from pyscf import gto, lib
-from jqc.constants import TILE
+from jqc.constants import TILE, MAX_SMEM
 
 '''
 Script for greedy search the optimal fragmentation for the kernel.
@@ -170,7 +170,7 @@ def update_frags(i,j,k,l,dtype_str):
         np.float32(log_cutoff), np.float32(100)
     )
 
-    max_shm = 48*1024 # 48 KB for compatibility
+    max_shm = MAX_SMEM # 48 KB for compatibility
     
     # Store reference results from best 1qnt algorithm
     best_vj_1qnt = None

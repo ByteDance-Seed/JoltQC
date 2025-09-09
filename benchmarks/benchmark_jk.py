@@ -58,10 +58,10 @@ basis = gto.basis.parse('''
 #H    D
 #      1.2700058226E+00      1
 #      0.2700058226E+00      1
-O    S
-      0.02700058226E+00      1
 #O    S
 #      0.02700058226E+00      1
+O    S
+      0.02700058226E+00      1
 #      0.2700058226E+00      1 
 #      0.2700058226E+00      1
 #      0.2700058226E+00      1
@@ -168,6 +168,7 @@ print(f"Time with JQC / FP32 + FP64, {jqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
 print('vj diff:', cp.linalg.norm(vj - vj_jit))
 print('vk diff:', cp.linalg.norm(vk - vk_jit))
+exit()
 
 ###### JQC / FP32 #######
 # Warm up

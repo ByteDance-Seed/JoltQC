@@ -20,6 +20,7 @@
 import warnings
 import cupy as cp
 import numpy as np
+from jqc.constants import MAX_SMEM
 from jqc.backend.util import generate_lookup_table
 from jqc.backend.cuda_scripts import (rys_roots_data, rys_roots_parallel_code, 
                                       jk_1qnt_cuda_code)
@@ -60,7 +61,7 @@ def padded_stride(n):
         return n
 
 def create_scheme(ang, nprim=None, frags=None, do_j=True, do_k=True, 
-                  max_shared_memory=shm_size, 
+                  max_shared_memory=MAX_SMEM, 
                   max_gout=128, max_threads=256, dtype=np.double):
     """
     Create a scheme for 1QnT kernel.

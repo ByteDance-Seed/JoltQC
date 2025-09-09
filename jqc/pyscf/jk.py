@@ -234,7 +234,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                             n_quartets_fp32)
                         kern_counts += 1
                         ntasks_fp32 += n_quartets_fp32
-
+ 
                     if n_quartets_fp64 > 0:
                         jk_fp64_kernel = gen_jk_kernel(
                             ang, nprim, do_j=with_j, do_k=with_k, 

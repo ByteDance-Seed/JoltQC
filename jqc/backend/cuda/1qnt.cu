@@ -218,7 +218,7 @@ void rys_jk(const int nbas,
             
             DataType g0xyz;
             if (ty == 0) g0xyz = ckcl; 
-            if (ty == 1) g0xyz = cicj / (aij*akl*sqrt(aij+akl));
+            if (ty == 1) g0xyz = cicj * inv_aij * inv_akl * sqrt(inv_aijkl);
             
             __syncthreads();
             for (int irys = 0; irys < nroots; irys++){
@@ -255,7 +255,8 @@ void rys_jk(const int nbas,
                         gx[stride_i] = s1x;
 
                         for (int i = 1; i < lij; ++i) {
-                            s2x = c0x * s1x + i * b10 * s0x;
+                            const DataType i_b10 = i * b10;  // Pre-compute to reduce FLOPs
+                            s2x = c0x * s1x + i_b10 * s0x;
                             gx[i*stride_i + stride_i] = s2x;
                             s0x = s1x;
                             s1x = s2x;
@@ -285,7 +286,8 @@ void rys_jk(const int nbas,
                         // trr(0,k+1) = cp * trr(0,k) + k*b01 * trr(0,k-1)
 #pragma unroll
                         for (int k = 1; k < lkl; ++k) {
-                            s2x = cpx*s1x + k*b01*s0x;
+                            const DataType k_b01 = k * b01;  // Pre-compute to reduce FLOPs
+                            s2x = cpx*s1x + k_b01*s0x;
                             gx[k*stride_k + stride_k] = s2x;
                             s0x = s1x;
                             s1x = s2x;
@@ -308,8 +310,8 @@ void rys_jk(const int nbas,
                             //        trr(i,k+1) = cp * trr(i,k) + k*b01 * trr(i,k-1) + i*b00 * trr(i-1,k)
                             
                             for (int k = 1; k < lkl; ++k) {
-                                const DataType kb01 = k * b01;
-                                s2x = cpx*s1x + kb01*s0x;
+                                const DataType k_b01 = k * b01;  // Pre-compute to reduce FLOPs
+                                s2x = cpx*s1x + k_b01*s0x;
                                 s2x += ib00 * gx[i_off_minus + k*stride_k];
                                 gx[i_off_plus_k + k*stride_k] = s2x;
                                 s0x = s1x;
@@ -338,7 +340,7 @@ void rys_jk(const int nbas,
                                 s1x = gx[ijkl];
                                 for (ijkl-=stride_i; ijkl >= jkl_off; ijkl-=stride_i) {
                                     s0x = gx[ijkl];
-                                    gx[ijkl + stride_j] = s1x - s0x * rjri_x;
+                                    gx[ijkl + stride_j] = s1x - rjri_x * s0x;  // Reordered for consistency
                                     s1x = s0x;
                                 }
                             }
