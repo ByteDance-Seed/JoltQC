@@ -31,6 +31,9 @@ with open(f'{code_path}/cuda/cart2sph.cu') as f:
 with open(f'{code_path}/cuda/sph2cart.cu') as f:
     sph2cart_scripts = f.read()
 
+_cart2sph_kernel_cache = {}
+_sph2cart_kernel_cache = {}
+
 def cart2sph(dm_cart, angs, cart_offset, sph_offset, nao_sph, out=None):
     """
     Fused kernel for cartesian to spherical transformation and sorting
@@ -63,10 +66,12 @@ def cart2sph(dm_cart, angs, cart_offset, sph_offset, nao_sph, out=None):
     for p0, p1 in zip(offsets[:-1], offsets[1:]):
         nbatch = p1 - p0
         ang = angs[p0]
-        const = f'constexpr int ang = {ang};'
-        scripts = const + cart2sph_scripts
-        mod = cp.RawModule(code=scripts, options=compile_options)
-        kernel = mod.get_function('cart2sph')
+        if ang not in _cart2sph_kernel_cache:
+            const = f'constexpr int ang = {ang};'
+            scripts = const + cart2sph_scripts
+            mod = cp.RawModule(code=scripts, options=compile_options)
+            _cart2sph_kernel_cache[ang] = mod.get_function('cart2sph')
+        kernel = _cart2sph_kernel_cache[ang]
 
         args = (dm_cart, buf, nao_cart, nbatch, cart_ao_stride, sph_ao_stride, shell_stride,
                cart_offset[p0:p1], sph_offset[p0:p1])
@@ -85,10 +90,12 @@ def cart2sph(dm_cart, angs, cart_offset, sph_offset, nao_sph, out=None):
     for p0, p1 in zip(offsets[:-1], offsets[1:]):
         nbatch = p1 - p0
         ang = angs[p0]
-        const = f'constexpr int ang = {ang};'
-        scripts = const + cart2sph_scripts
-        mod = cp.RawModule(code=scripts, options=compile_options)
-        kernel = mod.get_function('cart2sph')
+        if ang not in _cart2sph_kernel_cache:
+            const = f'constexpr int ang = {ang};'
+            scripts = const + cart2sph_scripts
+            mod = cp.RawModule(code=scripts, options=compile_options)
+            _cart2sph_kernel_cache[ang] = mod.get_function('cart2sph')
+        kernel = _cart2sph_kernel_cache[ang]
 
         args = (buf, dm_sph, nao_sph, nbatch, cart_ao_stride, sph_ao_stride, shell_stride,
                cart_offset[p0:p1], sph_offset[p0:p1])
@@ -132,10 +139,12 @@ def sph2cart(dm_sph, angs, sph_offset, cart_offset, nao_cart, out=None):
     for p0, p1 in zip(offsets[:-1], offsets[1:]):
         nbatch = p1 - p0
         ang = angs[p0]
-        const = f'constexpr int ang = {ang};'
-        scripts = const + sph2cart_scripts
-        mod = cp.RawModule(code=scripts, options=compile_options)
-        kernel = mod.get_function('sph2cart')
+        if ang not in _sph2cart_kernel_cache:
+            const = f'constexpr int ang = {ang};'
+            scripts = const + sph2cart_scripts
+            mod = cp.RawModule(code=scripts, options=compile_options)
+            _sph2cart_kernel_cache[ang] = mod.get_function('sph2cart')
+        kernel = _sph2cart_kernel_cache[ang]
 
         args = (buf, dm_sph, nao_sph, nbatch, cart_ao_stride, sph_ao_stride, shell_stride,
                cart_offset[p0:p1], sph_offset[p0:p1])
@@ -154,10 +163,12 @@ def sph2cart(dm_sph, angs, sph_offset, cart_offset, nao_cart, out=None):
     for p0, p1 in zip(offsets[:-1], offsets[1:]):
         nbatch = p1 - p0
         ang = angs[p0]
-        const = f'constexpr int ang = {ang};'
-        scripts = const + sph2cart_scripts
-        mod = cp.RawModule(code=scripts, options=compile_options)
-        kernel = mod.get_function('sph2cart')
+        if ang not in _sph2cart_kernel_cache:
+            const = f'constexpr int ang = {ang};'
+            scripts = const + sph2cart_scripts
+            mod = cp.RawModule(code=scripts, options=compile_options)
+            _sph2cart_kernel_cache[ang] = mod.get_function('sph2cart')
+        kernel = _sph2cart_kernel_cache[ang]
 
         args = (dm_cart, buf, nao_cart, nbatch, cart_ao_stride, sph_ao_stride, shell_stride,
                cart_offset[p0:p1], sph_offset[p0:p1])

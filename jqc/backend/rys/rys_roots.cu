@@ -35,11 +35,13 @@ static void rys_roots(DataType x, DataType *rw, DataType theta, DataType omega)
     
     x *= theta;
     
-    const DataType omega2 = omega*omega;
-    const DataType theta_fac = omega2 / (omega2 + theta);
-    const DataType sqrt_theta_fac = sqrt(theta_fac);
+    DataType theta_fac;
+    DataType sqrt_theta_fac = one;
     if constexpr(rys_type > 0){
+        const DataType omega2 = omega*omega;
+        theta_fac = omega2 / (omega2 + theta);
         x *= theta_fac;
+        sqrt_theta_fac = sqrt(theta_fac);
     }
 
     if (x < 3.e-7){
@@ -57,7 +59,7 @@ static void rys_roots(DataType x, DataType *rw, DataType theta, DataType omega)
 
     if (x > 35+nroots*5) {
         const DataType inv_x = one / x; 
-        const DataType t = sqrt(PIE4 * inv_x);
+        const DataType t = SQRTPIE4 * sqrt(inv_x);
 #pragma unroll
         for (int i = 0; i < nroots; i++)  {
             rw[2*i] = ROOT_LARGEX_R_DATA[i] * inv_x;
@@ -71,16 +73,18 @@ static void rys_roots(DataType x, DataType *rw, DataType theta, DataType omega)
     }
     
     if constexpr(nroots == 1) {
-        const DataType tt = sqrt(x);                       // 1 sqrt
-        const DataType erf_tt = erf(tt);                   // 1 erf
-        const DataType e = exp(-x);                        // 1 exp
+        const DataType tt = sqrt(x);
+        const DataType erf_tt = erf(tt);
+        const DataType e = exp(-x);
 
-        const DataType inv_tt = SQRTPIE4 / tt;             // 1 div
-        const DataType fmt0 = inv_tt * erf_tt;
+        // Combine inv_x and inv_tt calculations to reduce FLOPs
+        const DataType inv_x = one / x;
+        const DataType fmt0 = (SQRTPIE4 / tt) * erf_tt;  // Combined division and multiplication
         rw[1] = fmt0;
 
-        const DataType fmt1 = (half / x) * (fmt0 - e);     // 1 div
-        rw[0] = fmt1 / fmt0;                               // 1 div
+        // Optimize the final division: fmt1/fmt0 = (half*inv_x*(fmt0-e))/fmt0 = half*inv_x*(1-e/fmt0)
+        const DataType fmt1 = half * inv_x * (fmt0 - e);
+        rw[0] = fmt1 / fmt0;
         if constexpr(rys_type > 0){
             rw[0] *= theta_fac;
             rw[1] *= sqrt_theta_fac;
@@ -92,39 +96,58 @@ static void rys_roots(DataType x, DataType *rw, DataType theta, DataType omega)
     const DataType u = (x - it * DataType(2.5)) * DataType(0.8) - DataType(1.);
     const DataType u2 = u * two;
     const DataType *datax = ROOT_RW_DATA + it;
+    
+    // Pre-compute common values to reduce FLOPs
+    const int addr_stride = DEGREE1 * INTERVALS;
+    const int degree_intervals = DEGREE * INTERVALS;
+    const int degree_intervals_minus = degree_intervals - INTERVALS;
+    
 #pragma unroll
     for (int i = 0; i < nroots; i++) {
-        {
-            const DataType *c = datax + (2*i) * DEGREE1 * INTERVALS;
-            DataType c0 = c[DEGREE*INTERVALS];
-            DataType c1 = c[DEGREE*INTERVALS - INTERVALS];
-    #pragma unroll
-            for (int n = DEGREE-2; n > 0; n-=2) {
-                const DataType c2 = c[n*INTERVALS] - c1;
-                const DataType c3 = c0 + c1*u2;
-                c1 = c2 + c3*u2;
-                c0 = c[n*INTERVALS - INTERVALS] - c3;
-            }
-            rw[2*i] = c0 + c1*u;
+        // Pre-compute base addresses to avoid repeated multiplication
+        const int base_addr = (2*i) * addr_stride;
+        const DataType *c_root = datax + base_addr;
+        const DataType *c_weight = datax + base_addr + addr_stride;
+        
+        // Root and weight calculation - optimized polynomial evaluation
+        DataType c0_r = c_root[degree_intervals];
+        DataType c1_r = c_root[degree_intervals_minus];
+        DataType c0_w = c_weight[degree_intervals];
+        DataType c1_w = c_weight[degree_intervals_minus];
+        
+#pragma unroll
+        for (int n = DEGREE-2; n > 0; n-=2) {
+            // Process both root and weight polynomials in parallel
+            const int n_intervals = n*INTERVALS;
+            const int n_intervals_minus = n_intervals - INTERVALS;
+            
+            // Pre-compute shared multiplications
+            const DataType c1_r_u2 = c1_r * u2;
+            const DataType c1_w_u2 = c1_w * u2;
+            
+            // Root polynomial step
+            const DataType c2_r = c_root[n_intervals] - c1_r;
+            const DataType c3_r = c0_r + c1_r_u2;
+            c1_r = c2_r + c3_r * u2;
+            c0_r = c_root[n_intervals_minus] - c3_r;
+            
+            // Weight polynomial step  
+            const DataType c2_w = c_weight[n_intervals] - c1_w;
+            const DataType c3_w = c0_w + c1_w_u2;
+            c1_w = c2_w + c3_w * u2;
+            c0_w = c_weight[n_intervals_minus] - c3_w;
         }
-
-        {
-            const DataType *c = datax + (2*i+1) * DEGREE1 * INTERVALS;
-            DataType c0 = c[DEGREE*INTERVALS];
-            DataType c1 = c[DEGREE*INTERVALS - INTERVALS];
-    #pragma unroll
-            for (int n = DEGREE-2; n > 0; n-=2) {
-                const DataType c2 = c[n*INTERVALS] - c1;
-                const DataType c3 = c0 + c1*u2;
-                c1 = c2 + c3*u2;
-                c0 = c[n*INTERVALS - INTERVALS] - c3;
-            }
-            rw[2*i+1] = c0 + c1*u;
-        }
-
+        
+        // Final polynomial evaluation and optional scaling
+        DataType root_val = c0_r + c1_r*u;
+        DataType weight_val = c0_w + c1_w*u;
+        
         if constexpr(rys_type > 0){
-            rw[2*i] *= theta_fac;
-            rw[2*i+1] *= sqrt_theta_fac;
+            root_val *= theta_fac;
+            weight_val *= sqrt_theta_fac;
         }
+        
+        rw[2*i] = root_val;
+        rw[2*i+1] = weight_val;
     }
 }

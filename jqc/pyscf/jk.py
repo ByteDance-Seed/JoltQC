@@ -81,7 +81,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     bas_cache, bas_mapping, padding_mask, group_info = sort_group_basis(mol, alignment=TILE)
     # TODO: Q matrix for short-range
     q_matrix = compute_q_matrix(mol)
-    nbas = bas_mapping.shape[0]
+    nbas = np.asarray(bas_mapping.shape[0])
     nao_orig = mol.nao
     q_matrix = q_matrix[bas_mapping[:,None], bas_mapping]
     q_matrix[padding_mask, :] = -100
@@ -181,83 +181,84 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         kern_counts = 0
         quartet_list = cp.empty((QUEUE_DEPTH), dtype=ushort4_dtype)
         
-        stream = cp.cuda.stream.get_current_stream()
-        with stream:
-            for task in tasks[::-1]:
-                i, j, k, l = task
-                li, ip = group_key[i]
-                lj, jp = group_key[j] 
-                lk, kp = group_key[k]
-                ll, lp = group_key[l]
-                ang = (li, lj, lk, ll)
-                nprim = (ip, jp, kp, lp)
-                
-                tile_ij = tile_pairs[i,j]
-                tile_kl = tile_pairs[k,l]
-                ntile_ij = tile_ij.size
-                ntile_kl = tile_kl.size
-                if ntile_kl == 0 or ntile_ij == 0:
-                    continue
-                ntasks_fp64 = 0
-                ntasks_fp32 = 0
+        for task in tasks[::-1]:
+            i, j, k, l = task
+            li, ip = group_key[i].tolist()
+            lj, jp = group_key[j].tolist() 
+            lk, kp = group_key[k].tolist()
+            ll, lp = group_key[l].tolist()
+            ang = (li, lj, lk, ll)
+            nprim = (ip, jp, kp, lp)
+            
+            tile_ij = tile_pairs[i,j]
+            tile_kl = tile_pairs[k,l]
+            ntile_ij = tile_ij.size
+            ntile_kl = tile_kl.size
+            if ntile_kl == 0 or ntile_ij == 0:
+                continue
+            ntasks_fp64 = 0
+            ntasks_fp32 = 0
 
-                # Setup events for timing the critical kernels
-                start = end = None
-                if logger.verbose > lib.logger.INFO:
-                    start = cp.cuda.Event()
-                    end = cp.cuda.Event()
-                    start.record()
+            # Setup events for timing the critical kernels
+            start = end = None
+            if logger.verbose > lib.logger.INFO:
+                start = cp.cuda.Event()
+                end = cp.cuda.Event()
+                start.record()
 
-                PAIR_TILE_SIZE = MAX_PAIR_SIZE//(TILE*TILE)
-                for t_ij0, t_ij1 in lib.prange(0, ntile_ij, PAIR_TILE_SIZE):
-                    for t_kl0, t_kl1 in lib.prange(0, ntile_kl, PAIR_TILE_SIZE):
-                        # Generate tasks for fp32 and fp64
-                        gen_tasks_fun(
-                            quartet_list, info, nbas, 
-                            tile_ij[t_ij0:t_ij1], tile_kl[t_kl0:t_kl1],
-                            q_matrix, log_dm_cond,
-                            log_cutoff_fp32, log_cutoff_fp64)
+            PAIR_TILE_SIZE = MAX_PAIR_SIZE//(TILE*TILE)
+            for t_ij0, t_ij1 in lib.prange(0, ntile_ij, PAIR_TILE_SIZE):
+                for t_kl0, t_kl1 in lib.prange(0, ntile_kl, PAIR_TILE_SIZE):
+                    # Generate tasks for fp32 and fp64
+                    gen_tasks_fun(
+                        quartet_list, info, nbas, 
+                        tile_ij[t_ij0:t_ij1], tile_kl[t_kl0:t_kl1],
+                        q_matrix, log_dm_cond,
+                        log_cutoff_fp32, log_cutoff_fp64)
+                    kern_counts += 1
+                    info_cpu = info.get()
+
+                    # Get task counts
+                    n_quartets_fp32 = int(info_cpu[1].item())
+                    offset = int(info_cpu[2].item())
+                    n_quartets_fp64 = QUEUE_DEPTH - offset
+
+                    # Launch FP32 and FP64 kernels asynchronously
+                    if n_quartets_fp32 > 0:
+                        jk_fp32_kernel = gen_jk_kernel(
+                            ang, nprim, do_j=with_j, do_k=with_k, 
+                            dtype=np.float32, n_dm=n_dm, omega=omega_fp32)
+                        jk_fp32_kernel(
+                            nbas, ao_loc, coords_fp32, ce_fp32,
+                            dms_fp32, vj, vk, omega_fp32, quartet_list,
+                            n_quartets_fp32)
                         kern_counts += 1
-                        info_cpu = info.get()
-
-                        # FP32 tasks
-                        n_quartets_fp32 = int(info_cpu[1].item())
-                        if n_quartets_fp32 > 0:
-                            jk_fp32_kernel = gen_jk_kernel(ang, nprim, do_j=with_j, do_k=with_k, 
-                                                           dtype=np.float32, n_dm=n_dm, omega=omega_fp32)
-                            jk_fp32_kernel(nbas, ao_loc, coords_fp32, ce_fp32,
-                                           dms_fp32, vj, vk, omega_fp32, quartet_list,
-                                           n_quartets_fp32)
-                            kern_counts += 1
-                            ntasks_fp32 += n_quartets_fp32
-
-                        # FP64 tasks
-                        offset = int(info_cpu[2].item())
-                        n_quartets_fp64 = QUEUE_DEPTH - offset
-                        if n_quartets_fp64 > 0:
-                            jk_fp64_kernel = gen_jk_kernel(ang, nprim, do_j=with_j, do_k=with_k, 
-                                                           dtype=np.float64, n_dm=n_dm, omega=omega_fp64)
-                            jk_fp64_kernel(nbas, ao_loc, coords_fp64, ce_fp64,
-                                           dms, vj, vk, omega_fp64, quartet_list[offset:],
-                                           n_quartets_fp64)
-                            kern_counts += 1
-                            ntasks_fp64 += n_quartets_fp64
-                if logger.verbose > lib.logger.INFO:
-                    stream.synchronize()
-                    end.record()
-                    end.synchronize()
-                    elasped_time = cp.cuda.get_elapsed_time(start, end)
-                    ntasks = max(ntasks_fp64 + ntasks_fp32, 1)
-                    llll = f'({l_symb[i]}{l_symb[j]}|{l_symb[k]}{l_symb[l]})'
-                    msg_kernel = f'kernel type {llll}/({ip}{jp}{kp}{lp}), '
-                    msg_fp64 = f'FP64 tasks = {ntasks_fp64:10d}, '
-                    msg_fp32 = f'FP32 tasks = {ntasks_fp32:10d}, total time = {elasped_time:5.2f} ms, '
-                    msg_ratio = f'FP64 ratio = {ntasks_fp64/ntasks:.2f}'
-                    msg = msg_kernel + msg_fp64 + msg_fp32 + msg_ratio
-                    logger.debug1(msg)
-                    timing_counter[llll] += elasped_time
-                
-        stream.synchronize()
+                        ntasks_fp32 += n_quartets_fp32
+ 
+                    if n_quartets_fp64 > 0:
+                        jk_fp64_kernel = gen_jk_kernel(
+                            ang, nprim, do_j=with_j, do_k=with_k, 
+                            dtype=np.float64, n_dm=n_dm, omega=omega_fp64)
+                        jk_fp64_kernel(
+                            nbas, ao_loc, coords_fp64, ce_fp64,
+                            dms, vj, vk, omega_fp64, quartet_list[offset:],
+                            n_quartets_fp64)
+                        kern_counts += 1
+                        ntasks_fp64 += n_quartets_fp64
+            
+            if logger.verbose > lib.logger.INFO:
+                end.record()
+                end.synchronize()
+                elasped_time = cp.cuda.get_elapsed_time(start, end)
+                ntasks = max(ntasks_fp64 + ntasks_fp32, 1)
+                llll = f'({l_symb[i]}{l_symb[j]}|{l_symb[k]}{l_symb[l]})'
+                msg_kernel = f'kernel type {llll}/({ip}{jp}{kp}{lp}), '
+                msg_fp64 = f'FP64 tasks = {ntasks_fp64:10d}, '
+                msg_fp32 = f'FP32 tasks = {ntasks_fp32:10d}, total time = {elasped_time:5.2f} ms, '
+                msg_ratio = f'FP64 ratio = {ntasks_fp64/ntasks:.2f}'
+                msg = msg_kernel + msg_fp64 + msg_fp32 + msg_ratio
+                logger.debug1(msg)
+                timing_counter[llll] += elasped_time
         
         # Remove the padding basis
         ao_loc0 = ao_loc[:-1][~padding_mask]

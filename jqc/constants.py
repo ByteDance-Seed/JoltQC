@@ -26,4 +26,6 @@ NPRIM_MAX = 16
 # Tile size for block-based algorithms
 TILE = 4
 
+MAX_SMEM = 48 * 1024  # Maximum shared memory per block in bytes
+
 __all__ = ["LMAX", "NPRIM_MAX", "TILE"]

@@ -21,7 +21,7 @@ from pyscf import gto, lib
 from pyscf.scf import _vhf
 from jqc.constants import NPRIM_MAX
 
-__all__ = ['format_bas_cache', 'create_sorted_basis']
+__all__ = ['format_bas_cache', 'sort_group_basis', 'compute_q_matrix']
 PTR_BAS_COORD = 7
 
 
@@ -102,96 +102,134 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     _env = mol._env
     _atm = mol._atm
 
-    coords_by_pattern = defaultdict(list)
-    ce_by_pattern = defaultdict(list)
-    bas_id_by_pattern = defaultdict(list)
-    pad_id_by_pattern = defaultdict(list)
-
-    # Extract basis information from PySCF format
+    # Pre-calculate sizes to avoid intermediate copies
     nbas = _bas.shape[0]
+    pattern_counts = defaultdict(int)
+    pattern_data = defaultdict(list)
+    
+    # First pass: count basis functions by pattern and collect data
     for i in range(nbas):
         nprim = _bas[i, gto.NPRIM_OF]
         nctr = _bas[i, gto.NCTR_OF]
         ang = _bas[i, gto.ANG_OF]
-
+        pattern = (ang, nprim)
+        pattern_counts[pattern] += nctr
+        
         iatm = _bas[i, gto.ATOM_OF]
         coord_ptr = _atm[iatm, gto.PTR_COORD]
- 
         exp_ptr = _bas[i, gto.PTR_EXP]
         coeff_ptr = _bas[i, gto.PTR_COEFF]
-        ce = np.empty(2*nprim*nctr)
-        ce[0::2] = _env[coeff_ptr:coeff_ptr+nprim*nctr]
-        ce[1::2] = _env[exp_ptr:exp_ptr+nprim*nctr]
-        if ang < 2:
-            fac = ((2*ang + 1) / (4.0 * np.pi))**.5
-            ce[0::2] *= fac
-        coord = np.zeros(4, dtype=np.float64)
-        coord[:3] = _env[coord_ptr:coord_ptr+3]
-        ce = ce.reshape(nctr, 2*nprim)
-        ce_pad = np.zeros((nctr, 2*NPRIM_MAX))
-        ce_pad[:,:2*nprim] = ce
-        coords_by_pattern[ang, nprim].append(np.tile(coord, (nctr, 1)))
-        ce_by_pattern[ang, nprim].append(ce_pad)
-        bas_id_by_pattern[ang, nprim].append(np.ones(nctr, dtype=np.int32) * i)
-
-    # Pad the arrays for basis information
-    for key in coords_by_pattern:
-        nbas = sum([len(x) for x in coords_by_pattern[key]])
-        pad = (alignment - nbas % alignment) % alignment
-        ce = ce_by_pattern[key]
-        coord = coords_by_pattern[key]
-        bas_id = bas_id_by_pattern[key]
         
-        coord = np.concatenate(coord)
-        idx = cluster_into_tile(coord)
-        ce = [ce[i] for i in idx]
-        bas_id = [bas_id[i] for i in idx]
-        coord = coord[idx]
+        pattern_data[pattern].append({
+            'coord_ptr': coord_ptr,
+            'exp_ptr': exp_ptr,
+            'coeff_ptr': coeff_ptr,
+            'nprim': nprim,
+            'nctr': nctr,
+            'ang': ang,
+            'bas_id': i
+        })
+
+    # Pre-allocate arrays for each pattern
+    coords_by_pattern = {}
+    ce_by_pattern = {}
+    bas_id_by_pattern = {}
+    pad_id_by_pattern = {}
+    
+    for pattern, count in pattern_counts.items():
+        ang, nprim = pattern
+        padded_count = count + ((alignment - count % alignment) % alignment)
         
-        # Pad the arrays with first basis in the group
-        ce.append(np.tile(ce[0], (pad,1)))
-        coord = [coord, np.tile(coord[0], (pad, 1))]
-        bas_id.append(np.ones(pad, dtype=np.int32) * bas_id[0])
-
-        ce_by_pattern[key] = np.concatenate(ce, axis=0)
-        bas_id_by_pattern[key] = np.concatenate(bas_id, axis=0)
-        coords_by_pattern[key] = np.concatenate(coord, axis=0)
-
-        active_id = np.zeros(nbas, dtype=np.bool)
-        pad_id = np.ones(pad, dtype=np.bool)
-        pad_id_by_pattern[key] = np.concatenate([active_id, pad_id])
+        # Pre-allocate final arrays
+        coords_by_pattern[pattern] = np.empty((padded_count, 4), dtype=np.float64)
+        ce_by_pattern[pattern] = np.empty((padded_count, 2*NPRIM_MAX), dtype=dtype)
+        bas_id_by_pattern[pattern] = np.empty(padded_count, dtype=np.int32)
+        pad_id_by_pattern[pattern] = np.empty(padded_count, dtype=bool)
+        
+        # Fill arrays without intermediate copies
+        idx = 0
+        for data in pattern_data[pattern]:
+            coord_ptr = data['coord_ptr']
+            exp_ptr = data['exp_ptr']
+            coeff_ptr = data['coeff_ptr']
+            nprim = data['nprim']
+            nctr = data['nctr']
+            ang = data['ang']
+            bas_id = data['bas_id']
+            
+            # Get coefficients and exponents
+            coeffs = _env[coeff_ptr:coeff_ptr+nprim*nctr]
+            exps = _env[exp_ptr:exp_ptr+nprim*nctr]
+            
+            # Apply normalization factor
+            if ang < 2:
+                fac = ((2*ang + 1) / (4.0 * np.pi))**.5
+                coeffs = coeffs * fac
+            
+            # Get coordinates
+            coord = np.zeros(4, dtype=np.float64)
+            coord[:3] = _env[coord_ptr:coord_ptr+3]
+            
+            # Fill arrays directly
+            for j in range(nctr):
+                coords_by_pattern[pattern][idx] = coord
+                ce_start = j * nprim
+                ce_end = (j + 1) * nprim
+                ce_by_pattern[pattern][idx, 0:2*nprim:2] = coeffs[ce_start:ce_end]
+                ce_by_pattern[pattern][idx, 1:2*nprim:2] = exps[ce_start:ce_end]
+                bas_id_by_pattern[pattern][idx] = bas_id
+                pad_id_by_pattern[pattern][idx] = False
+                idx += 1
+        
+        # Fill padding with first element to avoid additional memory allocation
+        if idx < padded_count:
+            coords_by_pattern[pattern][idx:] = coords_by_pattern[pattern][0]
+            ce_by_pattern[pattern][idx:] = ce_by_pattern[pattern][0]
+            bas_id_by_pattern[pattern][idx:] = bas_id_by_pattern[pattern][0]
+            pad_id_by_pattern[pattern][idx:] = True
 
     # Sort the basis by angular momentum and number of primitives
     # Reverse the order of primitives, to be consistent with GPU4PySCF
     sorted_keys = sorted(coords_by_pattern.keys(), key=lambda x: (x[0], -x[1]))
-    ce = []
-    coords = []
-    bas_id = []
-    pad_id = []
-    angs = []
-    nprims = []
+    
+    # Calculate total size for pre-allocation
+    total_count = sum(len(bas_id_by_pattern[key]) for key in sorted_keys)
+    
+    # Pre-allocate final arrays
+    ce = np.empty((total_count, 2*NPRIM_MAX), dtype=dtype)
+    coords = np.empty((total_count, 4), dtype=np.float64)
+    bas_id = np.empty(total_count, dtype=np.int32)
+    pad_id = np.empty(total_count, dtype=bool)
+    angs = np.empty(total_count, dtype=np.int32)
+    nprims = np.empty(total_count, dtype=np.int32)
+    
     group_key = []
     group_offset = []
     offset = 0
+    
+    # Fill arrays directly without concatenation
     for key in sorted_keys:
-        ce.append(ce_by_pattern[key])
-        coords.append(coords_by_pattern[key])
-        bas_id.append(bas_id_by_pattern[key])
-        pad_id.append(pad_id_by_pattern[key])
-        bas_count = len(bas_id_by_pattern[key])
-        angs.append(np.full(bas_count, key[0], dtype=np.int32))
-        nprims.append(np.full(bas_count, key[1], dtype=np.int32))
+        pattern_ce = ce_by_pattern[key]
+        pattern_coords = coords_by_pattern[key]
+        pattern_bas_id = bas_id_by_pattern[key]
+        pattern_pad_id = pad_id_by_pattern[key]
+        bas_count = len(pattern_bas_id)
+        
+        # Copy data directly to final arrays
+        ce[offset:offset+bas_count] = pattern_ce
+        coords[offset:offset+bas_count] = pattern_coords
+        bas_id[offset:offset+bas_count] = pattern_bas_id
+        pad_id[offset:offset+bas_count] = pattern_pad_id
+        angs[offset:offset+bas_count] = key[0]
+        nprims[offset:offset+bas_count] = key[1]
+        
         group_key.append([key[0], key[1]])
         group_offset.append(offset)
         offset += bas_count
     group_offset.append(offset)
-
-    ce = np.concatenate(ce, axis=0, dtype=dtype)
-    coords = np.concatenate(coords, axis=0, dtype=dtype)
-    bas_id = np.concatenate(bas_id, axis=0, dtype=np.int32)
-    pad_id = np.concatenate(pad_id, axis=0, dtype=np.bool)
-    angs = np.concatenate(angs, axis=0)
-    nprims = np.concatenate(nprims, axis=0)
+    
+    # Convert to specified dtype
+    coords = coords.astype(dtype, copy=False)
 
     ce = cp.asarray(ce, order='C')
     coords = cp.asarray(coords, order='C')
@@ -199,7 +237,8 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     # Store info at basis level
     bas_info = (ce, coords, angs, nprims)
     
-    group_size = 256
+    '''
+    group_size = 25600
     splitted_group_key = []
     splitted_group_offset = []
     for group_id in range(len(group_key)):
@@ -209,7 +248,9 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     splitted_group_offset.append(group_offset[-1])
     group_key = np.asarray(splitted_group_key)
     group_offset = np.asarray(splitted_group_offset)
-    
+    '''
+    group_key = np.asarray(group_key)
+    group_offset = np.asarray(group_offset)
     return bas_info, bas_id, pad_id, (group_key, group_offset)
 
 def compute_q_matrix(mol):

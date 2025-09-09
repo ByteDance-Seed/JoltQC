@@ -26,6 +26,7 @@ constexpr DataType one = 1.0;
 constexpr DataType zero = 0.0;
 constexpr int nprim_max = 16;
 
+
 struct __align__(4*sizeof(DataType)) DataType4 {
     DataType x, y, z, w;
 };
@@ -46,7 +47,6 @@ void rys_jk(const int nbas,
         const ushort4* __restrict__ shl_quartet_idx, 
         const int ntasks) // rename
 {
-    if (ntasks == 0) return;
     const int task_id = blockIdx.x * blockDim.x + threadIdx.x;
 
     constexpr int stride_i = 1;
@@ -79,9 +79,9 @@ void rys_jk(const int nbas,
     const int lsh = (int)sq.w;
 
     DataType fac_sym = active ? PI_FAC : zero;
-    if (ish == jsh) fac_sym *= half;
-    if (ksh == lsh) fac_sym *= half;
-    if (ish*nbas+jsh == ksh*nbas+lsh) fac_sym *= half;
+    fac_sym *= (ish == jsh) ? half : one;
+    fac_sym *= (ksh == lsh) ? half : one;
+    fac_sym *= (ish*nbas+jsh == ksh*nbas+lsh) ? half : one;
     const DataType4 ri = coords[ish];
     const DataType4 rj = coords[jsh];
     const DataType4 rk = coords[ksh];
@@ -137,7 +137,8 @@ void rys_jk(const int nbas,
         const DataType ak = cek.e;
         const DataType al = cel.e;
         const DataType akl = ak + al;
-        const DataType al_akl = al / akl;
+        const DataType inv_akl = one / akl;
+        const DataType al_akl = al * inv_akl;
         const DataType theta_kl = ak * al_akl;
         const DataType Kcd = exp(-theta_kl * rr_kl);
         const DataType ck = cek.c;
@@ -145,14 +146,11 @@ void rys_jk(const int nbas,
         const DataType ckcl = ck * cl * Kcd;
         for (int ip = 0; ip < npi; ip++)
         for (int jp = 0; jp < npj; jp++){
-            const int ip_offset = ip + ish*nprim_max;
-            const int jp_offset = jp + jsh*nprim_max;
-            const DataType2 cei = coeff_exp[ip_offset];
-            const DataType2 cej = coeff_exp[jp_offset];
-            const DataType ai = cei.e;
-            const DataType aj = cej.e;
+            const DataType ai = reg_cei[ip].e;
+            const DataType aj = reg_cej[jp].e;
             const DataType aij = ai + aj;
-            const DataType aj_aij = aj / aij;
+            const DataType inv_aij = one / aij;
+            const DataType aj_aij = aj * inv_aij;
             const DataType cicj = reg_cicj[ip + jp*npi];
 
             const DataType xij = rjri[0] * aj_aij + ri.x;
@@ -164,16 +162,17 @@ void rys_jk(const int nbas,
             const DataType Rpq[3] = {xij-xkl, yij-ykl, zij-zkl};
 
             const DataType rr = Rpq[0]*Rpq[0] + Rpq[1]*Rpq[1] + Rpq[2]*Rpq[2];
-            const DataType theta = aij * akl / (aij + akl);
+            const DataType inv_aijkl = one / (aij + akl);
+            const DataType theta = aij * akl * inv_aijkl;
 
-            DataType gy0 = cicj / (aij*akl*sqrt(aij+akl));
+            DataType gy0 = cicj * inv_aij * inv_akl * sqrt(inv_aijkl);
             DataType rw[2*nroots];
-
+            
             rys_roots(rr, rw, theta, omega);
 #pragma unroll
             for (int irys = 0; irys < nroots; irys++){
                 const DataType rt = rw[irys*2];
-                const DataType rt_aa = rt / (aij + akl);
+                const DataType rt_aa = rt * inv_aijkl;
                 DataType g[3*gsize];
                 g[0] = ckcl;
                 g[gsize] = gy0;
@@ -188,7 +187,7 @@ void rys_jk(const int nbas,
                 constexpr int lij = li + lj;
                 if constexpr (lij > 0) {
                     const DataType rt_aij = rt_aa * akl;
-                    const DataType b10 = half/aij * (one - rt_aij);
+                    const DataType b10 = half * inv_aij * (one - rt_aij);
                     
 #pragma unroll
                     for (int _ix = 0; _ix < 3; _ix++){
@@ -201,7 +200,8 @@ void rys_jk(const int nbas,
                         s1x = c0x * s0x;
                         _gix[stride_i] = s1x;
                         for (int i = 1; i < lij; ++i) {
-                            s2x = c0x * s1x + i * b10 * s0x;
+                            const DataType i_b10 = i * b10;  // Pre-compute to reduce FLOPs
+                            s2x = c0x * s1x + i_b10 * s0x;
                             _gix[i*stride_i + stride_i] = s2x;
                             s0x = s1x;
                             s1x = s2x;
@@ -213,7 +213,7 @@ void rys_jk(const int nbas,
                 if constexpr (lkl > 0) {
                     const DataType rt_akl = rt_aa * aij;
                     const DataType b00 = half * rt_aa;
-                    const DataType b01 = half/akl * (one - rt_akl);
+                    const DataType b01 = half * inv_akl * (one - rt_akl);
 #pragma unroll
                     for (int _ix = 0; _ix < 3; _ix++){
                         DataType *_gix = g + _ix * gsize;
@@ -230,7 +230,8 @@ void rys_jk(const int nbas,
                         // trr(0,k+1) = cp * trr(0,k) + k*b01 * trr(0,k-1)
 #pragma unroll
                         for (int k = 1; k < lkl; ++k) {
-                            s2x = cpx*s1x + k*b01*s0x;
+                            const DataType k_b01 = k * b01;  // Pre-compute to reduce FLOPs
+                            s2x = cpx*s1x + k_b01*s0x;
                             _gix[k*stride_k + stride_k] = s2x;
                             s0x = s1x;
                             s1x = s2x;
@@ -248,18 +249,19 @@ void rys_jk(const int nbas,
                             s1x += ib00 * _gix[i_off_minus];
                             _gix[i_off_plus_k] = s1x;
 
-                            DataType kb01 = zero;
                             //for k in range(1, lkl):
                             //    for i in range(lij+1):
                             //        trr(i,k+1) = cp * trr(i,k) + k*b01 * trr(i,k-1) + i*b00 * trr(i-1,k)
+                            const int base_i_off_minus = i_off_minus;
+                            const int base_i_off_plus_k = i_off_plus_k;
                             for (int k = 1; k < lkl; ++k) {
-                                i_off_minus += stride_k;
-                                i_off_plus_k += stride_k;
-                                kb01 += b01;
+                                const int k_i_off_minus = base_i_off_minus + k * stride_k;
+                                const int k_i_off_plus_k = base_i_off_plus_k + k * stride_k;
+                                const DataType k_b01 = k * b01;  // Pre-compute to reduce FLOPs
 
-                                s2x = cpx*s1x + kb01*s0x;
-                                s2x += ib00 * _gix[i_off_minus];
-                                _gix[i_off_plus_k] = s2x;
+                                s2x = cpx*s1x + k_b01*s0x;
+                                s2x += ib00 * _gix[k_i_off_minus];
+                                _gix[k_i_off_plus_k] = s2x;
                                 s0x = s1x;
                                 s1x = s2x;
                             }
@@ -276,6 +278,7 @@ void rys_jk(const int nbas,
 #pragma unroll
                     for (int _ix = 0; _ix < 3; _ix++){
                         DataType *_gix = g + _ix * gsize;
+                        const DataType rjri_ix = rjri[_ix];  // Pre-compute to reduce FLOPs in inner loop
                         for (int kl = 0; kl < lkl+1; kl++){
                             const int kl_off = kl*stride_k;
                             const int ijkl0 = kl_off + lij*stride_i;
@@ -286,7 +289,7 @@ void rys_jk(const int nbas,
                                 s1x = _gix[ijkl];
                                 for (ijkl-=stride_i; ijkl >= jkl_off; ijkl-=stride_i) {
                                     s0x = _gix[ijkl];
-                                    _gix[(ijkl+stride_j)] = s1x - rjri[_ix] * s0x;
+                                    _gix[(ijkl+stride_j)] = s1x - rjri_ix * s0x;
                                     s1x = s0x;
                                 }
                             }
@@ -299,6 +302,7 @@ void rys_jk(const int nbas,
 #pragma unroll
                     for (int _ix = 0; _ix < 3; _ix++){
                         DataType *_gix = g + _ix * gsize;
+                        const DataType rlrk_ix = rlrk[_ix];  // Pre-compute to reduce FLOPs in inner loop
                         for (int ij = 0; ij < (li+1)*(lj+1); ij++){
                             const int ij_off = ij*stride_i;
                             const int ijl = lkl*stride_k + ij_off;
@@ -309,7 +313,7 @@ void rys_jk(const int nbas,
                                 s1x = _gix[ijkl];
                                 for (ijkl-=stride_k; ijkl >= lstride_l; ijkl-=stride_k) {
                                     s0x = _gix[ijkl];
-                                    _gix[ijkl + stride_l] = s1x - rlrk[_ix] * s0x;
+                                    _gix[ijkl + stride_l] = s1x - rlrk_ix * s0x;
                                     s1x = s0x;
                                 }
                             }
@@ -380,6 +384,7 @@ void rys_jk(const int nbas,
 
                 const int vj_offset = k0 + l0*nao;
                 double *vj_ptr = vj + vj_offset;
+#pragma unroll
                 for (int k = 0; k < nfk; k++){
                     for (int l = 0; l < nfl; l++){
                         const int vj_offset = k + l*nao;
@@ -489,6 +494,7 @@ void rys_jk(const int nbas,
                 DataType dm_il_cache[nfil];
                 const int dm_offset = i0*nao + l0;
                 DataType *dm_ptr = dm + dm_offset;
+#pragma unroll
                 for (int i = 0; i < nfi; i++){
                     for (int l = 0; l < nfl; l++){
                         dm_il_cache[l + i*nfl] = __ldg(dm_ptr + l);
@@ -497,6 +503,7 @@ void rys_jk(const int nbas,
                 }
                 const int vk_offset = j0*nao + k0;
                 double *vk_ptr = vk + vk_offset;
+#pragma unroll
                 for (int j = 0; j < nfj; j++){
                     for (int k = 0; k < nfk; k++){
                         DataType vk_jk = zero;
@@ -535,6 +542,7 @@ void rys_jk(const int nbas,
 
                 const int vk_offset = j0*nao + l0;
                 double *vk_ptr = vk + vk_offset;
+#pragma unroll
                 for (int j = 0; j < nfj; j++){
                     for (int l = 0; l < nfl; l++){
                         const int vk_offset = j*nao + l;

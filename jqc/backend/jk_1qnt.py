@@ -17,8 +17,10 @@
 1qnt algorithm for JK calculations
 '''
 
+import warnings
 import cupy as cp
 import numpy as np
+from jqc.constants import MAX_SMEM
 from jqc.backend.util import generate_lookup_table
 from jqc.backend.cuda_scripts import (rys_roots_data, rys_roots_parallel_code, 
                                       jk_1qnt_cuda_code)
@@ -31,14 +33,42 @@ props = cp.cuda.runtime.getDeviceProperties(dev_id)
 shm_size = props['sharedMemPerBlock']
 compile_options = ('-std=c++17','--use_fast_math', '--minimal')
 
-def create_scheme(ang, frags=None, do_j=True, do_k=True, 
-                  max_shared_memory=shm_size, 
+def padded_stride(n):
+    """ Pad the leading dimension to avoid bank conflict in shared memory.
+    
+    Modern GPUs have 32 memory banks in shared memory. Bank conflicts occur
+    when multiple threads in a warp access the same bank simultaneously.
+    This function adds minimal padding to avoid common conflict patterns.
+    
+    Args:
+        n (int): Original stride size
+        
+    Returns:
+        int: Padded stride that avoids bank conflicts
+    """
+    if n <= 0:
+        return 1  # Handle edge case
+    
+    # Check for problematic strides that cause bank conflicts
+    # Most critical: multiples of 32, 16, 8, 4, 2
+    if n % 32 == 0:
+        return n + 1
+    elif n % 16 == 0:
+        return n + 1  
+    elif n % 8 == 0 and n >= 8:
+        return n + 1
+    else:
+        return n
+
+def create_scheme(ang, nprim=None, frags=None, do_j=True, do_k=True, 
+                  max_shared_memory=MAX_SMEM, 
                   max_gout=128, max_threads=256, dtype=np.double):
     """
     Create a scheme for 1QnT kernel.
 
     Args:
         ang (tuple): Angular momentum of the kernel.
+        nprim (tuple): Number of primitives of the kernel.
         frags (np.ndarray): Fragments for the kernel. If not given, 
             fragments will be automatically generated.
         do_j (bool): Whether to compute J matrix.
@@ -98,19 +128,26 @@ def create_scheme(ang, frags=None, do_j=True, do_k=True,
     if do_k and ntj * ntk > 1: 
         smem_per_quartet = max(smem_per_quartet, ntj * ntk * nfi * nfl)
 
+    # Calculate initial parameters
+    dtype_size = np.dtype(dtype).itemsize
+    nt = int(np.prod(nthreads))
+    nthreads_per_sq = 1 << (nt-1).bit_length()
+    nsq_per_block = max_threads // nthreads_per_sq
+    
+    # Account for static shared memory: indices  
     static_sm = nfk*nfl * 3 * 4  # for indices
     max_dynamic_sm = max_shared_memory - static_sm
 
     # If shared memory is not enough, decrease # of quartets in each block
-    nt = int(np.prod(nthreads))
-    nthreads_per_sq = 1 << (nt-1).bit_length()
-    nsq_per_block = max_threads // nthreads_per_sq
-    smem_stride = nsq_per_block | 1 # reduce bank conflict
+    smem_stride = padded_stride(nsq_per_block) # reduce bank conflict
     while smem_per_quartet * smem_stride * dtype_size > max_dynamic_sm:
         nsq_per_block >>= 1
-        smem_stride = nsq_per_block | 1
+        smem_stride = padded_stride(nsq_per_block)
         if nsq_per_block == 0:
             raise RuntimeError('Shared memory is not enough')
+    
+    # Recalculate nthreads_per_sq based on final nsq_per_block
+    nthreads_per_sq = max_threads // nsq_per_block
 
     total_shared_memory = smem_per_quartet * smem_stride * dtype_size
     assert nsq_per_block > 0
@@ -150,7 +187,7 @@ def gen_kernel(ang, nprim, frags=None, dtype=np.double, n_dm=1,
     li, lj, lk, ll = ang
     npi, npj, npk, npl = nprim
     nroots = (li+lj+lk+ll)//2 + 1
-    scheme = create_scheme(ang, frags, dtype=dtype, max_shared_memory=max_shm)
+    scheme = create_scheme(ang, nprim, frags, dtype=dtype, max_shared_memory=max_shm)
     nsq_per_block, nthreads_per_sq, frags, dynamic_shared_memory = scheme
 
     # x,y,z in parallel
@@ -191,6 +228,7 @@ constexpr int nthreads_per_sq = {nthreads_per_sq};
 constexpr int threads  =  nsq_per_block * nthreads_per_sq;
 constexpr int do_j = {int(do_j)};
 constexpr int do_k = {int(do_k)};
+constexpr int smem_stride = {padded_stride(nsq_per_block)};
 // for rys_roots
 constexpr int nroots = ((li+lj+lk+ll)/2+1);
 '''
@@ -209,6 +247,10 @@ constexpr int nroots = ((li+lj+lk+ll)/2+1);
     
     mod = cp.RawModule(code=script, options=compile_options)
     kernel = mod.get_function('rys_jk')
+    if kernel.local_size_bytes > 8192:
+        msg = f'Local memory usage is high in 1qnt: {kernel.local_size_bytes} Bytes,'
+        msg += f'    ang = {ang}, nprim = {nprim}, frags = {frags}, dtype = {dtype}, n_dm = {n_dm}'
+        warnings.warn(msg)
     kernel.max_dynamic_shared_size_bytes = dynamic_shared_memory
     if print_log:
         print(f'Type: ({li}{lj}|{lk}{ll}), \
