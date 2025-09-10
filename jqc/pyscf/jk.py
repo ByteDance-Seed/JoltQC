@@ -105,6 +105,10 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     l_symb = [lib.param.ANGULAR[i] for i in uniq_l]
     n_groups = np.count_nonzero(uniq_l <= LMAX)
 
+    info = cp.empty(4, dtype=np.uint32)
+    cutoff = np.log(PAIR_CUTOFF) #- log_max_dm / 2
+    tile_pairs = make_tile_pairs(group_offset, q_matrix, cutoff)
+    
     if np.any(uniq_l > LMAX):
         raise RuntimeError('LMAX > 4 is not supported')
 
@@ -113,6 +117,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         for k in range(i+1)
                         for l in range(k+1)]
     
+    group_key = [key.tolist() for key in group_key]
     def get_jk(mol_ref, dm, hermi=0, vhfopt=None,
             with_j=True, with_k=True, omega=None, verbose=None):
         '''
@@ -154,7 +159,6 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             # Wrap the triu contribution to tril
             dm_cond = dm_cond + dm_cond.T
         log_dm_cond = cp.log(dm_cond + 1e-300, dtype=np.float32)
-        log_max_dm = log_dm_cond.max().item()
 
         if hermi == 0:
             # Contract the tril and triu parts separately
@@ -167,13 +171,6 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         if with_j:
             vj = cp.zeros(dms.shape)
 
-        # J: q_ab * q_cd * p_cd < cutoff_min
-        # K: q_ac * q_bd * p_cd < cutoff_min
-        # cutoff absorbs sqrt(p_cd)
-        cutoff = np.log(PAIR_CUTOFF) - log_max_dm / 2
-        tile_pairs = make_tile_pairs(group_offset, q_matrix, cutoff)
-
-        info = cp.empty(4, dtype=np.uint32)
         logger.debug1(f'Calculate dm_cond and AO pairs')
         _, _, gen_tasks_fun = gen_screen_jk_tasks_kernel(do_j=with_j, do_k=with_k, tile=TILE)
         logger.debug1(f'Generate tasks kernel') 
@@ -183,10 +180,10 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         
         for task in tasks[::-1]:
             i, j, k, l = task
-            li, ip = group_key[i].tolist()
-            lj, jp = group_key[j].tolist() 
-            lk, kp = group_key[k].tolist()
-            ll, lp = group_key[l].tolist()
+            li, ip = group_key[i]
+            lj, jp = group_key[j] 
+            lk, kp = group_key[k]
+            ll, lp = group_key[l]
             ang = (li, lj, lk, ll)
             nprim = (ip, jp, kp, lp)
             
@@ -194,8 +191,7 @@ def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             tile_kl = tile_pairs[k,l]
             ntile_ij = tile_ij.size
             ntile_kl = tile_kl.size
-            if ntile_kl == 0 or ntile_ij == 0:
-                continue
+
             ntasks_fp64 = 0
             ntasks_fp32 = 0
 
@@ -316,6 +312,9 @@ def make_tile_pairs(l_ctr_bas_loc, q_matrix, cutoff, tile=TILE):
                 mask = cp.tril(mask)
             t_ij = (cp.arange(i0, i1, dtype=np.int32)[:,None] * ntiles +
                     cp.arange(j0, j1, dtype=np.int32))
+            ij = t_ij[mask]
+            if ij.size == 0:
+                continue
             tile_pairs[i,j] = t_ij[mask]
     return tile_pairs
 

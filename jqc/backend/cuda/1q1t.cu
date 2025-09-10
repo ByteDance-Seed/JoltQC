@@ -366,7 +366,7 @@ void rys_jk(const int nbas,
             {
                 const int dm_offset = i0 + j0*nao;
                 DataType *dm_ptr = dm + dm_offset;
-                DataType vj_lk[nfkl] = {0.0};
+                DataType vj_lk[nfkl] = {zero};
 #pragma unroll
                 for (int i = 0; i < nfi; i++){
                     for (int j = 0; j < nfj; j++){
@@ -522,7 +522,7 @@ void rys_jk(const int nbas,
 
             // ijkl, ik -> jl
             {
-                DataType vk_jl[nfl*nfj] = {0.0};
+                DataType vk_jl[nfl*nfj] = {zero};
                 const int dm_offset = i0*nao + k0;
                 DataType *dm_ptr = dm + dm_offset;
 #pragma unroll

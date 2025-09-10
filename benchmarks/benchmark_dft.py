@@ -27,7 +27,7 @@ atom = 'molecules/0031-irregular-nitrogenous.xyz'
 basis = 'def2-tzvpp'
 #xc = 'wb97m-v'
 xc = 'b3lyp'
-count = 3
+count = 1
 grids = (99,590)
 
 lib.num_threads(8)

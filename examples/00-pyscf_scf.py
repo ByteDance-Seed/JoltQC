@@ -30,8 +30,6 @@ H       0.7570000000     0.0000000000    -0.4696000000
 
 mol = pyscf.M(atom=atom, basis='def2-tzvpp')
 mf = scf.RHF(mol)
-mf.conv_tol = 1e-10
-mf.max_cycle = 50
 
 # Method 1:
 # Apply JIT to GPU4PySCF object (recommended)

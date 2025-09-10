@@ -433,6 +433,8 @@ def create_tasks(l_ctr_bas_loc, ovlp, cutoff=1e-13):
             if i == j:
                 mask = cp.tril(mask)
             pairs = cp.argwhere(mask)
+            if pairs.shape[0] == 0:
+                continue
             pairs[:,0] += ish0
             pairs[:,1] += jsh0
             tasks[i,j] = cp.asarray(pairs, dtype=np.int32)

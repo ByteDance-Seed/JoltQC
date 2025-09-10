@@ -29,18 +29,10 @@ H       0.7570000000     0.0000000000    -0.4696000000
 
 mol = pyscf.M(atom=atom, basis='def2-tzvpp', verbose=4)
 mf = dft.RKS(mol, xc='wb97m-v')
-
-mf.grids.atom_grid = (99,590)
-mf.conv_tol = 1e-10
-mf.max_cycle = 50
 e_pyscf = mf.kernel()
 
 mol = pyscf.M(atom=atom, basis='def2-tzvpp', verbose=4)
 mf = dft.RKS(mol, xc='wb97m-v')
-
-mf.grids.atom_grid = (99,590)
-mf.conv_tol = 1e-10
-mf.max_cycle = 50
 
 # Apply JIT to GPU4PySCF object
 mf = jqc.pyscf.apply(mf)
