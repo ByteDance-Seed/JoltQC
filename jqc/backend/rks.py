@@ -209,3 +209,9 @@ constexpr int nprim = {nprim};
          np.float32(log_cutoff)),
     )
     return log_aovalue, nnz_indices, nnz_per_block
+
+with open(f'{code_path}/cuda/vv10.cu', 'r') as f:
+    vv10_script = f.read()
+
+def vv10_kernel():
+    

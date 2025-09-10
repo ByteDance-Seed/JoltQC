@@ -421,6 +421,38 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         return vxc[0]
     return rks_fun, rho_fun, vxc_fun
 
+def generate_nr_nlc_vxc(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    _, rho_fun, vxc_fun = generate_rks_kernel(mol, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
+    from gpu4pyscf.dft.numint import _vv10nlc
+    from gpu4pyscf.dft import xc_deriv
+    def nr_nlc_vxc(ni, mol, grids, xc_code, dms, relativity=0, hermi=1, max_memory=2000, verbose=None):
+        opt = getattr(ni, 'gdftopt', None)
+        if opt is None:
+            ni.build(mol, grids.coords)
+            opt = ni.gdftopt
+
+        #xctype = libxc.xc_type(xc_code)
+        rho = rho_fun(mol, grids, 'GGA', dms)
+
+        exc = 0
+        vxc = 0
+        nlc_coefs = ni.nlc_coeff(xc_code)
+        for nlc_pars, fac in nlc_coefs:
+            e, v = _vv10nlc(rho, grids.coords, rho, grids.weights,
+                            grids.coords, nlc_pars)
+            exc += e * fac
+            vxc += v * fac
+
+        den = rho[0] * grids.weights
+        nelec = den.sum()
+        excsum = cp.dot(den, exc)
+        vv_vxc = xc_deriv.transform_vxc(rho, vxc, 'GGA', spin=0)
+        wv = vv_vxc * grids.weights
+
+        vmat = vxc_fun(mol, grids, 'GGA', wv)
+
+        return nelec, excsum, vmat
+    return nr_nlc_vxc
 
 def create_tasks(l_ctr_bas_loc, ovlp, cutoff=1e-13):
     n_groups = len(l_ctr_bas_loc) - 1

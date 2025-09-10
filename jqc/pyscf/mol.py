@@ -13,6 +13,8 @@
 # limitations under the License.
 #
 
+from dataclasses import dataclass
+from typing import Tuple, Iterator, Optional
 import ctypes
 from collections import defaultdict
 import numpy as np
@@ -23,6 +25,76 @@ from jqc.constants import NPRIM_MAX
 
 __all__ = ['format_bas_cache', 'sort_group_basis', 'compute_q_matrix']
 PTR_BAS_COORD = 7
+
+ArrayLike = np.ndarray
+
+@dataclass(frozen=True)
+class BasisLayout:
+    ce: ArrayLike          # shape (nbasis_total, 2*NPRIM_MAX), np/cp
+    coords: ArrayLike      # shape (nbasis_total, 4),             np/cp
+    angs: np.ndarray       # shape (nbasis_total,),               int32
+    nprims: np.ndarray     # shape (nbasis_total,),               int32
+
+    # maps / masks
+    bas_id: np.ndarray     # shape (nbasis_total,),               int32
+    pad_id: np.ndarray     # shape (nbasis_total,),               bool
+
+    # group_info
+    group_key: np.ndarray      # shape (ngroups, 2) -> [ang, nprim], int32
+    group_offset: np.ndarray   # shape (ngroups+1,),                int64/int32
+
+    # dtype bookkeeping (optional but handy)
+    dtype: np.dtype
+
+    # --------- Compatibility accessors ---------
+    @property
+    def bas_info(self) -> Tuple[ArrayLike, ArrayLike, np.ndarray, np.ndarray]:
+        return (self.ce, self.coords, self.angs, self.nprims)
+
+    @property
+    def group_info(self) -> Tuple[np.ndarray, np.ndarray]:
+        return (self.group_key, self.group_offset)
+
+    # --------- Convenience properties ---------
+    @property
+    def nbasis(self) -> int:
+        return int(self.bas_id.shape[0])
+
+    @property
+    def ngroups(self) -> int:
+        return int(self.group_key.shape[0])
+
+    @property
+    def ao_loc(self) -> cp.ndarray:
+        """
+        AO shell offsets: cumulative sum of angular momentum degeneracies.
+
+        Each shell contributes (l+1)(l+2)//2 functions.
+        """
+        dims = (self.angs + 1) * (self.angs + 2) // 2
+        return cp.concatenate(([0], np.cumsum(dims)))
+
+    @classmethod
+    def from_sort_group_basis(cls, mol, alignment: int = 4, dtype=np.float64) -> "BasisLayout":
+        """
+        Calls your `sort_group_basis(mol, alignment, dtype)` and wraps the result.
+        Expects that function to already move `ce` and `coords` to CuPy (as in your code).
+        """
+        bas_info, bas_id, pad_id, group_info = sort_group_basis(mol, alignment=alignment, dtype=dtype)
+        ce, coords, angs, nprims = bas_info
+        group_key, group_offset = group_info
+        # Normalize dtypes
+        return cls(
+            ce=ce,
+            coords=coords,
+            angs=np.asarray(angs, dtype=np.int32),
+            nprims=np.asarray(nprims, dtype=np.int32),
+            bas_id=np.asarray(bas_id, dtype=np.int32),
+            pad_id=np.asarray(pad_id, dtype=bool),
+            group_key=np.asarray(group_key, dtype=np.int32),
+            group_offset=np.asarray(group_offset),
+            dtype=np.dtype(dtype),
+        )
 
 
 def format_bas_cache(sorted_mol, dtype=np.float64):

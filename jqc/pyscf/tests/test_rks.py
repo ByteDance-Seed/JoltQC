@@ -199,6 +199,20 @@ class KnownValues(unittest.TestCase):
         sorted_mol.stdout.close()
         assert (log_maxval.T - log_ao_gpu).min() > -1e-5
 
+    def test_nlc_vxc(self):
+        nao = mol.nao
+        dm = cp.random.rand(nao, nao)
+        dm = dm + dm.T
+
+        nr_nlc_vxc = rks.generate_nr_nlc_vxc(mol)
+
+        n, e, v = ni.nr_nlc_vxc(mol, grids, 'wb97m-v', dm)
+        n_jqc, e_jqc, v_jqc = nr_nlc_vxc(ni, mol, grids, 'wb97m-v', dm)
+
+        assert np.linalg.norm(n - n_jqc) < 1e-10
+        assert np.linalg.norm(e - e_jqc) < 1e-10
+        assert np.linalg.norm(v - v_jqc) < 1e-10 
+        
 if __name__ == "__main__":
     print("Full Tests for rho and Vxc Kernels")
     unittest.main()
