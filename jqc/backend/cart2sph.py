@@ -220,12 +220,45 @@ def cart2cart(dm_src, angs, src_offset, dst_offset, nao, out=None):
     dm_dst[np.ix_(idx, dst_idx, dst_idx)] = dm_src[np.ix_(idx, src_idx, src_idx)]
     return dm_dst
 
+def _contration_indices(bas_map):
+    """Compute the contraction index (0..nctr-1) for each entry in bas_map.
+
+    bas_map lists original shell ids for each contracted basis entry. For shells
+    with multiple contractions (nctr>1), the same shell id appears multiple times.
+    This helper returns, for each position, the occurrence count of that shell id
+    so far, which serves as the contraction index within the shell.
+    """
+    import numpy as _np
+    ctr = _np.empty(len(bas_map), dtype=_np.int32)
+    seen = {}
+    for i, s in enumerate(bas_map):
+        c = seen.get(int(s), 0)
+        ctr[i] = c
+        seen[int(s)] = c + 1
+    return ctr
+
+
 def mol2cart(mat, angs, ao_loc, bas_map, mol):
     """
-    Transform the matrix from the original basis to the cartesian basis.
+    Transform the matrix from the original basis (mol order) to the cartesian
+    basis order used internally. Correctly handles shells with nctr>1 by adding
+    per-contraction AO offsets within each shell.
     """
     nao = ao_loc[-1].item()
-    mol_ao_loc = mol.ao_loc[bas_map]
+    # Base offsets per original shell
+    mol_ao_loc_base = mol.ao_loc[bas_map]
+    # Intra-shell contraction offset in AO units
+    import numpy as _np
+    bas_map_np = _np.asarray(bas_map)
+    ctr_idx = _contration_indices(bas_map_np)
+    # Per-shell degeneracy depends on mol.cart (source basis type)
+    if mol.cart:
+        deg = (angs + 1) * (angs + 2) // 2
+    else:
+        deg = 2 * angs + 1
+    deg = _np.asarray(deg, dtype=_np.int32)
+    ctr_shift = ctr_idx * deg
+    mol_ao_loc = mol_ao_loc_base + ctr_shift
     if mol.cart:
         mat_cart = cart2cart(mat, angs, mol_ao_loc, ao_loc, nao)
     else:
@@ -234,10 +267,22 @@ def mol2cart(mat, angs, ao_loc, bas_map, mol):
 
 def cart2mol(mat, angs, ao_loc, bas_map, mol):
     """
-    Transform the matrix from the cartesian basis to the original basis.
+    Transform the matrix from the cartesian basis (internal order) back to the
+    original mol basis order. Correctly handles shells with nctr>1.
     """
     nao = mol.nao
-    mol_ao_loc = mol.ao_loc[bas_map]
+    import numpy as _np
+    bas_map_np = _np.asarray(bas_map)
+    mol_ao_loc_base = mol.ao_loc[bas_map_np]
+    ctr_idx = _contration_indices(bas_map_np)
+    # Destination basis type depends on mol.cart
+    if mol.cart:
+        deg = (angs + 1) * (angs + 2) // 2
+    else:
+        deg = 2 * angs + 1
+    deg = _np.asarray(deg, dtype=_np.int32)
+    ctr_shift = ctr_idx * deg
+    mol_ao_loc = mol_ao_loc_base + ctr_shift
     if mol.cart:
         mat_mol = cart2cart(mat, angs, ao_loc, mol_ao_loc, nao)
     else:

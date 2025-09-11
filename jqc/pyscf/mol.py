@@ -200,7 +200,8 @@ def format_bas_cache(sorted_mol, dtype=np.float64):
             coeff *= fac
     
         coeffs[i,:nprim] = coeff
-        exponents[i,:nprim] = _env[exp_ptr:exp_ptr+nprim*nctr]
+        # Exponents array length is nprim (shared across contractions)
+        exponents[i,:nprim] = _env[exp_ptr:exp_ptr+nprim]
         coords[i,:] = _env[coord_ptr[i]:coord_ptr[i]+3]
         nprims[i] = nprim
         angs[i] = ang
@@ -293,7 +294,8 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
             
             # Get coefficients and exponents
             coeffs = _env[coeff_ptr:coeff_ptr+nprim*nctr]
-            exps = _env[exp_ptr:exp_ptr+nprim*nctr]
+            # Exponents are shared across contractions: length is nprim only
+            exps = _env[exp_ptr:exp_ptr+nprim]
             
             # Apply normalization factor
             if ang < 2:
@@ -310,7 +312,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
                 ce_start = j * nprim
                 ce_end = (j + 1) * nprim
                 ce_by_pattern[pattern][idx, 0:2*nprim:2] = coeffs[ce_start:ce_end]
-                ce_by_pattern[pattern][idx, 1:2*nprim:2] = exps[ce_start:ce_end]
+                ce_by_pattern[pattern][idx, 1:2*nprim:2] = exps[:nprim]
                 bas_id_by_pattern[pattern][idx] = bas_id
                 pad_id_by_pattern[pattern][idx] = False
                 idx += 1

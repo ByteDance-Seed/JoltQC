@@ -102,6 +102,10 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     n_groups = np.count_nonzero(uniq_l <= LMAX)
 
     info = cp.empty(4, dtype=np.uint32)
+    # Optional override: force all screened quartets to FP64 for stability.
+    # Enable by setting environment variable JQC_FORCE_FP64=1
+    import os as _os
+    _force_fp64 = _os.environ.get("JQC_FORCE_FP64", "0") not in (None, "", "0", "false", "False")
     cutoff = np.log(PAIR_CUTOFF) #- log_max_dm / 2
     tile_pairs = make_tile_pairs(group_offset, q_matrix, cutoff)
     
@@ -216,6 +220,13 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                     n_quartets_fp32 = int(info_cpu[1].item())
                     offset = int(info_cpu[2].item())
                     n_quartets_fp64 = QUEUE_DEPTH - offset
+                    if _force_fp64:
+                        # Treat all screened quartets as FP64 work
+                        # Combine both FP32 and FP64 queues into a single FP64 launch.
+                        total_quartets = n_quartets_fp32 + n_quartets_fp64
+                        n_quartets_fp32 = 0
+                        offset = 0
+                        n_quartets_fp64 = total_quartets
 
                     # Launch FP32 and FP64 kernels asynchronously
                     if n_quartets_fp32 > 0:
@@ -315,4 +326,3 @@ def make_tile_pairs(l_ctr_bas_loc, q_matrix, cutoff, tile=TILE):
                 continue
             tile_pairs[i,j] = t_ij[mask]
     return tile_pairs
-
