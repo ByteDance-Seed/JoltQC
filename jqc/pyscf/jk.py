@@ -47,25 +47,25 @@ ushort4_dtype = np.dtype([
 GROUP_SIZE = 256
 PAIR_CUTOFF = 1e-13
 
-def generate_get_j(mol, layout=None, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    get_jk_kernel = generate_jk_kernel(mol, layout=layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
+def generate_get_j(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    get_jk_kernel = generate_jk_kernel(basis_layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
     def get_jk(*args, **kwargs):
         return get_jk_kernel(*args, with_j=True, with_k=False, **kwargs)[0]
     return get_jk
 
-def generate_get_k(mol, layout=None, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    get_jk_kernel = generate_jk_kernel(mol, layout=layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
+def generate_get_k(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    get_jk_kernel = generate_jk_kernel(basis_layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
     def get_jk(*args, **kwargs):
         return get_jk_kernel(*args, with_j=False, with_k=True, **kwargs)[1]
     return get_jk
 
-def generate_get_jk(mol, layout=None, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    get_jk_kernel = generate_jk_kernel(mol, layout=layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
+def generate_get_jk(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    get_jk_kernel = generate_jk_kernel(basis_layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
     def get_jk(*args, **kwargs):
         return get_jk_kernel(*args, **kwargs)
     return get_jk
 
-def generate_get_veff(mol, layout=None):
+def generate_get_veff():
     def get_veff(mf, mol=None, dm=None, dm_last=None, vhf_last=None, hermi=1):
         if dm is None: dm = mf.make_rdm1()
         if dm_last is not None and mf.direct_scf:
@@ -77,30 +77,24 @@ def generate_get_veff(mol, layout=None):
         return vhf
     return get_veff
 
-def generate_jk_kernel(mol, layout=None, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    if layout is None:
-        layout = BasisLayout.from_sort_group_basis(mol, alignment=TILE)
-    bas_cache, bas_mapping, padding_mask, group_info = layout.bas_info, layout.bas_id, layout.pad_id, layout.group_info
-    # TODO: Q matrix for short-range
-    q_matrix = compute_q_matrix(mol)
-    nbas = layout.nbasis
-    nao_orig = mol.nao
-    q_matrix = q_matrix[bas_mapping[:,None], bas_mapping]
-    q_matrix[padding_mask, :] = -100
-    q_matrix[:, padding_mask] = -100  # set the Q matrix for padded basis to -100
-    q_matrix = cp.asarray(q_matrix, dtype=np.float32)
+def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    bas_cache, bas_mapping, padding_mask, group_info = basis_layout.bas_info, basis_layout.bas_id, basis_layout.pad_id, basis_layout.group_info
+    
+    # Use lazy q_matrix property - computed only when accessed
+    q_matrix = basis_layout.q_matrix
+    
+    nbas = basis_layout.nbasis
+    mol = basis_layout._mol
 
-    logger = lib.logger.new_logger(mol, mol.verbose)
     log_cutoff_fp64 = np.float32(math.log(cutoff_fp64))
     log_cutoff_fp32 = np.float32(math.log(cutoff_fp32))
 
     ce_fp64, coords_fp64, angs, _ = bas_cache
-    ce_fp32 = ce_fp64.astype(np.float32)
-    coords_fp32 = coords_fp64.astype(np.float32)
+    ce_fp32 = basis_layout.ce_fp32
+    coords_fp32 = basis_layout.coords_fp32
 
-    ao_loc = np.concatenate(([0], np.cumsum((angs+1)*(angs+2)//2)))
-    nao = ao_loc[-1]
-    ao_loc = cp.asarray(ao_loc, dtype=np.int32)
+    ao_loc = basis_layout.ao_loc
+    nao = int(ao_loc[-1])
 
     group_key, group_offset = group_info
     uniq_l = group_key[:,0]
@@ -137,8 +131,10 @@ def generate_jk_kernel(mol, layout=None, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         assert mol_ref == mol, "mol_ref must be the same as mol"
         cputime_start  = time.perf_counter()
         
+        logger = lib.logger.new_logger(mol, mol.verbose)
         logger.debug1(f"Compute J/K matrices with do_j={with_j} and do_k={with_k}, omega={omega}")
         
+        nao_orig = mol.nao
         dm = cp.asarray(dm, order='C')
         dms = dm.reshape(-1,nao_orig,nao_orig)
 

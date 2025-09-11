@@ -28,7 +28,7 @@ PTR_BAS_COORD = 7
 
 ArrayLike = np.ndarray
 
-@dataclass(frozen=True)
+@dataclass
 class BasisLayout:
     ce: ArrayLike          # shape (nbasis_total, 2*NPRIM_MAX), np/cp
     coords: ArrayLike      # shape (nbasis_total, 4),             np/cp
@@ -45,6 +45,17 @@ class BasisLayout:
 
     # dtype bookkeeping (optional but handy)
     dtype: np.dtype
+
+    # molecule reference for lazy q_matrix computation
+    _mol: Optional[object] = None  # pyscf.gto.Mole reference
+    
+    # cached q_matrix (computed lazily)
+    _q_matrix_cache: Optional[ArrayLike] = None
+    
+    # cached FP32 arrays (computed lazily)
+    _ce_fp32_cache: Optional[ArrayLike] = None
+    _coords_fp32_cache: Optional[ArrayLike] = None
+    
 
     # --------- Compatibility accessors ---------
     @property
@@ -72,17 +83,67 @@ class BasisLayout:
         Each shell contributes (l+1)(l+2)//2 functions.
         """
         dims = (self.angs + 1) * (self.angs + 2) // 2
-        return cp.concatenate((cp.array([0]), cp.asarray(np.cumsum(dims))))
+        return cp.concatenate((cp.array([0]), cp.asarray(np.cumsum(dims)))).astype(np.int32)
+
+    @property
+    def q_matrix(self) -> ArrayLike:
+        """
+        Lazy evaluation property for q_matrix.
+        Computes and caches the fully processed q_matrix only when accessed.
+        """
+        if self._q_matrix_cache is None:
+            import cupy as cp
+            # Compute raw q_matrix
+            q_matrix_raw = compute_q_matrix(self._mol)
+            # Apply basis mapping to reorder according to sorted basis
+            q_matrix_mapped = q_matrix_raw[self.bas_id[:,None], self.bas_id]
+            # Set Q matrix for padded basis to -100 (screening value)
+            q_matrix_mapped[self.pad_id, :] = -100
+            q_matrix_mapped[:, self.pad_id] = -100
+            # Convert to CuPy array with proper dtype for GPU computation
+            self._q_matrix_cache = cp.asarray(q_matrix_mapped, dtype=np.float32)
+            
+        return self._q_matrix_cache
+
+    @property
+    def ce_fp32(self) -> ArrayLike:
+        """
+        Lazy evaluation property for FP32 coefficient and exponent array.
+        """
+        if self._ce_fp32_cache is None:
+            self._ce_fp32_cache = self.ce.astype(np.float32)
+        return self._ce_fp32_cache
+
+    @property
+    def coords_fp32(self) -> ArrayLike:
+        """
+        Lazy evaluation property for FP32 coordinates array.
+        """
+        if self._coords_fp32_cache is None:
+            self._coords_fp32_cache = self.coords.astype(np.float32)
+        return self._coords_fp32_cache
 
     @classmethod
     def from_sort_group_basis(cls, mol, alignment: int = 4, dtype=np.float64) -> "BasisLayout":
         """
         Calls your `sort_group_basis(mol, alignment, dtype)` and wraps the result.
         Expects that function to already move `ce` and `coords` to CuPy (as in your code).
+        
+        Parameters
+        ----------
+        mol : pyscf.gto.Mole
+            Molecular structure
+        alignment : int
+            Basis alignment for memory optimization
+        dtype : numpy.dtype
+            Data type for basis functions
         """
         bas_info, bas_id, pad_id, group_info = sort_group_basis(mol, alignment=alignment, dtype=dtype)
         ce, coords, angs, nprims = bas_info
         group_key, group_offset = group_info
+        
+        # Always store molecule reference for lazy q_matrix computation
+        
         # Normalize dtypes
         return cls(
             ce=ce,
@@ -93,6 +154,7 @@ class BasisLayout:
             pad_id=np.asarray(pad_id, dtype=bool),
             group_key=np.asarray(group_key, dtype=np.int32),
             group_offset=np.asarray(group_offset),
+            _mol=mol,
             dtype=np.dtype(dtype),
         )
 
