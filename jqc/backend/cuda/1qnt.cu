@@ -225,8 +225,6 @@ void rys_jk(const int nbas,
         for (int jp = 0; jp < npj; jp++){
             const DataType ai = reg_cei[ip].e;
             const DataType aj = reg_cej[jp].e;
-            const DataType ai = reg_cei[ip].e;
-            const DataType aj = reg_cej[jp].e;
             const DataType aij = ai + aj;
             const int idx = ip + jp*npi;
             const DataType inv_aij = reg_inv_aij[idx];
@@ -244,15 +242,12 @@ void rys_jk(const int nbas,
             const DataType rr = Rpq[0]*Rpq[0] + Rpq[1]*Rpq[1] + Rpq[2]*Rpq[2];
             const DataType inv_aijkl = one / (aij + akl);
             const DataType theta = aij * akl * inv_aijkl;
-            const DataType inv_aijkl = one / (aij + akl);
-            const DataType theta = aij * akl * inv_aijkl;
             
             DataType rjri_x = (ty == 0 ? rjri[0] : (ty == 1 ? rjri[1] : rjri[2])); 
             DataType Rpq_x =  (ty == 0 ? Rpq[0] : (ty == 1 ? Rpq[1] : Rpq[2]));
             DataType rlrk_x = (ty == 0 ? rlrk[0] : (ty == 1 ? rlrk[1] : rlrk[2]));
 
             DataType *rw = shared_memory + tx;
-            DataType *g = shared_memory + nroots * 2 * gx_stride + tx; 
             DataType *g = shared_memory + nroots * 2 * gx_stride + tx; 
 
             rys_roots(rr, rw, ty, gx_stride, theta, omega);
