@@ -30,7 +30,7 @@ from pyscf.lib import logger
 from pyscf.dft import libxc
 from pyscf.dft.gen_grid import GROUP_BOUNDARY_PENALTY
 from jqc.backend.linalg_helper import max_block_pooling, inplace_add_transpose
-from jqc.pyscf.mol import sort_group_basis
+from jqc.pyscf.mol import BasisLayout
 from jqc.backend.rks import gen_rho_kernel, gen_vxc_kernel, estimate_log_aovalue, vv10nlc
 from jqc.backend.cart2sph import mol2cart, cart2mol
 from jqc.constants import LMAX
@@ -137,7 +137,7 @@ def build_grids(grids, mol=None, with_non0tab=False, sort_grids=True, **kwargs):
     grids._non0ao_idx = None
     return grids
 
-def generate_get_veff(mol):
+def generate_get_veff(mol, layout=None):
     from gpu4pyscf.dft.rks import initialize_grids
     from gpu4pyscf.lib.cupy_helper import tag_array
     def get_veff(ks, mol=None, dm=None, dm_last=0, vhf_last=0, hermi=1):
@@ -211,29 +211,32 @@ def generate_get_veff(mol):
         return vxc
     return get_veff
 
-def generate_nr_rks(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    rks_fun, _, _ = generate_rks_kernel(mol, cutoff_fp64, cutoff_fp32)
+def generate_nr_rks(mol, layout=None, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    rks_fun, _, _ = generate_rks_kernel(mol, layout=layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
     return rks_fun
 
-def generate_get_rho(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    _, rho_fun, _ = generate_rks_kernel(mol, cutoff_fp64, cutoff_fp32)
+def generate_get_rho(mol, layout=None, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    _, rho_fun, _ = generate_rks_kernel(mol, layout=layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
     def get_rho(mol, dm, grids, *args, **kwargs):
         dm = cp.asarray(dm)
         rho = rho_fun(mol, grids, 'LDA', dm)
         return rho[0]
     return get_rho
 
-def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    bas_cache, bas_mapping, _, group_info = sort_group_basis(mol, alignment=1)
-    ce_fp64, coords_fp64, angs, nprims = bas_cache
+def generate_rks_kernel(mol, layout=None, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    if layout is None:
+        layout = BasisLayout.from_sort_group_basis(mol, alignment=1)
+    ce_fp64, coords_fp64, angs, nprims = layout.bas_info
     ce_fp32 = ce_fp64.astype(np.float32)
     coords_fp32 = coords_fp64.astype(np.float32)
 
-    ao_loc = np.concatenate(([0], np.cumsum((angs+1)*(angs+2)//2)))
+    ao_loc = layout.ao_loc.get()
     nao = ao_loc[-1]
-    nbas = nprims.shape[0]
+    nbas = layout.nbasis
     ao_loc = cp.asarray(ao_loc, dtype=np.int32)
-    group_key, group_offset = group_info
+    group_key, group_offset = layout.group_info
+    bas_mapping = layout.bas_id
+    ao_cutoff = 1e-11
     log_ao_cutoff = math.log(ao_cutoff)
 
     log_cutoff_fp32 = np.log(cutoff_fp32).astype(np.float32)
@@ -422,8 +425,8 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         return vxc[0]
     return rks_fun, rho_fun, vxc_fun
 
-def generate_nr_nlc_vxc(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    _, rho_fun, vxc_fun = generate_rks_kernel(mol, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
+def generate_nr_nlc_vxc(mol, layout=None, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    _, rho_fun, vxc_fun = generate_rks_kernel(mol, layout=layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
     from gpu4pyscf.dft import xc_deriv
     
     # Cache for incremental computation

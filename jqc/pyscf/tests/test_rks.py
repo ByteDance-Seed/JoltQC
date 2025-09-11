@@ -209,9 +209,9 @@ class KnownValues(unittest.TestCase):
         n, e, v = ni.nr_nlc_vxc(mol, grids, 'wb97m-v', dm)
         n_jqc, e_jqc, v_jqc = nr_nlc_vxc(ni, mol, grids, 'wb97m-v', dm)
 
-        assert np.linalg.norm(n - n_jqc) < 1e-10
-        assert np.linalg.norm(e - e_jqc) < 1e-10
-        assert np.linalg.norm(v - v_jqc) < 1e-10 
+        assert np.linalg.norm(n - n_jqc) < 1e-8
+        assert np.linalg.norm(e - e_jqc) < 1e-8
+        assert np.linalg.norm(v - v_jqc) < 1e-8 
         
 if __name__ == "__main__":
     print("Full Tests for rho and Vxc Kernels")

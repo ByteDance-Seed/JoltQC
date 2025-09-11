@@ -31,7 +31,7 @@ from jqc.backend.linalg_helper import inplace_add_transpose, max_block_pooling
 from jqc.backend.jk_tasks import gen_screen_jk_tasks_kernel, MAX_PAIR_SIZE, QUEUE_DEPTH
 from jqc.backend.jk import gen_jk_kernel
 from jqc.backend.cart2sph import mol2cart, cart2mol
-from jqc.pyscf.mol import compute_q_matrix, sort_group_basis
+from jqc.pyscf.mol import compute_q_matrix, BasisLayout
 from jqc.constants import LMAX, TILE
 
 __all__ = [
@@ -47,25 +47,25 @@ ushort4_dtype = np.dtype([
 GROUP_SIZE = 256
 PAIR_CUTOFF = 1e-13
 
-def generate_get_j(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    get_jk_kernel = generate_jk_kernel(mol, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
+def generate_get_j(mol, layout=None, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    get_jk_kernel = generate_jk_kernel(mol, layout=layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
     def get_jk(*args, **kwargs):
         return get_jk_kernel(*args, with_j=True, with_k=False, **kwargs)[0]
     return get_jk
 
-def generate_get_k(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    get_jk_kernel = generate_jk_kernel(mol, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
+def generate_get_k(mol, layout=None, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    get_jk_kernel = generate_jk_kernel(mol, layout=layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
     def get_jk(*args, **kwargs):
         return get_jk_kernel(*args, with_j=False, with_k=True, **kwargs)[1]
     return get_jk
 
-def generate_get_jk(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    get_jk_kernel = generate_jk_kernel(mol, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
+def generate_get_jk(mol, layout=None, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    get_jk_kernel = generate_jk_kernel(mol, layout=layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
     def get_jk(*args, **kwargs):
         return get_jk_kernel(*args, **kwargs)
     return get_jk
 
-def generate_get_veff(mol):
+def generate_get_veff(mol, layout=None):
     def get_veff(mf, mol=None, dm=None, dm_last=None, vhf_last=None, hermi=1):
         if dm is None: dm = mf.make_rdm1()
         if dm_last is not None and mf.direct_scf:
@@ -77,11 +77,13 @@ def generate_get_veff(mol):
         return vhf
     return get_veff
 
-def generate_jk_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    bas_cache, bas_mapping, padding_mask, group_info = sort_group_basis(mol, alignment=TILE)
+def generate_jk_kernel(mol, layout=None, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    if layout is None:
+        layout = BasisLayout.from_sort_group_basis(mol, alignment=TILE)
+    bas_cache, bas_mapping, padding_mask, group_info = layout.bas_info, layout.bas_id, layout.pad_id, layout.group_info
     # TODO: Q matrix for short-range
     q_matrix = compute_q_matrix(mol)
-    nbas = np.asarray(bas_mapping.shape[0])
+    nbas = layout.nbasis
     nao_orig = mol.nao
     q_matrix = q_matrix[bas_mapping[:,None], bas_mapping]
     q_matrix[padding_mask, :] = -100

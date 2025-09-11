@@ -72,7 +72,7 @@ class BasisLayout:
         Each shell contributes (l+1)(l+2)//2 functions.
         """
         dims = (self.angs + 1) * (self.angs + 2) // 2
-        return cp.concatenate(([0], np.cumsum(dims)))
+        return cp.concatenate((cp.array([0]), cp.asarray(np.cumsum(dims))))
 
     @classmethod
     def from_sort_group_basis(cls, mol, alignment: int = 4, dtype=np.float64) -> "BasisLayout":
