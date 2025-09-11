@@ -145,13 +145,26 @@ void eval_vxc(
         
         DataType cej = zero;
         DataType cej_2e = zero;
+        // Original code:
+        // for (int jp = 0; jp < npj; jp++){
+        //     const int offset = nprim_max * jsh + jp;
+        //     const DataType2 coeff_expj = coeff_exp[offset];
+        //     const DataType e = coeff_expj.e;
+        //     const DataType e_rr = e * rr_gj;
+        //     const DataType c = coeff_expj.c;
+        //     const DataType ce = e_rr < exp_cutoff ? c * exp(-e_rr) : zero;
+        //     cej += ce;
+        //     cej_2e += ce * e;
+        // }
+        // Optimized version - early continue to avoid exp() calls:
         for (int jp = 0; jp < npj; jp++){
             const int offset = nprim_max * jsh + jp;
             const DataType2 coeff_expj = coeff_exp[offset];
             const DataType e = coeff_expj.e;
             const DataType e_rr = e * rr_gj;
+            if (e_rr >= exp_cutoff) continue;
             const DataType c = coeff_expj.c;
-            const DataType ce = e_rr < exp_cutoff ? c * exp(-e_rr) : zero;
+            const DataType ce = c * exp(-e_rr);
             cej += ce;
             cej_2e += ce * e;
         }
@@ -160,37 +173,80 @@ void eval_vxc(
         constexpr int j_pow = lj + deriv;
         DataType xj_pows[j_pow+1], yj_pows[j_pow+1], zj_pows[j_pow+1];
         xj_pows[0] = one; yj_pows[0] = one; zj_pows[0] = one;
+        // Original code:
+        // for (int i = 0; i < j_pow; i++){
+        //     xj_pows[i+1] = xj_pows[i] * gjx;
+        //     yj_pows[i+1] = yj_pows[i] * gjy;
+        //     zj_pows[i+1] = zj_pows[i] * gjz;
+        // }
+        // Optimized version - reduces array access overhead:
+        DataType gjx_curr = gjx, gjy_curr = gjy, gjz_curr = gjz;
         for (int i = 0; i < j_pow; i++){
-            xj_pows[i+1] = xj_pows[i] * gjx;
-            yj_pows[i+1] = yj_pows[i] * gjy;
-            zj_pows[i+1] = zj_pows[i] * gjz;
+            xj_pows[i+1] = gjx_curr;
+            yj_pows[i+1] = gjy_curr;
+            zj_pows[i+1] = gjz_curr;
+            gjx_curr *= gjx;
+            gjy_curr *= gjy;
+            gjz_curr *= gjz;
         }
 
         DataType dxj[lj+1], dyj[lj+1], dzj[lj+1];
         if constexpr(deriv > 0){
-            for (int j = 0; j < lj+1; j++){
-                dxj[j] = cej_2e * xj_pows[j+1];
-                dyj[j] = cej_2e * yj_pows[j+1];
-                dzj[j] = cej_2e * zj_pows[j+1];
-            }
+            // Original code:
+            // for (int j = 0; j < lj+1; j++){
+            //     dxj[j] = cej_2e * xj_pows[j+1];
+            //     dyj[j] = cej_2e * yj_pows[j+1];
+            //     dzj[j] = cej_2e * zj_pows[j+1];
+            // }
+            // for (int j = 1; j < lj+1; j++){
+            //     const DataType fac = cej * j;
+            //     dxj[j] += fac * xj_pows[j-1];
+            //     dyj[j] += fac * yj_pows[j-1];
+            //     dzj[j] += fac * zj_pows[j-1];
+            // }
+            // Optimized version - fused loops to reduce operations:
+            dxj[0] = cej_2e * xj_pows[1];
+            dyj[0] = cej_2e * yj_pows[1];
+            dzj[0] = cej_2e * zj_pows[1];
             for (int j = 1; j < lj+1; j++){
                 const DataType fac = cej * j;
-                dxj[j] += fac * xj_pows[j-1];
-                dyj[j] += fac * yj_pows[j-1];
-                dzj[j] += fac * zj_pows[j-1];
+                dxj[j] = cej_2e * xj_pows[j+1] + fac * xj_pows[j-1];
+                dyj[j] = cej_2e * yj_pows[j+1] + fac * yj_pows[j-1];
+                dzj[j] = cej_2e * zj_pows[j+1] + fac * zj_pows[j-1];
             }
         }
 
-        // TODO: cart2sph transformation
         DataType ao_j[nfj], ao_jx[nfj], ao_jy[nfj], ao_jz[nfj], aow_j[nfj];
+        // Original code:
+        // for (int i = 0, lx = lj; lx >= 0; lx--){
+        //     const DataType cx = cej * xj_pows[lx];
+        //     for (int ly = lj - lx; ly >= 0; ly--, i++){
+        //         const int lz = lj - lx - ly;
+        //         ao_j[i] = cx * yj_pows[ly] * zj_pows[lz];
+        //         if constexpr(deriv > 0){
+        //             ao_jx[i] = dxj[lx] * yj_pows[ly] * zj_pows[lz];
+        //             ao_jy[i] = xj_pows[lx] * dyj[ly] * zj_pows[lz];
+        //             ao_jz[i] = xj_pows[lx] * yj_pows[ly] * dzj[lz];
+        //             aow_j[i] = ao_jx[i] * wv_x + ao_jy[i] * wv_y + ao_jz[i] * wv_z;
+        //             if constexpr (ndim > 4){
+        //                 ao_jx[i] *= wv_tau;
+        //                 ao_jy[i] *= wv_tau;
+        //                 ao_jz[i] *= wv_tau;
+        //             }
+        //         }
+        //     }
+        // }
+        // Optimized version - cached common subexpressions:
 #pragma unroll
         for (int i = 0, lx = lj; lx >= 0; lx--){
-            const DataType cx = cej * xj_pows[lx];
+            const DataType cej_xj_lx = cej * xj_pows[lx];
+            const DataType dxj_lx = (deriv > 0) ? dxj[lx] : zero;
             for (int ly = lj - lx; ly >= 0; ly--, i++){
                 const int lz = lj - lx - ly;
-                ao_j[i] = cx * yj_pows[ly] * zj_pows[lz];
+                const DataType yj_ly_zj_lz = yj_pows[ly] * zj_pows[lz];
+                ao_j[i] = cej_xj_lx * yj_ly_zj_lz;
                 if constexpr(deriv > 0){                    
-                    ao_jx[i] = dxj[lx] * yj_pows[ly] * zj_pows[lz];
+                    ao_jx[i] = dxj_lx * yj_ly_zj_lz;
                     ao_jy[i] = xj_pows[lx] * dyj[ly] * zj_pows[lz];
                     ao_jz[i] = xj_pows[lx] * yj_pows[ly] * dzj[lz];
                     aow_j[i] = ao_jx[i] * wv_x + ao_jy[i] * wv_y + ao_jz[i] * wv_z;
@@ -210,13 +266,26 @@ void eval_vxc(
 
             DataType cei = zero;
             DataType cei_2e = zero;
+            // Original code:
+            // for (int ip = 0; ip < npi; ip++){
+            //     const int ip_offset = ip + ish*nprim_max;
+            //     const DataType2 coeff_expi = coeff_exp[ip_offset];
+            //     const DataType e = coeff_expi.e;
+            //     const DataType e_rr = e * rr_gi;
+            //     const DataType c = coeff_expi.c;
+            //     const DataType ce = e_rr < exp_cutoff ? c * exp(-e_rr) : zero;
+            //     cei += ce;
+            //     cei_2e += ce * e;
+            // }
+            // Optimized version - early continue to avoid exp() calls:
             for (int ip = 0; ip < npi; ip++){
                 const int ip_offset = ip + ish*nprim_max;
                 const DataType2 coeff_expi = coeff_exp[ip_offset];
                 const DataType e = coeff_expi.e;
                 const DataType e_rr = e * rr_gi;
+                if (e_rr >= exp_cutoff) continue;
                 const DataType c = coeff_expi.c;
-                const DataType ce = e_rr < exp_cutoff ? c * exp(-e_rr) : zero;
+                const DataType ce = c * exp(-e_rr);
                 cei += ce;
                 cei_2e += ce * e;
             }
@@ -227,37 +296,77 @@ void eval_vxc(
             constexpr int i_pow = li + deriv;
             DataType xi_pows[i_pow+1], yi_pows[i_pow+1], zi_pows[i_pow+1];
             xi_pows[0] = one; yi_pows[0] = one; zi_pows[0] = one;
+            // Original code:
+            // for (int i = 0; i < i_pow; i++){
+            //     xi_pows[i+1] = xi_pows[i] * gix;
+            //     yi_pows[i+1] = yi_pows[i] * giy;
+            //     zi_pows[i+1] = zi_pows[i] * giz;
+            // }
+            // Optimized version - reduces array access overhead:
+            DataType gix_curr = gix, giy_curr = giy, giz_curr = giz;
             for (int i = 0; i < i_pow; i++){
-                xi_pows[i+1] = xi_pows[i] * gix;
-                yi_pows[i+1] = yi_pows[i] * giy;
-                zi_pows[i+1] = zi_pows[i] * giz;
+                xi_pows[i+1] = gix_curr;
+                yi_pows[i+1] = giy_curr;
+                zi_pows[i+1] = giz_curr;
+                gix_curr *= gix;
+                giy_curr *= giy;
+                giz_curr *= giz;
             }
 
             DataType dxi[li+1], dyi[li+1], dzi[li+1];
             if constexpr(deriv > 0){
-                for (int i = 0; i < li+1; i++){
-                    dxi[i] = cei_2e * xi_pows[i+1];
-                    dyi[i] = cei_2e * yi_pows[i+1];
-                    dzi[i] = cei_2e * zi_pows[i+1];
-                }
+                // Original code:
+                // for (int i = 0; i < li+1; i++){
+                //     dxi[i] = cei_2e * xi_pows[i+1];
+                //     dyi[i] = cei_2e * yi_pows[i+1];
+                //     dzi[i] = cei_2e * zi_pows[i+1];
+                // }
+                // for (int i = 1; i < li+1; i++){
+                //     const DataType fac = cei * i;
+                //     dxi[i] += fac * xi_pows[i-1];
+                //     dyi[i] += fac * yi_pows[i-1];
+                //     dzi[i] += fac * zi_pows[i-1];
+                // }
+                // Optimized version - fused loops to reduce operations:
+                dxi[0] = cei_2e * xi_pows[1];
+                dyi[0] = cei_2e * yi_pows[1];
+                dzi[0] = cei_2e * zi_pows[1];
                 for (int i = 1; i < li+1; i++){
                     const DataType fac = cei * i;
-                    dxi[i] += fac * xi_pows[i-1];
-                    dyi[i] += fac * yi_pows[i-1];
-                    dzi[i] += fac * zi_pows[i-1];
+                    dxi[i] = cei_2e * xi_pows[i+1] + fac * xi_pows[i-1];
+                    dyi[i] = cei_2e * yi_pows[i+1] + fac * yi_pows[i-1];
+                    dzi[i] = cei_2e * zi_pows[i+1] + fac * zi_pows[i-1];
                 }
             }
             __syncthreads();
+            // Original code:
+            // for (int i = 0, lx = li; lx >= 0; lx--){
+            //     const DataType cx = cei * xi_pows[lx];
+            //     for (int ly = li - lx; ly >= 0; ly--, i++){
+            //         const int lz = li - lx - ly;
+            //         const DataType ao_i = cx * yi_pows[ly] * zi_pows[lz];
+            //         DataType aow0_i, ao_ix, ao_iy, ao_iz, aow_i;
+            //         aow0_i = ao_i * wv0;
+            //         if constexpr(ndim > 1){
+            //             ao_ix = dxi[lx] * yi_pows[ly] * zi_pows[lz];
+            //             ao_iy = xi_pows[lx] * dyi[ly] * zi_pows[lz];
+            //             ao_iz = xi_pows[lx] * yi_pows[ly] * dzi[lz];
+            //             aow_i = ao_ix * wv_x + ao_iy * wv_y + ao_iz * wv_z;
+            //         }
+            //     }
+            // }
+            // Optimized version - cached common subexpressions:
 #pragma unroll
             for (int i = 0, lx = li; lx >= 0; lx--){
-                const DataType cx = cei * xi_pows[lx];
+                const DataType cei_xi_lx = cei * xi_pows[lx];
                 for (int ly = li - lx; ly >= 0; ly--, i++){
                     const int lz = li - lx - ly;
-                    const DataType ao_i = cx * yi_pows[ly] * zi_pows[lz];
+                    const DataType yi_ly_zi_lz = yi_pows[ly] * zi_pows[lz];
+                    const DataType ao_i = cei_xi_lx * yi_ly_zi_lz;
                     DataType aow0_i, ao_ix, ao_iy, ao_iz, aow_i;
                     aow0_i = ao_i * wv0;
                     if constexpr(ndim > 1){
-                        ao_ix = dxi[lx] * yi_pows[ly] * zi_pows[lz];
+                        ao_ix = dxi[lx] * yi_ly_zi_lz;
                         ao_iy = xi_pows[lx] * dyi[ly] * zi_pows[lz];
                         ao_iz = xi_pows[lx] * yi_pows[ly] * dzi[lz];
                         aow_i = ao_ix * wv_x + ao_iy * wv_y + ao_iz * wv_z;
