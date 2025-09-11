@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-gpu:
+    runs-on: [self-hosted]
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    
+    - name: Install dependencies
+      run: |
+        python3 -m pip install --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com || python3 -m pip install --upgrade pip
+        pip3 install pytest pytest-cov cutensor-cu12 -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com || pip3 install pytest pytest-cov cutensor-cu12
+        pip3 install -e . -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com || pip3 install -e .
+    
+    - name: Run GPU tests
+      run: |
+        source setenv.sh
+        python3 -m pytest -v --tb=long
+    
