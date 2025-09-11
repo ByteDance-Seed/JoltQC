@@ -262,16 +262,13 @@ void rys_jk(const int nbas,
             DataType g0xyz;
             if (ty == 0) g0xyz = ckcl; 
             if (ty == 1) g0xyz = cicj * inv_aij * inv_akl * sqrt(inv_aijkl);
-            if (ty == 1) g0xyz = cicj * inv_aij * inv_akl * sqrt(inv_aijkl);
             
             __syncthreads();
             for (int irys = 0; irys < nroots; irys++){
                 DataType rt_aa;
                 g0xyz = (ty == 2) ? rw[(irys*2+1) * gx_stride] : g0xyz;
-                g0xyz = (ty == 2) ? rw[(irys*2+1) * gx_stride] : g0xyz;
                 if (ty < 3){
                     const DataType rt = rw[(irys*2)*gx_stride];
-                    rt_aa = rt * inv_aijkl;
                     rt_aa = rt * inv_aijkl;
                 }
                 __syncthreads();
@@ -288,7 +285,6 @@ void rys_jk(const int nbas,
                     if (ty < 3){
                         const DataType rt_aij = rt_aa * akl;
                         const DataType b10 = half * inv_aij * (one - rt_aij);
-                        const DataType b10 = half * inv_aij * (one - rt_aij);
 
                         const int _ix = ty;
                         DataType *gx = g + _ix * gx_stride;
@@ -304,8 +300,6 @@ void rys_jk(const int nbas,
                         for (int i = 1; i < lij; ++i) {
                             const DataType i_b10 = i * b10;  // Pre-compute to reduce FLOPs
                             s2x = c0x * s1x + i_b10 * s0x;
-                            const DataType i_b10 = i * b10;  // Pre-compute to reduce FLOPs
-                            s2x = c0x * s1x + i_b10 * s0x;
                             gx[i*stride_i + stride_i] = s2x;
                             s0x = s1x;
                             s1x = s2x;
@@ -318,7 +312,6 @@ void rys_jk(const int nbas,
                     if (ty < 3){
                         const DataType rt_akl = rt_aa * aij;
                         const DataType b00 = half * rt_aa;
-                        const DataType b01 = half * inv_akl * (one - rt_akl);
                         const DataType b01 = half * inv_akl * (one - rt_akl);
 
                         const int _ix = ty;
