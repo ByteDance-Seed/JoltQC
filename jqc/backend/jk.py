@@ -33,8 +33,6 @@ device_name = props['name'].decode()
 
 __all__ = ['gen_jk_kernel']
 
-cache_lock = threading.Lock()
-
 # Load fragmentation scheme for 1qnt, support FP32 and FP64 only
 script_dir = os.path.dirname(__file__)
 file_path = os.path.join(script_dir, f'data/optimal_scheme_{device_name}_fp32.json')

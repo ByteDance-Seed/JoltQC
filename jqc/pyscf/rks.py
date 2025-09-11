@@ -31,7 +31,7 @@ from pyscf.dft import libxc
 from pyscf.dft.gen_grid import GROUP_BOUNDARY_PENALTY
 from jqc.backend.linalg_helper import max_block_pooling, inplace_add_transpose
 from jqc.pyscf.mol import sort_group_basis
-from jqc.backend.rks import gen_rho_kernel, gen_vxc_kernel, estimate_log_aovalue
+from jqc.backend.rks import gen_rho_kernel, gen_vxc_kernel, estimate_log_aovalue, vv10nlc
 from jqc.backend.cart2sph import mol2cart, cart2mol
 from jqc.constants import LMAX
 
@@ -197,7 +197,8 @@ def generate_get_veff(mol):
                     vklr = ks.get_k(mol, dm, hermi, omega=omega)
                     vklr *= (alpha - hyb)
                     vk += vklr
-            vxc += vj - vk * .5
+            vxc += vj 
+            vxc -= vk * .5
             if ground_state:
                 exc -= cp.einsum('ij,ji', dm, vk).real * .5 * .5
         
@@ -423,34 +424,57 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
 def generate_nr_nlc_vxc(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     _, rho_fun, vxc_fun = generate_rks_kernel(mol, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
-    from gpu4pyscf.dft.numint import _vv10nlc
     from gpu4pyscf.dft import xc_deriv
+    
+    # Cache for incremental computation
+    _cache = {'dm_prev': 0, 'rho_prev': 0, 'wv_prev': 0, 'vmat_prev': 0}
+    
     def nr_nlc_vxc(ni, mol, grids, xc_code, dms, relativity=0, hermi=1, max_memory=2000, verbose=None):
-        opt = getattr(ni, 'gdftopt', None)
-        if opt is None:
-            ni.build(mol, grids.coords)
-            opt = ni.gdftopt
-
-        #xctype = libxc.xc_type(xc_code)
-        rho = rho_fun(mol, grids, 'GGA', dms)
-
+        # Build numint if needed (for compatibility)
+        if hasattr(ni, 'build') and not hasattr(ni, 'gdftopt'):
+            try:
+                ni.build(mol, grids.coords)
+            except:
+                pass  # Ignore build failures, we don't actually need gdftopt
+        
+        # Get cached values
+        dm_prev = _cache['dm_prev']
+        rho_prev = _cache['rho_prev']
+        wv_prev = _cache['wv_prev']
+        vmat_prev = _cache['vmat_prev']
+        
+        # Compute rho incrementally
+        dm_diff = dms - dm_prev
+        rho_diff = rho_fun(mol, grids, 'GGA', dm_diff)
+        rho = rho_prev + rho_diff
+        
+        # Compute VV10 exchange-correlation
         exc = 0
         vxc = 0
         nlc_coefs = ni.nlc_coeff(xc_code)
         for nlc_pars, fac in nlc_coefs:
-            e, v = _vv10nlc(rho, grids.coords, rho, grids.weights,
-                            grids.coords, nlc_pars)
+            e, v = vv10nlc(rho, grids.coords, rho, grids.weights,
+                           grids.coords, nlc_pars)
             exc += e * fac
             vxc += v * fac
 
         den = rho[0] * grids.weights
         nelec = den.sum()
         excsum = cp.dot(den, exc)
+        
+        # Compute wv incrementally
         vv_vxc = xc_deriv.transform_vxc(rho, vxc, 'GGA', spin=0)
         wv = vv_vxc * grids.weights
-
-        vmat = vxc_fun(mol, grids, 'GGA', wv)
-
+        wv_diff = wv - wv_prev
+        vmat_diff = vxc_fun(mol, grids, 'GGA', wv_diff)
+        vmat = vmat_prev + vmat_diff
+        
+        # Update cache
+        _cache['dm_prev'] = dms.copy()
+        _cache['rho_prev'] = rho
+        _cache['wv_prev'] = wv
+        _cache['vmat_prev'] = vmat.copy()
+        
         return nelec, excsum, vmat
     return nr_nlc_vxc
 

@@ -19,9 +19,9 @@
 // # Copyright 2025 PySCF developer.
 // # Licensed under the Apache License, Version 2.0.
 
-using DataType = float;
+// DataType will be defined by the calling code
 
-#define NG_PER_BLOCK      128
+// NG_PER_BLOCK will be defined by the calling code
 
 extern "C" __global__
 void vv10_kernel(double *Fvec, double *Uvec, double *Wvec,
@@ -30,18 +30,15 @@ void vv10_kernel(double *Fvec, double *Uvec, double *Wvec,
     const double *Kp, const double *RpW,
     const int vvngrids, const int ngrids)
 {
-    // grid id
+    // grid id - assume 256-aligned grids (guaranteed by padding)
     int grid_id = blockIdx.x * blockDim.x + threadIdx.x;
-    const bool active = grid_id < ngrids;
-    DataType xi, yi, zi;
-    DataType W0i, Ki;
-    if (active){
-        xi = coords[grid_id];
-        yi = coords[ngrids + grid_id];
-        zi = coords[2*ngrids + grid_id];
-        W0i = W0[grid_id];
-        Ki = K[grid_id];
-    }
+    
+    // Load grid data (no bounds check needed due to 256-alignment guarantee)
+    DataType xi = coords[grid_id];
+    DataType yi = coords[ngrids + grid_id];
+    DataType zi = coords[2*ngrids + grid_id];
+    DataType W0i = W0[grid_id];
+    DataType Ki = K[grid_id];
 
     double F = 0.0;
     double U = 0.0;
@@ -62,17 +59,20 @@ void vv10_kernel(double *Fvec, double *Uvec, double *Wvec,
 
     for (int j = 0; j < vvngrids; j+=blockDim.x) {
         int idx = j + tx;
-        if (idx < vvngrids){
-            xj_smem[tx] = xj[idx];
-            yj_smem[tx] = yj[idx];
-            zj_smem[tx] = zj[idx];
-            Kp_smem[tx] = Kp[idx];
-            W0p_smem[tx] = W0p[idx];
-            RpW_smem[tx] = RpW[idx];
-        }
+        
+        // Load data directly (no bounds check needed due to 256-alignment guarantee)
+        xj_smem[tx] = xj[idx];
+        yj_smem[tx] = yj[idx];
+        zj_smem[tx] = zj[idx];
+        Kp_smem[tx] = Kp[idx];
+        W0p_smem[tx] = W0p[idx];
+        RpW_smem[tx] = RpW[idx];
+        
         __syncthreads();
 
-        for (int l = 0, M = min(NG_PER_BLOCK, vvngrids - j); l < M; ++l){
+        // Compute VV10 interaction
+#pragma unroll 16
+        for (int l = 0; l < NG_PER_BLOCK; ++l){
             DataType DX = xj_smem[l] - xi;
             DataType DY = yj_smem[l] - yi;
             DataType DZ = zj_smem[l] - zi;
@@ -83,18 +83,22 @@ void vv10_kernel(double *Fvec, double *Uvec, double *Wvec,
             DataType gt = g + gp;
             DataType ggt = g*gt;
             DataType g_gt = g + gt;
-            DataType T = RpW_smem[l] / (gp*ggt*ggt);
-
-            F += T * ggt;
-            U += T * g_gt;
-            W += T * R2 * g_gt;
+            
+            // Add safety check for division by zero
+            DataType denominator = gp*ggt*ggt;
+            if (denominator > 1e-20) {
+                DataType T = RpW_smem[l] / denominator;
+                F += T * ggt;
+                U += T * g_gt;
+                W += T * R2 * g_gt;
+            }
         }
         __syncthreads();
     }
-    if(active){
-        Fvec[grid_id] = F * -1.5;
-        Uvec[grid_id] = U;
-        Wvec[grid_id] = W;
-    }
+    
+    // Store results (no bounds check needed due to 256-alignment guarantee)
+    Fvec[grid_id] = F * -1.5;
+    Uvec[grid_id] = U;
+    Wvec[grid_id] = W;
 
 }

@@ -64,6 +64,9 @@ def apply(obj, cutoff_fp32=None, cutoff_fp64=None):
         nr_rks = rks.generate_nr_rks(mol, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)
         obj._numint.nr_rks = MethodType(nr_rks, obj._numint)
 
+        nr_nlc_vxc = rks.generate_nr_nlc_vxc(mol, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)
+        obj._numint.nr_nlc_vxc = MethodType(nr_nlc_vxc, obj._numint)
+
     if not obj.istype('DFRHF'):
         # TODO: cache intermediate variables
         if hasattr(obj, 'get_jk'):
