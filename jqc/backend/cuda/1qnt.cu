@@ -154,34 +154,6 @@ void rys_jk(const int nbas,
     }
     
     DataType reg_cicj[npi*npj];
-#pragma unroll
-    for (int ip = 0; ip < npi; ip++){
-        for (int jp = 0; jp < npj; jp++){
-            const DataType ai = reg_cei[ip].e;
-            const DataType aj = reg_cej[jp].e;
-            const DataType aij = ai + aj;
-            const DataType aj_aij = aj / aij;
-            const DataType theta_ij = ai * aj_aij;
-            const DataType Kab = exp(-theta_ij * rr_ij);
-            const DataType ci = reg_cei[ip].c;
-            const DataType cj = reg_cej[jp].c;
-            const DataType cicj = fac_sym * ci * cj * Kab;
-            reg_cicj[ip + jp*npi] = cicj;
-        }
-    }
-
-    // Cache coefficients and precompute cicj values in shared memory for better performance
-    DataType2 reg_cei[npi], reg_cej[npj];
-    for (int ip = 0; ip < npi; ip++){
-        const int ish_ip = ip + ish*nprim_max;
-        reg_cei[ip] = coeff_exp[ish_ip];
-    }
-    for (int jp = 0; jp < npj; jp++){
-        const int jsh_jp = jp + jsh*nprim_max;
-        reg_cej[jp] = coeff_exp[jsh_jp];
-    }
-    
-    DataType reg_cicj[npi*npj];
     DataType reg_inv_aij[npi*npj];
 #pragma unroll
     for (int ip = 0; ip < npi; ip++){
@@ -212,8 +184,6 @@ void rys_jk(const int nbas,
         const DataType ak = cek.e;
         const DataType al = cel.e;
         const DataType akl = ak + al;
-        const DataType inv_akl = one / akl;
-        const DataType al_akl = al * inv_akl;
         const DataType inv_akl = one / akl;
         const DataType al_akl = al * inv_akl;
         const DataType theta_kl = ak * al_akl;
