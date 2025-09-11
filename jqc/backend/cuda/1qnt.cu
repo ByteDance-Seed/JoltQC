@@ -125,9 +125,7 @@ void rys_jk(const int nbas,
     fac_sym *= (ish == jsh) ? half : one;
     fac_sym *= (ksh == lsh) ? half : one;
     fac_sym *= (ish*nbas+jsh == ksh*nbas+lsh) ? half : one;
-    fac_sym *= (ish == jsh) ? half : one;
-    fac_sym *= (ksh == lsh) ? half : one;
-    fac_sym *= (ish*nbas+jsh == ksh*nbas+lsh) ? half : one;
+
     const DataType4 ri = coords[ish];
     const DataType4 rj = coords[jsh];
     const DataType4 rk = coords[ksh];
