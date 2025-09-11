@@ -33,7 +33,6 @@ void estimate_log_aovalue(
 {
     const int block_id = blockIdx.x;
     const int thread_id = threadIdx.x;
-    const int grid_blocks = ngrids / ng_per_thread;
 
     __shared__ float gridx_shared[ng_per_thread];
     __shared__ float gridy_shared[ng_per_thread];
@@ -45,17 +44,17 @@ void estimate_log_aovalue(
     gridy_shared[thread_id] = (float)grid_coords[ngrids  +grid_id];
     gridz_shared[thread_id] = (float)grid_coords[ngrids*2+grid_id];
     
-    __shared__ float maxval_smem[ng_per_thread];
     __shared__ int nnz;
-    nnz = 0;
+    if (thread_id == 0) nnz = 0;
     __syncthreads();
-
+    
+    // Process each shell assigned to this thread
     for (int ish = thread_id; ish < nbas; ish += ng_per_thread){
         float4 xi = shell_coords[ish];
         float bas_x = xi.x;
         float bas_y = xi.y;
         float bas_z = xi.z;
-        float coeffs_reg[nprim_max], exps_reg[nprim_max];
+        float coeffs_reg[nprim], exps_reg[nprim];
         for (int ip = 0; ip < nprim; ip++){
             const int offset = nprim_max * ish + ip;
             const float2 ce = coeff_exp[offset];
@@ -69,7 +68,7 @@ void estimate_log_aovalue(
             const float ry = gridy_shared[grid_id] - bas_y;
             const float rz = gridz_shared[grid_id] - bas_z;
             const float rr = rx * rx + ry * ry + rz * rz + 1e-38f;
-            float gto_sup = 0.0;
+            float gto_sup = 0.0f;
             
             for (int ip = 0; ip < nprim; ++ip) {
                 const float e = exps_reg[ip] * rr;
@@ -80,10 +79,10 @@ void estimate_log_aovalue(
             gto_sup = fabs(gto_sup);
             float log_gto = 0.0f;
             log_gto += (gto_sup > 1e-16f) ? __logf(gto_sup) : -100.0f;
-            log_gto += (rr > 1e-32f) ? ang * __logf(rr)/2.0f : -100.0f;
+            log_gto += ang * __logf(rr)/2.0f;
             log_gto_maxval = max(log_gto_maxval, log_gto);
         }
-
+        
         //if (ish < nbas){
         //    log_maxval[block_id * nbas + ish] = log_gto_maxval;
         //}

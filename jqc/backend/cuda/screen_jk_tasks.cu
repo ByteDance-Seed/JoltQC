@@ -121,10 +121,11 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
     float dm_kl[TILE*TILE];
     float q_kl[TILE*TILE];
     for (int k = 0; k < TILE; k++){
+        const int ksh = ksh0 + k;
+        const int ksh_base = ksh * nbas;
         for (int l = 0; l < TILE; l++){
             const int lsh = lsh0 + l;
-            const int ksh = ksh0 + k;
-            const int bas_kl = ksh * nbas + lsh;
+            const int bas_kl = ksh_base + lsh;
             const int kl = k * TILE + l;
             dm_kl[kl] = dm_cond[bas_kl];
             q_kl[kl] = q_cond[bas_kl];
@@ -145,10 +146,12 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
                 const float q_ij = q_cond[bas_ij];
                 const float d_ij = dm_cond[bas_ij];
                 float dm_il[TILE], dm_jl[TILE];
+                const int ish_base_l = ish * nbas;
+                const int jsh_base_l = jsh * nbas;
                 for (int l = 0; l < TILE; l++){
                     const int lsh = lsh0 + l;
-                    dm_il[l] = dm_cond[ish*nbas + lsh];
-                    dm_jl[l] = dm_cond[jsh*nbas + lsh];
+                    dm_il[l] = dm_cond[ish_base_l + lsh];
+                    dm_jl[l] = dm_cond[jsh_base_l + lsh];
                 }
 
                 for (int k = 0; k < TILE; ++k){
@@ -158,12 +161,11 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
                     
                     for (int l = 0; l < TILE; ++l){
                         const int lsh = lsh0 + l;
-                        bool mask = (jsh >= ish+1);
-                        mask |= (ksh >= ish+1);
-                        mask |= (lsh >= ksh+1);
+                        if (jsh >= ish+1) continue;
+                        if (ksh >= ish+1) continue;
+                        if (lsh >= ksh+1) continue;
                         const int bas_kl = ksh * nbas + lsh;
-                        mask |= (bas_ij < bas_kl);
-                        if (mask) continue;
+                        if (bas_ij < bas_kl) continue;
                         
                         const float q_ijkl = q_ij + q_kl[k * TILE + l];
                         float d_large = -36.8f;
@@ -183,17 +185,17 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
                         }
                         
                         const float dq = q_ijkl + d_large;
-                        const bool sel_fp32 = (dq > cutoff) && (dq <= cutoff_fp64);
+                        if (dq <= cutoff) continue;
                         const bool sel_fp64 = (dq > cutoff_fp64);
+                        const bool sel_fp32 = !sel_fp64;
                         
-                        // Optimized bit operations using fast arithmetic
-                        const uint64_t idx = ((i * TILE + j) * TILE + k) * TILE + l;  // Horner's method
-                        const uint64_t word = idx >> 6;  // Fast division by 64
-                        const uint64_t bit = idx & 63;   // Fast modulo 64
+                        const uint64_t idx = ((i * TILE + j) * TILE + k) * TILE + l;
+                        const uint64_t word = idx >> 6;
+                        const uint64_t bit = idx & 63;
                         const uint64_t bitmask = 1ull << bit;
                         
-                        if (sel_fp32) mask_bits_fp32[word] |= bitmask;
-                        if (sel_fp64) mask_bits_fp64[word] |= bitmask;
+                        mask_bits_fp32[word] |= bitmask & (-sel_fp32);
+                        mask_bits_fp64[word] |= bitmask & (-sel_fp64);
                         count_fp32 += sel_fp32;
                         count_fp64 += sel_fp64;
                     }
@@ -205,28 +207,24 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
     int offset_fp64 = global_offset(batch_head+2, -count_fp64) - 1;
 
     if (active){
-        // Optimized output generation with reduced branching
 #pragma unroll
         for (int i = 0; i < TILE; i++){
             for (int j = 0; j < TILE; j++){
                 for (int k = 0; k < TILE; k++){
                     for (int l = 0; l < TILE; l++){
-                        const uint64_t idx = ((i * TILE + j) * TILE + k) * TILE + l;  // Horner's method
-                        const uint64_t word = idx >> 6; // Fast division by 64
-                        const uint64_t bit = idx & 63;  // Fast modulo 64
+                        const uint64_t idx = ((i * TILE + j) * TILE + k) * TILE + l;
+                        const uint64_t word = idx >> 6;
+                        const uint64_t bit = idx & 63;
                         
-                        // Check both selections once with optimized bit testing
                         const bool sel_fp32 = (mask_bits_fp32[word] >> bit) & 1ull;
                         const bool sel_fp64 = (mask_bits_fp64[word] >> bit) & 1ull;
                         
-                        // Prepare quartet data once
                         ushort4 sq;
                         sq.x = ish0 + i; 
                         sq.y = jsh0 + j; 
                         sq.z = ksh0 + k; 
                         sq.w = lsh0 + l;
                         
-                        // Use predication to reduce branch divergence
                         if (sel_fp32) {
                             shl_quartet_idx[offset_fp32] = sq;
                             ++offset_fp32;
