@@ -25,44 +25,52 @@ typedef unsigned long long uint64_t;
 __forceinline__ __device__
 int global_offset(int* batch_head, int val){
     // Calculate the cumulative sum of the count array
+    constexpr int warp_size = 32;
+    constexpr int num_warps = (threads + warp_size - 1) / warp_size;
+
     const int tid = threadIdx.y * blockDim.x + threadIdx.x;
-    const int lane  = tid & 31;    
-    const int warp  = tid >> 5;
-    for (int ofs = 1; ofs < 32; ofs <<= 1) {
-        int n = __shfl_up_sync(0xffffffff, val, ofs);
-        if (lane >= ofs) val += n;                       
+    const int lane  = tid & (warp_size - 1);    
+    const int warp  = tid / warp_size;
+    unsigned mask = __activemask();
+    for (int ofs = 1; ofs < warp_size; ofs <<= 1) {
+        int n = __shfl_up_sync(mask, val, ofs);
+        if (lane >= ofs) val += n;                
     }
 
-    __shared__ int warp_tot[threads / 32];  
-    if (lane == 31) warp_tot[warp] = val;  
+    __shared__ int warp_tot[num_warps];  
+    int inclusive = val;
+    if (lane == warp_size - 1) warp_tot[warp] = val;  
     __syncthreads(); 
 
     if (warp == 0) {
         int warp_val = warp_tot[lane];
 #pragma unroll
-        for (int ofs = 1; ofs < 32; ofs <<= 1) {
+        for (int ofs = 1; ofs < warp_size; ofs <<= 1) {
             int n = __shfl_up_sync(0xffffffff, warp_val, ofs);
             if (lane >= ofs) warp_val += n;
         }
         warp_tot[lane] = warp_val;
     }
     __syncthreads();
-    __shared__ int cum_count[threads];
-    int warp_offset = (warp == 0) ? 0 : warp_tot[warp-1];
-    cum_count[tid] = val + warp_offset;
+
+    // Block-exclusive prefix for this thread
+    const int warp_offset      = (warp == 0) ? 0 : warp_tot[warp - 1];
+    const int inclusive_block  = warp_offset + inclusive;
+    const int exclusive_block  = inclusive_block - val;
+
+    // Get block total from the last thread's inclusive scan
+    __shared__ int block_total;
+    if (tid == threads - 1) block_total = inclusive_block;
     __syncthreads();
 
-    const int ntasks = cum_count[threads-1];
-    if (ntasks == 0) return 0; 
-    
-    // Calculate the global offset
-    __shared__ int glob_offset;
-    if (tid == 0){
-        glob_offset = atomicAdd(batch_head, ntasks);
-    }
+    if (block_total == 0) return 0;
+
+    // Single atomic to reserve a global range
+    __shared__ int base;
+    if (tid == 0) base = atomicAdd(batch_head, block_total);
     __syncthreads();
-    
-    return (tid > 0) ? cum_count[tid-1] + glob_offset : glob_offset;
+
+    return base + exclusive_block;
 }
 
 

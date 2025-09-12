@@ -31,7 +31,6 @@ from jqc.backend.linalg_helper import inplace_add_transpose, max_block_pooling
 from jqc.backend.jk_tasks import gen_screen_jk_tasks_kernel, MAX_PAIR_SIZE, QUEUE_DEPTH
 from jqc.backend.jk import gen_jk_kernel
 from jqc.backend.cart2sph import mol2cart, cart2mol
-from jqc.pyscf.mol import compute_q_matrix, BasisLayout
 from jqc.constants import LMAX, TILE
 
 __all__ = [
@@ -215,7 +214,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         log_cutoff_fp32, log_cutoff_fp64)
                     kern_counts += 1
                     info_cpu = info.get()
-
+                    
                     # Get task counts
                     n_quartets_fp32 = int(info_cpu[1].item())
                     offset = int(info_cpu[2].item())
@@ -227,7 +226,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         n_quartets_fp32 = 0
                         offset = 0
                         n_quartets_fp64 = total_quartets
-
+                    
                     # Launch FP32 and FP64 kernels asynchronously
                     if n_quartets_fp32 > 0:
                         jk_fp32_kernel = gen_jk_kernel(
@@ -250,7 +249,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                             n_quartets_fp64)
                         kern_counts += 1
                         ntasks_fp64 += n_quartets_fp64
-            
+                    
             if logger.verbose > lib.logger.INFO:
                 end.record()
                 end.synchronize()

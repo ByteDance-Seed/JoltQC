@@ -47,7 +47,7 @@ class BasisSetJKTests(unittest.TestCase):
     def test_jk_basis_cc_pvtz(self):
         """Test JK calculations with cc-pVTZ basis"""
         self._test_basis_set('cc-pvtz')
-
+    
     def _test_basis_set(self, basis):
         """Helper method to test a specific basis set"""
         test_molecule = '''

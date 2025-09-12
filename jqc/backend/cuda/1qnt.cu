@@ -189,10 +189,7 @@ void rys_jk(const int nbas,
         const DataType ck = cek.c;
         const DataType cl = cel.c;
         const DataType ckcl = ck * cl * Kcd;
-        // xkl,ykl,zkl depend only on (kp,lp); hoist out of (ip,jp)
-        const DataType xkl = rlrk0 * al_akl + rk.x;
-        const DataType ykl = rlrk1 * al_akl + rk.y;
-        const DataType zkl = rlrk2 * al_akl + rk.z;
+
         for (int ip = 0; ip < npi; ip++)
         for (int jp = 0; jp < npj; jp++){
             const DataType ai = reg_cei[ip].e;
@@ -206,6 +203,9 @@ void rys_jk(const int nbas,
             const DataType xij = rjri0 * aj_aij + ri.x;
             const DataType yij = rjri1 * aj_aij + ri.y;
             const DataType zij = rjri2 * aj_aij + ri.z;
+            const DataType xkl = rlrk0 * al_akl + rk.x;
+            const DataType ykl = rlrk1 * al_akl + rk.y;
+            const DataType zkl = rlrk2 * al_akl + rk.z;
             const DataType Rpq[3] = {xij-xkl, yij-ykl, zij-zkl};
 
             const DataType rr = Rpq[0]*Rpq[0] + Rpq[1]*Rpq[1] + Rpq[2]*Rpq[2];
@@ -224,8 +224,6 @@ void rys_jk(const int nbas,
             DataType g0xyz;
             if (ty == 0) g0xyz = ckcl; 
             if (ty == 1) g0xyz = cicj * inv_aij * inv_akl * sqrt(inv_aijkl);
-            // Rqc depends only on (kp,lp) and axis selection; hoist out of root loop
-            const DataType Rqc = al_akl * rlrk_x;
             
             __syncthreads();
             for (int irys = 0; irys < nroots; irys++){
@@ -280,7 +278,8 @@ void rys_jk(const int nbas,
 
                         const int _ix = ty;
                         DataType *gx = g + _ix * gx_stride;
-
+                        
+                        const DataType Rqc = al_akl * rlrk_x;
                         const DataType cpx = Rqc + rt_akl * Rpq_x;
                         
                         //  trr(0,1) = c0p * trr(0,0)
