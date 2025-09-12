@@ -19,27 +19,6 @@ from jqc.pyscf.rks import build_grids
 from jqc.pyscf.mol import BasisLayout
 from jqc.constants import TILE
 
-def _generate_basis_layouts(mol):
-    """
-    Generate basis layouts for both RKS (alignment=1) and JK (alignment=TILE) operations.
-    
-    Parameters
-    ----------
-    mol : pyscf.gto.Mole
-        Molecular structure
-        
-    Returns
-    -------
-    layout_rks : BasisLayout
-        Basis layout for RKS operations (alignment=1)
-    layout_jk : BasisLayout  
-        Basis layout for JK operations (alignment=TILE) with cached q_matrix
-    """
-    # Both layouts store molecule reference for lazy q_matrix computation
-    layout_rks = BasisLayout.from_sort_group_basis(mol, alignment=1)
-    layout_jk = BasisLayout.from_sort_group_basis(mol, alignment=TILE)
-    return layout_rks, layout_jk
-
 def apply(obj, cutoff_fp32=None, cutoff_fp64=None):
     '''
     Apply JIT kernels to the corresponding PySCF Object.
@@ -80,7 +59,8 @@ def apply(obj, cutoff_fp32=None, cutoff_fp64=None):
     mol = obj.mol
     
     # Generate basis layouts once and reuse them
-    layout_rks, layout_jk = _generate_basis_layouts(mol)
+    layout_rks = BasisLayout.from_sort_group_basis(mol, alignment=1)
+    layout_jk = BasisLayout.from_sort_group_basis(mol, alignment=TILE)
 
     if obj.istype('RKS'):
         get_rho = rks.generate_get_rho(layout_rks, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)

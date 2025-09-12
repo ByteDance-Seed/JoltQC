@@ -25,20 +25,20 @@
 
 extern "C" __global__
 void vv10_kernel(double *Fvec, double *Uvec, double *Wvec,
-    const double *vvcoords, const double *coords,
-    const double *W0p, const double *W0, const double *K,
-    const double *Kp, const double *RpW,
-    const int vvngrids, const int ngrids)
+    const double * __restrict__ vvcoords, const double * __restrict__ coords,
+    const double * __restrict__ W0p, const double * __restrict__ W0, 
+    const double *__restrict__ K, const double *__restrict__ Kp, 
+    const double *__restrict__ RpW, const int vvngrids, const int ngrids)
 {
     // grid id - assume 256-aligned grids (guaranteed by padding)
-    int grid_id = blockIdx.x * blockDim.x + threadIdx.x;
+    const int grid_id = blockIdx.x * blockDim.x + threadIdx.x;
     
     // Load grid data (no bounds check needed due to 256-alignment guarantee)
-    DataType xi = coords[grid_id];
-    DataType yi = coords[ngrids + grid_id];
-    DataType zi = coords[2*ngrids + grid_id];
-    DataType W0i = W0[grid_id];
-    DataType Ki = K[grid_id];
+    const DataType xi = coords[grid_id];
+    const DataType yi = coords[ngrids + grid_id];
+    const DataType zi = coords[2*ngrids + grid_id];
+    const DataType W0i = W0[grid_id];
+    const DataType Ki = K[grid_id];
 
     double F = 0.0;
     double U = 0.0;
@@ -73,21 +73,21 @@ void vv10_kernel(double *Fvec, double *Uvec, double *Wvec,
         // Compute VV10 interaction
 #pragma unroll 16
         for (int l = 0; l < NG_PER_BLOCK; ++l){
-            DataType DX = xj_smem[l] - xi;
-            DataType DY = yj_smem[l] - yi;
-            DataType DZ = zj_smem[l] - zi;
-            DataType R2 = DX*DX + DY*DY + DZ*DZ;
+            const DataType DX = xj_smem[l] - xi;
+            const DataType DY = yj_smem[l] - yi;
+            const DataType DZ = zj_smem[l] - zi;
+            const DataType R2 = DX*DX + DY*DY + DZ*DZ;
 
-            DataType gp = R2 * W0p_smem[l] + Kp_smem[l];
-            DataType g  = R2*W0i + Ki;
-            DataType gt = g + gp;
-            DataType ggt = g*gt;
-            DataType g_gt = g + gt;
+            const DataType gp = R2 * W0p_smem[l] + Kp_smem[l];
+            const DataType g  = R2*W0i + Ki;
+            const DataType gt = g + gp;
+            const DataType ggt = g*gt;
+            const DataType g_gt = g + gt;
             
             // Add safety check for division by zero
-            DataType denominator = gp*ggt*ggt;
+            const DataType denominator = gp*ggt*ggt;
             if (denominator > 1e-20) {
-                DataType T = RpW_smem[l] / denominator;
+                const DataType T = RpW_smem[l] / denominator;
                 F += T * ggt;
                 U += T * g_gt;
                 W += T * R2 * g_gt;

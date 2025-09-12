@@ -234,7 +234,6 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     nbas = basis_layout.nbasis
     group_key, group_offset = basis_layout.group_info
     bas_mapping = basis_layout.bas_id
-    ao_cutoff = 1e-11
     log_ao_cutoff = math.log(ao_cutoff)
 
     log_cutoff_fp32 = np.log(cutoff_fp32).astype(np.float32)
@@ -268,7 +267,7 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         
         xctype = libxc.xc_type(xc_code)
 
-        # Evaluate rho on grids for given density matrix
+        # Evaluate rho on grids for given density matrix (incremental)
         weights = grids.weights
         dm_diff = dm - dm_prev
         rho_diff = rho_fun(mol, grids, xctype, dm_diff)
@@ -431,13 +430,6 @@ def generate_nr_nlc_vxc(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     _cache = {'dm_prev': 0, 'rho_prev': 0, 'wv_prev': 0, 'vmat_prev': 0}
     
     def nr_nlc_vxc(ni, mol, grids, xc_code, dms, relativity=0, hermi=1, max_memory=2000, verbose=None):
-        # Build numint if needed (for compatibility)
-        if hasattr(ni, 'build') and not hasattr(ni, 'gdftopt'):
-            try:
-                ni.build(mol, grids.coords)
-            except:
-                pass  # Ignore build failures, we don't actually need gdftopt
-        
         # Get cached values
         dm_prev = _cache['dm_prev']
         rho_prev = _cache['rho_prev']

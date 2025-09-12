@@ -19,7 +19,8 @@
 // Copyright 2025 PySCF developer.
 // Licensed under the Apache License, Version 2.0.
 
-typedef unsigned long uint64_t;
+// Ensure 64-bit integer width across platforms
+typedef unsigned long long uint64_t;
 
 __forceinline__ __device__
 int global_offset(int* batch_head, int val){
@@ -31,10 +32,6 @@ int global_offset(int* batch_head, int val){
         int n = __shfl_up_sync(0xffffffff, val, ofs);
         if (lane >= ofs) val += n;                       
     }
-    __syncthreads();
-    __shared__ int cum_count[threads];
-    
-    cum_count[tid] = val;
 
     __shared__ int warp_tot[threads / 32];  
     if (lane == 31) warp_tot[warp] = val;  
@@ -49,7 +46,8 @@ int global_offset(int* batch_head, int val){
         }
         warp_tot[lane] = warp_val;
     }
-    __syncthreads();  
+    __syncthreads();
+    __shared__ int cum_count[threads];
     int warp_offset = (warp == 0) ? 0 : warp_tot[warp-1];
     cum_count[tid] = val + warp_offset;
     __syncthreads();
@@ -58,18 +56,13 @@ int global_offset(int* batch_head, int val){
     if (ntasks == 0) return 0; 
     
     // Calculate the global offset
-    int offset = 0;
+    __shared__ int glob_offset;
     if (tid == 0){
-        offset = atomicAdd(batch_head, ntasks);
-        for (int i = 0; i < threads-1; i++){
-            cum_count[i] += offset;
-        }
+        glob_offset = atomicAdd(batch_head, ntasks);
     }
     __syncthreads();
-    if (tid > 0) {
-        offset = cum_count[tid-1];
-    }
-    return offset;
+    
+    return (tid > 0) ? cum_count[tid-1] + glob_offset : glob_offset;
 }
 
 
@@ -112,9 +105,9 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
     const int jsh1 = jsh0 + TILE;
     const int ksh1 = ksh0 + TILE;
     const int lsh1 = lsh0 + TILE;
-    constexpr int TILE4 = TILE*TILE*TILE*TILE*TILE;
-
-    constexpr int mask_size = TILE4 / 64;
+    // Number of (i,j,k,l) combinations is TILE^4; we need ceil(TILE^4/64) words
+    constexpr int N_BITS = TILE*TILE*TILE*TILE;
+    constexpr int mask_size = (N_BITS + 63) / 64;
     uint64_t mask_bits_fp32[mask_size] = {0};
     uint64_t mask_bits_fp64[mask_size] = {0};
 
@@ -203,9 +196,10 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
             }
         }
     }
+
     int offset_fp32 = global_offset(batch_head+1, count_fp32);
     int offset_fp64 = global_offset(batch_head+2, -count_fp64) - 1;
-
+    
     if (active){
 #pragma unroll
         for (int i = 0; i < TILE; i++){
