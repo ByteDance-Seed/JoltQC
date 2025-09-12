@@ -220,24 +220,6 @@ def cart2cart(dm_src, angs, src_offset, dst_offset, nao, out=None):
     dm_dst[np.ix_(idx, dst_idx, dst_idx)] = dm_src[np.ix_(idx, src_idx, src_idx)]
     return dm_dst
 
-def _contration_indices(bas_map):
-    """Compute the contraction index (0..nctr-1) for each entry in bas_map.
-
-    bas_map lists original shell ids for each contracted basis entry. For shells
-    with multiple contractions (nctr>1), the same shell id appears multiple times.
-    This helper returns, for each position, the occurrence count of that shell id
-    so far, which serves as the contraction index within the shell.
-    """
-    import numpy as _np
-    ctr = _np.empty(len(bas_map), dtype=_np.int32)
-    seen = {}
-    for i, s in enumerate(bas_map):
-        c = seen.get(int(s), 0)
-        ctr[i] = c
-        seen[int(s)] = c + 1
-    return ctr
-
-
 def mol2cart(mat, angs, ao_loc, bas_map, mol):
     """
     Transform the matrix from the original basis to the cartesian basis.
