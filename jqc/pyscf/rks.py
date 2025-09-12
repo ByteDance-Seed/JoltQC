@@ -32,7 +32,7 @@ from pyscf.dft.gen_grid import GROUP_BOUNDARY_PENALTY
 from jqc.backend.linalg_helper import max_block_pooling, inplace_add_transpose
 from jqc.pyscf.mol import BasisLayout
 from jqc.backend.rks import gen_rho_kernel, gen_vxc_kernel, estimate_log_aovalue, vv10nlc
-from jqc.backend.cart2sph import mol2cart, cart2mol
+# cart2mol and mol2cart are now methods of BasisLayout class
 from jqc.constants import LMAX
 
 __all__ = ['build_grids', 'generate_rks_kernel']
@@ -225,6 +225,7 @@ def generate_get_rho(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
 def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     mol = basis_layout._mol
+    decontracted_mol = basis_layout.decontracted_mol
     ce_fp64, coords_fp64, angs, nprims = basis_layout.bas_info
     ce_fp32 = basis_layout.ce_fp32
     coords_fp32 = basis_layout.coords_fp32
@@ -300,7 +301,8 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     def rho_fun(mol, grids, xctype, dm):
         ngrids = grids.coords.shape[0]
         grid_coords = cp.asarray(grids.coords.T, dtype=np.float64, order='C')
-        dm = mol2cart(dm, angs, ao_loc, bas_mapping, mol)
+        # Transform density matrix from molecular to cartesian basis
+        dm = basis_layout.mol2cart(dm)
         dm_cond = max_block_pooling(dm, ao_loc)
         dm_cond = cp.asarray(dm_cond, dtype=np.float32)
         # Cast after log; CuPy's log does not accept dtype kwarg
@@ -417,7 +419,8 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         log_cutoff_fp32, log_cutoff_fp64, ngrids
                     )
 
-        vxc = cart2mol(vxc, angs, ao_loc, bas_mapping, mol)
+        # Transform exchange-correlation matrix back to molecular basis
+        vxc = basis_layout.cart2mol(vxc)
         vxc = inplace_add_transpose(vxc)
         return vxc[0]
     return rks_fun, rho_fun, vxc_fun

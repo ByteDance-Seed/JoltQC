@@ -30,7 +30,7 @@ from pyscf import lib
 from jqc.backend.linalg_helper import inplace_add_transpose, max_block_pooling
 from jqc.backend.jk_tasks import gen_screen_jk_tasks_kernel, MAX_PAIR_SIZE, QUEUE_DEPTH
 from jqc.backend.jk import gen_jk_kernel
-from jqc.backend.cart2sph import mol2cart, cart2mol
+# cart2mol and mol2cart are now methods of BasisLayout class
 from jqc.constants import LMAX, TILE
 
 __all__ = [
@@ -77,7 +77,7 @@ def generate_get_veff():
     return get_veff
 
 def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    bas_cache, bas_mapping, padding_mask, group_info = basis_layout.bas_info, basis_layout.bas_id, basis_layout.pad_id, basis_layout.group_info
+    bas_cache, group_info = basis_layout.bas_info, basis_layout.group_info
     
     # Use lazy q_matrix property - computed only when accessed
     q_matrix = basis_layout.q_matrix
@@ -88,7 +88,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     log_cutoff_fp64 = np.float32(math.log(cutoff_fp64))
     log_cutoff_fp32 = np.float32(math.log(cutoff_fp32))
 
-    ce_fp64, coords_fp64, angs, _ = bas_cache
+    ce_fp64, coords_fp64, _, _ = bas_cache
     ce_fp32 = basis_layout.ce_fp32
     coords_fp32 = basis_layout.coords_fp32
 
@@ -101,10 +101,6 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     n_groups = np.count_nonzero(uniq_l <= LMAX)
 
     info = cp.empty(4, dtype=np.uint32)
-    # Optional override: force all screened quartets to FP64 for stability.
-    # Enable by setting environment variable JQC_FORCE_FP64=1
-    import os as _os
-    _force_fp64 = _os.environ.get("JQC_FORCE_FP64", "0") not in (None, "", "0", "false", "False")
     cutoff = np.log(PAIR_CUTOFF) #- log_max_dm / 2
     tile_pairs = make_tile_pairs(group_offset, q_matrix, cutoff)
     
@@ -147,7 +143,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         dms = dm.reshape(-1,nao_orig,nao_orig)
 
         # Convert the density matrix to cartesian basis
-        dms = mol2cart(dms, angs, ao_loc, bas_mapping, mol)
+        dms = basis_layout.mol2cart(dms)
         dms = dms.reshape(-1, nao, nao)
         dm_cond = max_block_pooling(dms, ao_loc).astype(np.float32)
         dms = cp.asarray(dms, dtype=np.float64) # transfer to current device
@@ -219,13 +215,6 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                     n_quartets_fp32 = int(info_cpu[1].item())
                     offset = int(info_cpu[2].item())
                     n_quartets_fp64 = QUEUE_DEPTH - offset
-                    if _force_fp64:
-                        # Treat all screened quartets as FP64 work
-                        # Combine both FP32 and FP64 queues into a single FP64 launch.
-                        total_quartets = n_quartets_fp32 + n_quartets_fp64
-                        n_quartets_fp32 = 0
-                        offset = 0
-                        n_quartets_fp64 = total_quartets
                     
                     # Launch FP32 and FP64 kernels asynchronously
                     if n_quartets_fp32 > 0:
@@ -264,10 +253,8 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 logger.debug1(msg)
                 timing_counter[llll] += elasped_time
         
-        # Remove the padding basis
-        ao_loc0 = ao_loc[:-1][~padding_mask]
-        angs0 = angs[~padding_mask]
-        bmap = bas_mapping[~padding_mask]
+        # Transform results back to molecular basis using BasisLayout methods
+        # The remove_padding=True parameter filters out padded basis functions
         
         if with_j:
             if hermi == 1:
@@ -276,7 +263,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 vj, vjT = vj[:n_dm//2], vj[n_dm//2:]
                 vj += vjT.transpose(0,2,1)
             vj = inplace_add_transpose(vj)
-            vj = cart2mol(vj, angs0, ao_loc0, bmap, mol)
+            vj = basis_layout.cart2mol(vj, remove_padding=True)
             vj = vj.reshape(dm.shape)
 
         if with_k:
@@ -285,7 +272,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             else:
                 vk, vkT = vk[:n_dm//2], vk[n_dm//2:]
                 vk += vkT.transpose(0,2,1)
-            vk = cart2mol(vk, angs0, ao_loc0, bmap, mol)
+            vk = basis_layout.cart2mol(vk, remove_padding=True)
             vk = vk.reshape(dm.shape)
         
         if logger.verbose >= lib.logger.DEBUG:

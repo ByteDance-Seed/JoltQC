@@ -23,7 +23,7 @@ from pyscf import gto, lib
 from pyscf.scf import _vhf
 from jqc.constants import NPRIM_MAX
 
-__all__ = ['format_bas_cache', 'sort_group_basis', 'compute_q_matrix']
+__all__ = ['format_bas_cache', 'sort_group_basis', 'decontract_mol', 'compute_q_matrix']
 PTR_BAS_COORD = 7
 
 ArrayLike = np.ndarray
@@ -46,8 +46,9 @@ class BasisLayout:
     # dtype bookkeeping (optional but handy)
     dtype: np.dtype
 
-    # molecule reference for lazy q_matrix computation
-    _mol: Optional[object] = None  # pyscf.gto.Mole reference
+    # molecule references
+    _mol: Optional[object] = None  # original pyscf.gto.Mole reference
+    _decontracted_mol: Optional[object] = None  # decontracted pyscf.gto.Mole reference
     
     # cached q_matrix (computed lazily)
     _q_matrix_cache: Optional[ArrayLike] = None
@@ -86,15 +87,30 @@ class BasisLayout:
         return cp.concatenate((cp.array([0]), cp.asarray(np.cumsum(dims)))).astype(np.int32)
 
     @property
+    def decontracted_mol(self) -> object:
+        """
+        Access to the stored decontracted molecule.
+        
+        Returns:
+            pyscf.gto.Mole: The decontracted molecule used for basis layout computations
+        """
+        if self._decontracted_mol is None:
+            raise ValueError("decontracted_mol is not available")
+        return self._decontracted_mol
+
+    @property
     def q_matrix(self) -> ArrayLike:
         """
         Lazy evaluation property for q_matrix.
         Computes and caches the fully processed q_matrix only when accessed.
+        Uses the stored decontracted molecule to ensure dimensions match the decontracted basis functions.
         """
         if self._q_matrix_cache is None:
-            import cupy as cp
-            # Compute raw q_matrix
-            q_matrix_raw = compute_q_matrix(self._mol)
+            # Use stored decontracted molecule for q_matrix computation
+            if self._decontracted_mol is None:
+                raise ValueError("q_matrix requires _decontracted_mol reference to be set")
+            # Compute raw q_matrix using decontracted molecule
+            q_matrix_raw = compute_q_matrix(self._decontracted_mol)
             # Apply basis mapping to reorder according to sorted basis
             q_matrix_mapped = q_matrix_raw[self.bas_id[:,None], self.bas_id]
             # Set Q matrix for padded basis to -100 (screening value)
@@ -126,23 +142,27 @@ class BasisLayout:
     @classmethod
     def from_sort_group_basis(cls, mol, alignment: int = 4, dtype=np.float64) -> "BasisLayout":
         """
-        Calls your `sort_group_basis(mol, alignment, dtype)` and wraps the result.
-        Expects that function to already move `ce` and `coords` to CuPy (as in your code).
+        Creates a BasisLayout from a molecule using decontracted basis functions.
+        First creates a decontracted mol, then calls sort_group_basis on it.
         
         Parameters
         ----------
         mol : pyscf.gto.Mole
-            Molecular structure
+            Molecular structure (will be decontracted internally)
         alignment : int
             Basis alignment for memory optimization
         dtype : numpy.dtype
             Data type for basis functions
         """
-        bas_info, bas_id, pad_id, group_info = sort_group_basis(mol, alignment=alignment, dtype=dtype)
+        # First create decontracted molecule
+        decontracted_mol = decontract_mol(mol)
+        
+        # Then call sort_group_basis on the decontracted molecule
+        bas_info, bas_id, pad_id, group_info = sort_group_basis(decontracted_mol, alignment=alignment, dtype=dtype)
         ce, coords, angs, nprims = bas_info
         group_key, group_offset = group_info
         
-        # Always store molecule reference for lazy q_matrix computation
+        # Store both original and decontracted molecule references
         
         # Normalize dtypes
         return cls(
@@ -155,8 +175,77 @@ class BasisLayout:
             group_key=np.asarray(group_key, dtype=np.int32),
             group_offset=np.asarray(group_offset),
             _mol=mol,
+            _decontracted_mol=decontracted_mol,  # Store decontracted mol for q_matrix
             dtype=np.dtype(dtype),
         )
+
+    def mol2cart(self, mat, remove_padding=False):
+        """
+        Transform the matrix from the molecular basis to the cartesian basis.
+        Uses the decontracted molecule and BasisLayout information.
+        
+        Args:
+            mat: Matrix to transform
+            remove_padding: Whether to filter out padding basis functions
+            
+        Returns:
+            Transformed matrix in cartesian basis
+        """
+        # Import here to avoid circular imports
+        from jqc.backend.cart2sph import cart2cart, sph2cart
+        
+        if remove_padding:
+            # Filter out padding basis functions
+            ao_loc = self.ao_loc[:-1][~self.pad_id]
+            angs = self.angs[~self.pad_id]
+            bas_map = self.bas_id[~self.pad_id]
+        else:
+            ao_loc = self.ao_loc
+            angs = self.angs
+            bas_map = self.bas_id
+            
+        nao = ao_loc[-1].item()
+        mol_ao_loc = self.decontracted_mol.ao_loc[bas_map]
+        
+        if self.decontracted_mol.cart:
+            mat_cart = cart2cart(mat, angs, mol_ao_loc, ao_loc, nao)
+        else:
+            mat_cart = sph2cart(mat, angs, mol_ao_loc, ao_loc, nao)
+        return mat_cart
+
+    def cart2mol(self, mat, remove_padding=False):
+        """
+        Transform the matrix from the cartesian basis to the molecular basis.
+        Uses the decontracted molecule and BasisLayout information.
+        
+        Args:
+            mat: Matrix to transform
+            remove_padding: Whether to filter out padding basis functions
+            
+        Returns:
+            Transformed matrix in molecular basis
+        """
+        # Import here to avoid circular imports
+        from jqc.backend.cart2sph import cart2cart, cart2sph
+        
+        if remove_padding:
+            # Filter out padding basis functions
+            ao_loc = self.ao_loc[:-1][~self.pad_id]
+            angs = self.angs[~self.pad_id]
+            bas_map = self.bas_id[~self.pad_id]
+        else:
+            ao_loc = self.ao_loc
+            angs = self.angs
+            bas_map = self.bas_id
+            
+        nao = self.decontracted_mol.nao
+        mol_ao_loc = self.decontracted_mol.ao_loc[bas_map]
+        
+        if self.decontracted_mol.cart:
+            mat_mol = cart2cart(mat, angs, ao_loc, mol_ao_loc, nao)
+        else:
+            mat_mol = cart2sph(mat, angs, ao_loc, mol_ao_loc, nao)
+        return mat_mol
 
 
 def format_bas_cache(sorted_mol, dtype=np.float64):
@@ -233,9 +322,16 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         basis_mask := padding mask for basis_info
         group_info := (group_key, group_offset)
     """
+    from pyscf import gto
+    
     _bas = mol._bas
     _env = mol._env
     _atm = mol._atm
+    
+    # Assert that all basis functions are decontracted (nctr = 1)
+    for i in range(mol._bas.shape[0]):
+        nctr = _bas[i, gto.NCTR_OF]
+        assert nctr == 1, f"Basis function {i} has nctr={nctr}, expected nctr=1. mol must be decontracted."
 
     # Pre-calculate sizes to avoid intermediate copies
     nbas = _bas.shape[0]
@@ -245,10 +341,10 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     # First pass: count basis functions by pattern and collect data
     for i in range(nbas):
         nprim = _bas[i, gto.NPRIM_OF]
-        nctr = _bas[i, gto.NCTR_OF]
+        nctr = _bas[i, gto.NCTR_OF]  # Always 1 for decontracted molecules
         ang = _bas[i, gto.ANG_OF]
         pattern = (ang, nprim)
-        pattern_counts[pattern] += nctr
+        pattern_counts[pattern] += 1  # nctr is always 1
         
         iatm = _bas[i, gto.ATOM_OF]
         coord_ptr = _atm[iatm, gto.PTR_COORD]
@@ -260,7 +356,6 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
             'exp_ptr': exp_ptr,
             'coeff_ptr': coeff_ptr,
             'nprim': nprim,
-            'nctr': nctr,
             'ang': ang,
             'bas_id': i
         })
@@ -288,13 +383,11 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
             exp_ptr = data['exp_ptr']
             coeff_ptr = data['coeff_ptr']
             nprim = data['nprim']
-            nctr = data['nctr']
             ang = data['ang']
             bas_id = data['bas_id']
             
-            # Get coefficients and exponents
-            coeffs = _env[coeff_ptr:coeff_ptr+nprim*nctr]
-            # Exponents are shared across contractions: length is nprim only
+            # Get coefficients and exponents (nctr=1, so length is nprim)
+            coeffs = _env[coeff_ptr:coeff_ptr+nprim]
             exps = _env[exp_ptr:exp_ptr+nprim]
             
             # Apply normalization factor
@@ -306,16 +399,13 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
             coord = np.zeros(4, dtype=np.float64)
             coord[:3] = _env[coord_ptr:coord_ptr+3]
             
-            # Fill arrays directly
-            for j in range(nctr):
-                coords_by_pattern[pattern][idx] = coord
-                ce_start = j * nprim
-                ce_end = (j + 1) * nprim
-                ce_by_pattern[pattern][idx, 0:2*nprim:2] = coeffs[ce_start:ce_end]
-                ce_by_pattern[pattern][idx, 1:2*nprim:2] = exps[:nprim]
-                bas_id_by_pattern[pattern][idx] = bas_id
-                pad_id_by_pattern[pattern][idx] = False
-                idx += 1
+            # Fill arrays directly (no loop needed since nctr=1)
+            coords_by_pattern[pattern][idx] = coord
+            ce_by_pattern[pattern][idx, 0:2*nprim:2] = coeffs
+            ce_by_pattern[pattern][idx, 1:2*nprim:2] = exps
+            bas_id_by_pattern[pattern][idx] = bas_id
+            pad_id_by_pattern[pattern][idx] = False
+            idx += 1
         
         # Fill padding with first element to avoid additional memory allocation
         if idx < padded_count:
@@ -388,6 +478,89 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     group_key = np.asarray(group_key)
     group_offset = np.asarray(group_offset)
     return bas_info, bas_id, pad_id, (group_key, group_offset)
+
+def decontract_mol(mol):
+    """
+    Create a new PySCF molecule with decontracted basis functions.
+    
+    For basis functions with nctr = 1, keeps the basis as-is.
+    For basis functions with nctr > 1, creates nctr separate basis functions,
+    each with a single contraction coefficient, all assigned to the same atom.
+    
+    Args:
+        mol (pyscf.gto.Mole): The original PySCF molecule
+        
+    Returns:
+        pyscf.gto.Mole: New molecule with decontracted basis functions
+    """
+    from pyscf import gto
+    
+    # Create new molecule with same atoms and general settings
+    new_mol = gto.Mole()
+    new_mol.atom = mol.atom
+    new_mol.charge = mol.charge
+    new_mol.spin = mol.spin
+    new_mol.unit = mol.unit
+    new_mol.cart = mol.cart
+    new_mol.verbose = mol.verbose
+    
+    # Process basis functions to create decontracted versions
+    _bas = mol._bas
+    _env = mol._env
+    _atm = mol._atm
+    
+    new_bas_list = []
+    new_env_list = list(_env)  # Start with existing environment
+    
+    for i in range(mol.nbas):
+        nprim = _bas[i, gto.NPRIM_OF]
+        nctr = _bas[i, gto.NCTR_OF]
+        ang = _bas[i, gto.ANG_OF]
+        iatm = _bas[i, gto.ATOM_OF]
+        
+        exp_ptr = _bas[i, gto.PTR_EXP]
+        coeff_ptr = _bas[i, gto.PTR_COEFF]
+        
+        # Get exponents and coefficients
+        coeffs = _env[coeff_ptr:coeff_ptr+nprim*nctr]
+        
+        if nctr == 1:
+            # For nctr = 1, keep the basis as-is
+            new_bas_entry = _bas[i].copy()
+            new_bas_list.append(new_bas_entry.tolist())
+        else:
+            # For nctr > 1, create nctr separate basis functions
+            # Each assigned to the same atom
+            for j in range(nctr):
+                # Extract coefficients for this contraction
+                coeff_start = j * nprim
+                coeff_end = (j + 1) * nprim
+                single_coeffs = coeffs[coeff_start:coeff_end]
+                
+                # Add single contraction coefficients to environment
+                coeff_ptr_new = len(new_env_list)
+                new_env_list.extend(single_coeffs)
+                
+                # Create new basis entry with nctr = 1 for the same atom
+                new_bas_entry = [
+                    iatm,              # ATOM_OF (same atom as original)
+                    ang,               # ANG_OF  
+                    nprim,             # NPRIM_OF
+                    1,                 # NCTR_OF (always 1 for decontracted)
+                    0,                 # KAPPA (unused)
+                    exp_ptr,           # PTR_EXP (reuse original)
+                    coeff_ptr_new,     # PTR_COEFF (separate for each)
+                    _bas[i, 7]         # PTR_BAS_COORD (same as original)
+                ]
+                new_bas_list.append(new_bas_entry)
+    
+    # Set new basis and environment (atoms remain the same)
+    new_mol._atm = _atm.copy()
+    new_mol._bas = np.array(new_bas_list, dtype=np.int32)
+    new_mol._env = np.array(new_env_list)
+    
+    # Do not call build() - return the unbuilt molecule
+    return new_mol
 
 def compute_q_matrix(mol):
     """ 
