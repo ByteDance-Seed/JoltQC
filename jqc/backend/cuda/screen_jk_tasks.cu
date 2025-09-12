@@ -26,30 +26,29 @@ __forceinline__ __device__
 int global_offset(int* batch_head, int val){
     // Calculate the cumulative sum of the count array
     constexpr int warp_size = 32;
-    constexpr int num_warps = (threads + warp_size - 1) / warp_size;
+    constexpr int num_warps = threads / warp_size;
 
     const int tid = threadIdx.y * blockDim.x + threadIdx.x;
     const int lane  = tid & (warp_size - 1);    
     const int warp  = tid / warp_size;
-    unsigned mask = __activemask();
+    int inclusive = val;
     for (int ofs = 1; ofs < warp_size; ofs <<= 1) {
-        int n = __shfl_up_sync(mask, val, ofs);
-        if (lane >= ofs) val += n;                
+        int n = __shfl_up_sync(0xffffffff, inclusive, ofs);
+        if (lane >= ofs) inclusive += n;                
     }
 
     __shared__ int warp_tot[num_warps];  
-    int inclusive = val;
-    if (lane == warp_size - 1) warp_tot[warp] = val;  
+    if (lane == warp_size - 1) warp_tot[warp] = inclusive;  
     __syncthreads(); 
 
     if (warp == 0) {
-        int warp_val = warp_tot[lane];
+        int wval = (lane < num_warps) ? warp_tot[lane] : 0;
 #pragma unroll
         for (int ofs = 1; ofs < warp_size; ofs <<= 1) {
-            int n = __shfl_up_sync(0xffffffff, warp_val, ofs);
-            if (lane >= ofs) warp_val += n;
+            int n = __shfl_up_sync(0xffffffff, wval, ofs);
+            if (lane >= ofs) wval += n;
         }
-        warp_tot[lane] = warp_val;
+        if (lane < num_warps) warp_tot[lane] = wval;
     }
     __syncthreads();
 
@@ -58,10 +57,8 @@ int global_offset(int* batch_head, int val){
     const int inclusive_block  = warp_offset + inclusive;
     const int exclusive_block  = inclusive_block - val;
 
-    // Get block total from the last thread's inclusive scan
-    __shared__ int block_total;
-    if (tid == threads - 1) block_total = inclusive_block;
-    __syncthreads();
+    // --- block total is the last warp's inclusive sum
+    const int block_total = warp_tot[num_warps - 1];
 
     if (block_total == 0) return 0;
 

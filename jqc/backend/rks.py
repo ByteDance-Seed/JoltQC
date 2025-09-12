@@ -308,7 +308,6 @@ def _ensure_256_alignment(data_arrays, alignment=256):
     int
         Original length before padding
     """
-    import cupy as cp
     
     # Determine original length from first array
     first_arr = data_arrays[0]
