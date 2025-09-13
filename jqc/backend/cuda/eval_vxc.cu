@@ -157,9 +157,11 @@ void eval_vxc(
         //     cej_2e += ce * e;
         // }
         // Optimized version - early continue to avoid exp() calls:
+        const int jprim_base = nprim_max * jsh;
+        #pragma unroll
         for (int jp = 0; jp < npj; jp++){
-            const int offset = nprim_max * jsh + jp;
-            const DataType2 coeff_expj = coeff_exp[offset];
+            const int jp_off = jprim_base + jp;
+            const DataType2 coeff_expj = coeff_exp[jp_off];
             const DataType e = coeff_expj.e;
             const DataType e_rr = e * rr_gj;
             if (e_rr >= exp_cutoff) continue;
@@ -278,9 +280,11 @@ void eval_vxc(
             //     cei_2e += ce * e;
             // }
             // Optimized version - early continue to avoid exp() calls:
+            const int iprim_base = ish * nprim_max;
+            #pragma unroll
             for (int ip = 0; ip < npi; ip++){
-                const int ip_offset = ip + ish*nprim_max;
-                const DataType2 coeff_expi = coeff_exp[ip_offset];
+                const int ip_off = iprim_base + ip;
+                const DataType2 coeff_expi = coeff_exp[ip_off];
                 const DataType e = coeff_expi.e;
                 const DataType e_rr = e * rr_gi;
                 if (e_rr >= exp_cutoff) continue;

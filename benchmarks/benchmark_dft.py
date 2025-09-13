@@ -25,8 +25,8 @@ atom = 'molecules/0031-irregular-nitrogenous.xyz'
 #atom = 'molecules/0051-elongated-halogenated.xyz'
 #atom = 'molecules/0084-elongated-halogenated.xyz'
 basis = 'def2-tzvpp'
-#xc = 'wb97m-v'
-xc = 'b3lyp'
+xc = 'wb97m-v'
+#xc = 'b3lyp'
 count = 1
 grids = (99,590)
 
@@ -41,6 +41,7 @@ verbose = 4
 mol = pyscf.M(atom=atom, basis=basis, output=f'gpu4pyscf-{basis}.log', verbose=verbose)
 mf = dft.RKS(mol, xc=xc)
 mf.grids.atom_grid = grids
+mf.nlcgrids.atom_grid = (50, 194)
 e_pyscf = mf.kernel()
 dm_pyscf = mf.make_rdm1().get()
 start = cp.cuda.Event()
@@ -50,6 +51,7 @@ for i in range(count):
     mf = dft.RKS(mol, xc=xc)
     mf.verbose = verbose
     mf.grids.atom_grid = grids
+    mf.nlcgrids.atom_grid = (50, 194)
     e_tot = mf.kernel()
 end.record()
 end.synchronize()
@@ -68,6 +70,7 @@ mol = pyscf.M(atom=atom, basis=basis, output=f'jqc-{basis}-fp64.log', verbose=ve
 mf = dft.RKS(mol, xc=xc)
 mf_jit = jqc.pyscf.apply(mf)
 mf_jit.grids.atom_grid = grids
+mf_jit.nlcgrids.atom_grid = (50, 194)
 mf_jit.verbose = verbose
 e_tot = mf_jit.kernel()
 dm_fp64 = mf_jit.make_rdm1().get()
@@ -92,6 +95,7 @@ for i in range(count):
     mf_jit = jqc.pyscf.apply(mf)
     mf_jit.verbose = verbose
     mf_jit.grids.atom_grid = grids
+    mf_jit.nlcgrids.atom_grid = (50, 194)
     e_fp64 = mf_jit.kernel()
 end.record()
 end.synchronize()
@@ -108,6 +112,7 @@ mf = dft.RKS(mol, xc=xc)
 mf_jit = jqc.pyscf.apply(mf, cutoff_fp32=1e-13, cutoff_fp64=1e100)
 mf_jit.verbose = verbose
 mf_jit.grids.atom_grid = grids
+mf_jit.nlcgrids.atom_grid = (50, 194)
 e_tot = mf_jit.kernel()
 dm_fp32 = mf_jit.make_rdm1().get()
 print(f'Total energy by JQC (warmup), {e_tot}')
@@ -120,6 +125,7 @@ for i in range(count):
     mf_jit = jqc.pyscf.apply(mf, cutoff_fp32=1e-13, cutoff_fp64=1e100)
     mf_jit.verbose = verbose
     mf_jit.grids.atom_grid = grids
+    mf_jit.nlcgrids.atom_grid = (50, 194)
     e_fp32 = mf_jit.kernel()
 end.record()
 end.synchronize()
@@ -145,6 +151,7 @@ print(f"Time for compilation, {elapsed_time_ms/count} ms")
 
 mf_jit.verbose = verbose
 mf_jit.grids.atom_grid = grids
+mf_jit.nlcgrids.atom_grid = (50, 194)
 e_tot = mf_jit.kernel()
 dm_mixed = mf_jit.make_rdm1().get()
 print(f'Total energy by JQC (warmup), {e_tot}')
@@ -157,6 +164,7 @@ for i in range(count):
     mf_jit = jqc.pyscf.apply(mf, cutoff_fp32=1e-13, cutoff_fp64=1e-6)
     mf_jit.verbose = verbose
     mf_jit.grids.atom_grid = grids
+    mf_jit.nlcgrids.atom_grid = (50, 194)
     e_mixed = mf_jit.kernel()
 end.record()
 end.synchronize()

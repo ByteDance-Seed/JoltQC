@@ -33,8 +33,6 @@ device_name = props['name'].decode()
 
 __all__ = ['gen_jk_kernel']
 
-cache_lock = threading.Lock()
-
 # Load fragmentation scheme for 1qnt, support FP32 and FP64 only
 script_dir = os.path.dirname(__file__)
 file_path = os.path.join(script_dir, f'data/optimal_scheme_{device_name}_fp32.json')
@@ -43,7 +41,7 @@ if not Path(file_path).exists():
 
 with open(file_path, 'r') as f:
     frags_fp32 = json.load(f)
-
+ 
 file_path = os.path.join(script_dir, f'data/optimal_scheme_{device_name}_fp64.json')
 if not Path(file_path).exists():
     file_path = os.path.join(script_dir, 'data/optimal_scheme_NVIDIA A100-SXM4-80GB_fp64.json')

@@ -222,10 +222,12 @@ def cart2cart(dm_src, angs, src_offset, dst_offset, nao, out=None):
 
 def mol2cart(mat, angs, ao_loc, bas_map, mol):
     """
-    Transform the matrix from the original basis to the cartesian basis.
+    Transform the matrix from the molecular basis to the cartesian basis.
+    Now uses decontracted molecules with proper ao_loc properties.
     """
     nao = ao_loc[-1].item()
     mol_ao_loc = mol.ao_loc[bas_map]
+    
     if mol.cart:
         mat_cart = cart2cart(mat, angs, mol_ao_loc, ao_loc, nao)
     else:
@@ -234,10 +236,12 @@ def mol2cart(mat, angs, ao_loc, bas_map, mol):
 
 def cart2mol(mat, angs, ao_loc, bas_map, mol):
     """
-    Transform the matrix from the cartesian basis to the original basis.
+    Transform the matrix from the cartesian basis to the molecular basis.
+    Now uses decontracted molecules with proper nao and ao_loc properties.
     """
     nao = mol.nao
     mol_ao_loc = mol.ao_loc[bas_map]
+    
     if mol.cart:
         mat_mol = cart2cart(mat, angs, ao_loc, mol_ao_loc, nao)
     else:

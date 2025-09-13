@@ -91,7 +91,7 @@ static void rys_roots(DataType x, DataType *rw, DataType theta, DataType omega)
         }
         return;
     }
-
+    
     const int it = (int)(x * .4f);
     const DataType u = (x - it * DataType(2.5)) * DataType(0.8) - DataType(1.);
     const DataType u2 = u * two;

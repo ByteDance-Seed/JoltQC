@@ -124,7 +124,6 @@ local memory: {kernel.local_size_bytes:4d} Bytes')
     def fun(*args):
         ntasks = args[-1] # the last argument is ntasks
         blocks = (ntasks + nsq_per_block - 1) // nsq_per_block
-        
         kernel(
             (blocks,), 
             (nsq_per_block, 1), 

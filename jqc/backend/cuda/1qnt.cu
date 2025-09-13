@@ -131,16 +131,14 @@ void rys_jk(const int nbas,
     const DataType4 rk = coords[ksh];
     const DataType4 rl = coords[lsh];
 
-    const DataType rij0 = rj.x - ri.x;
-    const DataType rij1 = rj.y - ri.y;
-    const DataType rij2 = rj.z - ri.z;
-    const DataType rjri[3] = {rij0, rij1, rij2};
-    const DataType rr_ij = rjri[0]*rjri[0] + rjri[1]*rjri[1] + rjri[2]*rjri[2];
-    const DataType rkl0 = rl.x - rk.x;
-    const DataType rkl1 = rl.y - rk.y;
-    const DataType rkl2 = rl.z - rk.z;
-    const DataType rlrk[3] = {rkl0, rkl1, rkl2};
-    const DataType rr_kl = rlrk[0]*rlrk[0] + rlrk[1]*rlrk[1] + rlrk[2]*rlrk[2];
+    const DataType rjri0 = rj.x - ri.x;
+    const DataType rjri1 = rj.y - ri.y;
+    const DataType rjri2 = rj.z - ri.z;
+    const DataType rr_ij = rjri0*rjri0 + rjri1*rjri1 + rjri2*rjri2;
+    const DataType rlrk0 = rl.x - rk.x;
+    const DataType rlrk1 = rl.y - rk.y;
+    const DataType rlrk2 = rl.z - rk.z;
+    const DataType rr_kl = rlrk0*rlrk0 + rlrk1*rlrk1 + rlrk2*rlrk2;
 
     // Cache coefficients and precompute cicj values in shared memory for better performance
     DataType2 reg_cei[npi], reg_cej[npj];
@@ -152,7 +150,7 @@ void rys_jk(const int nbas,
         const int jsh_jp = jp + jsh*nprim_max;
         reg_cej[jp] = coeff_exp[jsh_jp];
     }
-    
+    // Cache per-(ip,jp) terms to avoid repeated expensive exp/div computations
     DataType reg_cicj[npi*npj];
     DataType reg_inv_aij[npi*npj];
 #pragma unroll
@@ -191,6 +189,7 @@ void rys_jk(const int nbas,
         const DataType ck = cek.c;
         const DataType cl = cel.c;
         const DataType ckcl = ck * cl * Kcd;
+
         for (int ip = 0; ip < npi; ip++)
         for (int jp = 0; jp < npj; jp++){
             const DataType ai = reg_cei[ip].e;
@@ -201,21 +200,21 @@ void rys_jk(const int nbas,
             const DataType aj_aij = aj * inv_aij;
             const DataType cicj = reg_cicj[idx];
             
-            const DataType xij = rjri[0] * aj_aij + ri.x;
-            const DataType yij = rjri[1] * aj_aij + ri.y;
-            const DataType zij = rjri[2] * aj_aij + ri.z;
-            const DataType xkl = rlrk[0] * al_akl + rk.x;
-            const DataType ykl = rlrk[1] * al_akl + rk.y;
-            const DataType zkl = rlrk[2] * al_akl + rk.z;
+            const DataType xij = rjri0 * aj_aij + ri.x;
+            const DataType yij = rjri1 * aj_aij + ri.y;
+            const DataType zij = rjri2 * aj_aij + ri.z;
+            const DataType xkl = rlrk0 * al_akl + rk.x;
+            const DataType ykl = rlrk1 * al_akl + rk.y;
+            const DataType zkl = rlrk2 * al_akl + rk.z;
             const DataType Rpq[3] = {xij-xkl, yij-ykl, zij-zkl};
 
             const DataType rr = Rpq[0]*Rpq[0] + Rpq[1]*Rpq[1] + Rpq[2]*Rpq[2];
             const DataType inv_aijkl = one / (aij + akl);
             const DataType theta = aij * akl * inv_aijkl;
             
-            DataType rjri_x = (ty == 0 ? rjri[0] : (ty == 1 ? rjri[1] : rjri[2])); 
-            DataType Rpq_x =  (ty == 0 ? Rpq[0] : (ty == 1 ? Rpq[1] : Rpq[2]));
-            DataType rlrk_x = (ty == 0 ? rlrk[0] : (ty == 1 ? rlrk[1] : rlrk[2]));
+            DataType rjri_x = (ty == 0 ? rjri0 : (ty == 1 ? rjri1 : rjri2)); 
+            DataType Rpq_x =  (ty == 0 ? (xij-xkl) : (ty == 1 ? (yij-ykl) : (zij-zkl)));
+            DataType rlrk_x = (ty == 0 ? rlrk0 : (ty == 1 ? rlrk1 : rlrk2));
 
             DataType *rw = shared_memory + tx;
             DataType *g = shared_memory + nroots * 2 * gx_stride + tx; 
@@ -279,8 +278,8 @@ void rys_jk(const int nbas,
 
                         const int _ix = ty;
                         DataType *gx = g + _ix * gx_stride;
-
-                        const DataType Rqc = al_akl * rlrk_x; 
+                        
+                        const DataType Rqc = al_akl * rlrk_x;
                         const DataType cpx = Rqc + rt_akl * Rpq_x;
                         
                         //  trr(0,1) = c0p * trr(0,0)

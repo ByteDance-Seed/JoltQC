@@ -20,7 +20,9 @@ from types import MethodType
 import cupy as cp
 import jqc.pyscf
 from jqc.pyscf import rks, jk
+from jqc.pyscf.mol import BasisLayout
 from gpu4pyscf import dft
+from jqc.constants import TILE
 
 atom = '''
 O       0.0000000000    -0.0000000000     0.1174000000
@@ -61,8 +63,11 @@ def run_dft(xc, mol, disp=None):
     mf.disp = disp
     mf.grids.level = grids_level
     mf.nlcgrids.level = nlcgrids_level
-    mf.get_jk = jk.generate_jk_kernel(mol)
-    nr_rks = rks.generate_nr_rks(mol)
+    # RKS operations use alignment=1, JK operations use alignment=TILE
+    layout_rks = BasisLayout.from_sort_group_basis(mol, alignment=1)
+    layout_jk = BasisLayout.from_sort_group_basis(mol, alignment=TILE)
+    mf.get_jk = jk.generate_jk_kernel(layout_jk)
+    nr_rks = rks.generate_nr_rks(layout_rks)
     mf._numint.nr_rks = MethodType(nr_rks, mf._numint)
     e_dft = mf.kernel()
     return e_dft

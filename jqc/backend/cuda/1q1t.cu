@@ -110,20 +110,25 @@ void rys_jk(const int nbas,
         const int jsh_jp = jp + jsh*nprim_max;
         reg_cej[jp] = coeff_exp[jsh_jp];
     }
+    // Cache per-(ip,jp) terms to avoid repeated expensive exp/div computations
     DataType reg_cicj[npi*npj];
+    DataType reg_inv_aij[npi*npj];
 #pragma unroll
     for (int ip = 0; ip < npi; ip++){
         for (int jp = 0; jp < npj; jp++){
             const DataType ai = reg_cei[ip].e;
             const DataType aj = reg_cej[jp].e;
             const DataType aij = ai + aj;
-            const DataType aj_aij = aj / aij;
+            const DataType inv_aij = one / aij;
+            const DataType aj_aij = aj * inv_aij;
             const DataType theta_ij = ai * aj_aij;
             const DataType Kab = exp(-theta_ij * rr_ij);
             const DataType ci = reg_cei[ip].c;
             const DataType cj = reg_cej[jp].c;
             const DataType cicj = fac_sym * ci * cj * Kab;
-            reg_cicj[ip + jp*npi] = cicj;
+            const int idx = ip + jp*npi;
+            reg_cicj[idx] = cicj;
+            reg_inv_aij[idx] = inv_aij;
         }
     }
 
@@ -149,9 +154,10 @@ void rys_jk(const int nbas,
             const DataType ai = reg_cei[ip].e;
             const DataType aj = reg_cej[jp].e;
             const DataType aij = ai + aj;
-            const DataType inv_aij = one / aij;
+            const int idx = ip + jp*npi;
+            const DataType inv_aij = reg_inv_aij[idx];
             const DataType aj_aij = aj * inv_aij;
-            const DataType cicj = reg_cicj[ip + jp*npi];
+            const DataType cicj = reg_cicj[idx];
 
             const DataType xij = rjri[0] * aj_aij + ri.x;
             const DataType yij = rjri[1] * aj_aij + ri.y;
@@ -169,7 +175,6 @@ void rys_jk(const int nbas,
             DataType rw[2*nroots];
             
             rys_roots(rr, rw, theta, omega);
-#pragma unroll
             for (int irys = 0; irys < nroots; irys++){
                 const DataType rt = rw[irys*2];
                 const DataType rt_aa = rt * inv_aijkl;
@@ -217,7 +222,6 @@ void rys_jk(const int nbas,
 #pragma unroll
                     for (int _ix = 0; _ix < 3; _ix++){
                         DataType *_gix = g + _ix * gsize;
-
                         const DataType Rqc = rlrk[_ix] * al_akl;
                         const DataType cpx = Rqc + rt_akl * Rpq[_ix];
                         

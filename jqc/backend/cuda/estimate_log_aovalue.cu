@@ -76,9 +76,9 @@ void estimate_log_aovalue(
                     gto_sup += coeffs_reg[ip] * __expf(-e);
                 }
             }
-            gto_sup = fabs(gto_sup);
+            gto_sup = fabs(gto_sup) + 1e-38f; // avoid log(0)
             float log_gto = 0.0f;
-            log_gto += (gto_sup > 1e-16f) ? __logf(gto_sup) : -100.0f;
+            log_gto += __logf(gto_sup);
             log_gto += ang * __logf(rr)/2.0f;
             log_gto_maxval = max(log_gto_maxval, log_gto);
         }

@@ -30,9 +30,9 @@ from pyscf.lib import logger
 from pyscf.dft import libxc
 from pyscf.dft.gen_grid import GROUP_BOUNDARY_PENALTY
 from jqc.backend.linalg_helper import max_block_pooling, inplace_add_transpose
-from jqc.pyscf.mol import sort_group_basis
-from jqc.backend.rks import gen_rho_kernel, gen_vxc_kernel, estimate_log_aovalue
-from jqc.backend.cart2sph import mol2cart, cart2mol
+from jqc.pyscf.mol import BasisLayout
+from jqc.backend.rks import gen_rho_kernel, gen_vxc_kernel, estimate_log_aovalue, vv10nlc
+# cart2mol and mol2cart are now methods of BasisLayout class
 from jqc.constants import LMAX
 
 __all__ = ['build_grids', 'generate_rks_kernel']
@@ -137,7 +137,7 @@ def build_grids(grids, mol=None, with_non0tab=False, sort_grids=True, **kwargs):
     grids._non0ao_idx = None
     return grids
 
-def generate_get_veff(mol):
+def generate_get_veff():
     from gpu4pyscf.dft.rks import initialize_grids
     from gpu4pyscf.lib.cupy_helper import tag_array
     def get_veff(ks, mol=None, dm=None, dm_last=0, vhf_last=0, hermi=1):
@@ -197,7 +197,8 @@ def generate_get_veff(mol):
                     vklr = ks.get_k(mol, dm, hermi, omega=omega)
                     vklr *= (alpha - hyb)
                     vk += vklr
-            vxc += vj - vk * .5
+            vxc += vj 
+            vxc -= vk * .5
             if ground_state:
                 exc -= cp.einsum('ij,ji', dm, vk).real * .5 * .5
         
@@ -210,29 +211,30 @@ def generate_get_veff(mol):
         return vxc
     return get_veff
 
-def generate_nr_rks(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    rks_fun, _, _ = generate_rks_kernel(mol, cutoff_fp64, cutoff_fp32)
+def generate_nr_rks(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    rks_fun, _, _ = generate_rks_kernel(basis_layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
     return rks_fun
 
-def generate_get_rho(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    _, rho_fun, _ = generate_rks_kernel(mol, cutoff_fp64, cutoff_fp32)
+def generate_get_rho(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    _, rho_fun, _ = generate_rks_kernel(basis_layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
     def get_rho(mol, dm, grids, *args, **kwargs):
         dm = cp.asarray(dm)
         rho = rho_fun(mol, grids, 'LDA', dm)
         return rho[0]
     return get_rho
 
-def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    bas_cache, bas_mapping, _, group_info = sort_group_basis(mol, alignment=1)
-    ce_fp64, coords_fp64, angs, nprims = bas_cache
-    ce_fp32 = ce_fp64.astype(np.float32)
-    coords_fp32 = coords_fp64.astype(np.float32)
+def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    mol = basis_layout._mol
+    decontracted_mol = basis_layout.decontracted_mol
+    ce_fp64, coords_fp64, angs, nprims = basis_layout.bas_info
+    ce_fp32 = basis_layout.ce_fp32
+    coords_fp32 = basis_layout.coords_fp32
 
-    ao_loc = np.concatenate(([0], np.cumsum((angs+1)*(angs+2)//2)))
-    nao = ao_loc[-1]
-    nbas = nprims.shape[0]
-    ao_loc = cp.asarray(ao_loc, dtype=np.int32)
-    group_key, group_offset = group_info
+    ao_loc = basis_layout.ao_loc
+    nao = int(ao_loc[-1])
+    nbas = basis_layout.nbasis
+    group_key, group_offset = basis_layout.group_info
+    bas_mapping = basis_layout.bas_id
     log_ao_cutoff = math.log(ao_cutoff)
 
     log_cutoff_fp32 = np.log(cutoff_fp32).astype(np.float32)
@@ -266,7 +268,7 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         
         xctype = libxc.xc_type(xc_code)
 
-        # Evaluate rho on grids for given density matrix
+        # Evaluate rho on grids for given density matrix (incremental)
         weights = grids.weights
         dm_diff = dm - dm_prev
         rho_diff = rho_fun(mol, grids, xctype, dm_diff)
@@ -299,7 +301,8 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     def rho_fun(mol, grids, xctype, dm):
         ngrids = grids.coords.shape[0]
         grid_coords = cp.asarray(grids.coords.T, dtype=np.float64, order='C')
-        dm = mol2cart(dm, angs, ao_loc, bas_mapping, mol)
+        # Transform density matrix from molecular to cartesian basis
+        dm = basis_layout.mol2cart(dm)
         dm_cond = max_block_pooling(dm, ao_loc)
         dm_cond = cp.asarray(dm_cond, dtype=np.float32)
         # Cast after log; CuPy's log does not accept dtype kwarg
@@ -416,11 +419,60 @@ def generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         log_cutoff_fp32, log_cutoff_fp64, ngrids
                     )
 
-        vxc = cart2mol(vxc, angs, ao_loc, bas_mapping, mol)
+        # Transform exchange-correlation matrix back to molecular basis
+        vxc = basis_layout.cart2mol(vxc)
         vxc = inplace_add_transpose(vxc)
         return vxc[0]
     return rks_fun, rho_fun, vxc_fun
 
+def generate_nr_nlc_vxc(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    _, rho_fun, vxc_fun = generate_rks_kernel(basis_layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
+    from gpu4pyscf.dft import xc_deriv
+    
+    # Cache for incremental computation
+    _cache = {'dm_prev': 0, 'rho_prev': 0, 'wv_prev': 0, 'vmat_prev': 0}
+    
+    def nr_nlc_vxc(ni, mol, grids, xc_code, dms, relativity=0, hermi=1, max_memory=2000, verbose=None):
+        # Get cached values
+        dm_prev = _cache['dm_prev']
+        rho_prev = _cache['rho_prev']
+        wv_prev = _cache['wv_prev']
+        vmat_prev = _cache['vmat_prev']
+        
+        # Compute rho incrementally
+        dm_diff = dms - dm_prev
+        rho_diff = rho_fun(mol, grids, 'GGA', dm_diff)
+        rho = rho_prev + rho_diff
+        
+        # Compute VV10 exchange-correlation
+        exc = 0
+        vxc = 0
+        nlc_coefs = ni.nlc_coeff(xc_code)
+        for nlc_pars, fac in nlc_coefs:
+            e, v = vv10nlc(rho, grids.coords, rho, grids.weights,
+                           grids.coords, nlc_pars)
+            exc += e * fac
+            vxc += v * fac
+
+        den = rho[0] * grids.weights
+        nelec = den.sum()
+        excsum = cp.dot(den, exc)
+        
+        # Compute wv incrementally
+        vv_vxc = xc_deriv.transform_vxc(rho, vxc, 'GGA', spin=0)
+        wv = vv_vxc * grids.weights
+        wv_diff = wv - wv_prev
+        vmat_diff = vxc_fun(mol, grids, 'GGA', wv_diff)
+        vmat = vmat_prev + vmat_diff
+        
+        # Update cache
+        _cache['dm_prev'] = dms.copy()
+        _cache['rho_prev'] = rho
+        _cache['wv_prev'] = wv
+        _cache['vmat_prev'] = vmat.copy()
+        
+        return nelec, excsum, vmat
+    return nr_nlc_vxc
 
 def create_tasks(l_ctr_bas_loc, ovlp, cutoff=1e-13):
     n_groups = len(l_ctr_bas_loc) - 1
