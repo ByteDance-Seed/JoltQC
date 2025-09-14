@@ -19,6 +19,7 @@ import unittest
 from types import MethodType
 import cupy as cp
 import jqc.pyscf
+import pytest
 from jqc.pyscf import rks, jk
 from jqc.pyscf.mol import BasisLayout
 from gpu4pyscf import dft
@@ -63,12 +64,8 @@ def run_dft(xc, mol, disp=None):
     mf.disp = disp
     mf.grids.level = grids_level
     mf.nlcgrids.level = nlcgrids_level
-    # RKS operations use alignment=1, JK operations use alignment=TILE
-    layout_rks = BasisLayout.from_sort_group_basis(mol, alignment=1)
-    layout_jk = BasisLayout.from_sort_group_basis(mol, alignment=TILE)
-    mf.get_jk = jk.generate_jk_kernel(layout_jk)
-    nr_rks = rks.generate_nr_rks(layout_rks)
-    mf._numint.nr_rks = MethodType(nr_rks, mf._numint)
+    # Use JoltQC apply to wire in JK and RKS paths consistently
+    mf = jqc.pyscf.apply(mf)
     e_dft = mf.kernel()
     return e_dft
 
@@ -129,7 +126,7 @@ class KnownValues(unittest.TestCase):
             H  -0.757    4.   -0.4696
             H   0.757    4.   -0.4696
             ''',
-            basis='def2-qzvpp', #'ccpvdz',
+            basis='def2-qzvpp', #'cc-pvdz',
             unit='B', cart=0, output='/dev/null')
         mf = dft.RKS(mol, xc='PBE')
         mf = jqc.pyscf.apply(mf)

@@ -26,11 +26,12 @@ atom = 'molecules/0031-irregular-nitrogenous.xyz'
 #atom = 'molecules/0401-globular-nitrogenous.xyz'
 basis = 'def2-tzvpp'#'6-31gs'
 count = 1
-verbose = 6
+verbose = 0
+cart = 0
 
 lib.num_threads(8)
 
-mol = pyscf.M(atom=atom, basis=basis, output=f'gpu4pyscf_{basis}.log', verbose=verbose, cart=1)
+mol = pyscf.M(atom=atom, basis=basis, output=f'gpu4pyscf_{basis}.log', verbose=verbose, cart=cart)
 mf = hf.RHF(mol)
 mf.verbose = verbose
 e_pyscf = mf.kernel()
@@ -47,7 +48,7 @@ elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Time with GPU4PySCF, {elapsed_time_ms/count:.3f} ms")
 print(f"Total energy GPU4PySCF, {e_tot}")
 
-mol = pyscf.M(atom=atom, basis=basis, output=f'jqc-{basis}-fp64.log', verbose=verbose, cart=1)
+mol = pyscf.M(atom=atom, basis=basis, output=f'jqc-{basis}-fp64.log', verbose=verbose, cart=cart)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
@@ -72,7 +73,7 @@ elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Time with JQC, {elapsed_time_ms/count:.3f} ms")
 print(f"Total energy by JQC / FP64, {e_tot}")
 
-mol = pyscf.M(atom=atom, basis=basis, output=f'jqc-{basis}-fp32.log', verbose=verbose, cart=1)
+mol = pyscf.M(atom=atom, basis=basis, output=f'jqc-{basis}-fp32.log', verbose=verbose, cart=cart)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
@@ -90,6 +91,32 @@ start.record()
 for i in range(count):
     mf = hf.RHF(mol)
     mf_jit = jqc.pyscf.apply(mf, cutoff_fp32=1e-13, cutoff_fp64=1e100)
+    e_tot = mf_jit.kernel()
+end.record()
+end.synchronize()
+elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
+print(f"Time with JQC, {elapsed_time_ms/count:.3f} ms")
+print(f"Total energy by JQC / FP32, {e_tot}")
+print(e_pyscf - e_jqc)
+
+mol = pyscf.M(atom=atom, basis=basis, output=f'jqc-{basis}-fp32+fp64.log', verbose=verbose, cart=cart)
+start = cp.cuda.Event()
+end = cp.cuda.Event()
+start.record()
+mf = hf.RHF(mol)
+mf_jit = jqc.pyscf.apply(mf, cutoff_fp32=1e-13, cutoff_fp64=1e-6)
+end.record()
+end.synchronize()
+elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
+print("------ Benchmark FP32 + FP64 -------")
+print(f"Compilation time, {elapsed_time_ms/count:.3f} ms")
+e_jqc = mf_jit.kernel()
+start = cp.cuda.Event()
+end = cp.cuda.Event()
+start.record()
+for i in range(count):
+    mf = hf.RHF(mol)
+    mf_jit = jqc.pyscf.apply(mf, cutoff_fp32=1e-13, cutoff_fp64=1e-6)
     e_tot = mf_jit.kernel()
 end.record()
 end.synchronize()

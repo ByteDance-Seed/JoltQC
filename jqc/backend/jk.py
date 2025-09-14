@@ -52,7 +52,7 @@ with open(file_path, 'r') as f:
 @lru_cache(maxsize=None)
 def gen_jk_kernel(angulars, nprimitives, dtype=np.double,
                   n_dm=1, do_j=True, do_k=True, omega=None,
-                  frags=None, print_log=False):
+                  frags=None, print_log=False, force_cache_mode=None):
     """ Router function for generating JK kernels. 
     If frags = [-1]:      use 1q1t algorithm
     If frags = [x,x,x,x]: use 1qnt algorithm
@@ -81,7 +81,7 @@ def gen_jk_kernel(angulars, nprimitives, dtype=np.double,
     else:
         _, _, fun = jk_1qnt_kernel(
             angulars, nprimitives, frags=opt_frags, dtype=dtype, n_dm=n_dm,
-            do_j=do_j, do_k=do_k, omega=omega, print_log=print_log)
+            do_j=do_j, do_k=do_k, omega=omega, print_log=print_log, force_cache_mode=force_cache_mode)
     
     return fun
 

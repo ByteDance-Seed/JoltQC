@@ -50,7 +50,7 @@ H    D
         H  -0.757    4.   -0.4696
         H   0.757    4.   -0.4696
         ''',
-        basis='def2-tzvpp', #'ccpvdz',
+        basis='def2-tzvpp', #'cc-pvdz',
         output='/dev/null',
         unit='B', cart=1)
 
@@ -67,7 +67,7 @@ class KnownValues(unittest.TestCase):
             H  -0.757    4.   -0.4696
             H   0.757    4.   -0.4696
             ''',
-            basis='def2-tzvpp', #'ccpvdz',
+            basis='def2-tzvpp', #'cc-pvdz',
             unit='B', cart=0, output='/dev/null')
         np.random.seed(9)
         nao = mol_sph.nao

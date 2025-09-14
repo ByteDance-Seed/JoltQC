@@ -225,7 +225,6 @@ def generate_get_rho(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
 def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     mol = basis_layout._mol
-    decontracted_mol = basis_layout.decontracted_mol
     ce_fp64, coords_fp64, angs, nprims = basis_layout.bas_info
     ce_fp32 = basis_layout.ce_fp32
     coords_fp32 = basis_layout.coords_fp32
@@ -234,7 +233,6 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     nao = int(ao_loc[-1])
     nbas = basis_layout.nbasis
     group_key, group_offset = basis_layout.group_info
-    bas_mapping = basis_layout.bas_id
     log_ao_cutoff = math.log(ao_cutoff)
 
     log_cutoff_fp32 = np.log(cutoff_fp32).astype(np.float32)
@@ -243,7 +241,7 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     logger = lib.logger.new_logger(mol, mol.verbose)
     
     _cache = {'dm_prev': 0, 'rho_prev': 0, 'wv_prev': 0, 'vxcmat_prev': 0}
-    def rks_fun(ni, mol, grids, xc_code, dm, max_memory=2000, verbose=None):
+    def rks_fun(ni, mol, grids, xc_code, dm, **kwargs):
         """ rks kernel for PySCF, with incremental DFT implementation
         
         Args:
@@ -432,7 +430,7 @@ def generate_nr_nlc_vxc(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     # Cache for incremental computation
     _cache = {'dm_prev': 0, 'rho_prev': 0, 'wv_prev': 0, 'vmat_prev': 0}
     
-    def nr_nlc_vxc(ni, mol, grids, xc_code, dms, relativity=0, hermi=1, max_memory=2000, verbose=None):
+    def nr_nlc_vxc(ni, mol, grids, xc_code, dms, **kwargs):
         # Get cached values
         dm_prev = _cache['dm_prev']
         rho_prev = _cache['rho_prev']

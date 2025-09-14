@@ -16,7 +16,10 @@
 */
 
 constexpr int ng_per_thread = 256;
-constexpr int nprim_max = 16;
+#ifndef NPRIM_MAX
+#define NPRIM_MAX 16
+#endif
+constexpr int nprim_max = NPRIM_MAX;
 constexpr float exp_cutoff = 36.8;
 
 extern "C" __global__

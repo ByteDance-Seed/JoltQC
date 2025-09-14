@@ -21,7 +21,7 @@ Global constants used throughout the jqc package.
 LMAX = 4
 
 # Maximum number of primitive Gaussians per contracted Gaussian
-NPRIM_MAX = 16
+NPRIM_MAX = 2
 
 # Tile size for block-based algorithms
 TILE = 4

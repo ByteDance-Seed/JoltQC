@@ -24,6 +24,7 @@ from jqc.constants import MAX_SMEM
 from jqc.backend.util import generate_lookup_table
 from jqc.backend.cuda_scripts import (rys_roots_data, rys_roots_parallel_code, 
                                       jk_1qnt_cuda_code)
+from jqc.constants import NPRIM_MAX
 
 __all__ = ['gen_jk_kernel']
 
@@ -156,7 +157,7 @@ def create_scheme(ang, nprim=None, frags=None, do_j=True, do_k=True,
 
 def gen_kernel(ang, nprim, frags=None, dtype=np.double, n_dm=1,
                do_j=True, do_k=True, omega=None, 
-               print_log=False, use_cache=True, max_shm=shm_size):
+               print_log=False, use_cache=True, max_shm=shm_size, force_cache_mode=None):
     """
     Generate a 1QNT kernel.
 
@@ -172,6 +173,7 @@ def gen_kernel(ang, nprim, frags=None, dtype=np.double, n_dm=1,
         print_log (bool): Whether to print log.
         use_cache (bool): Whether to use cache.
         max_shm (int): Maximum shared memory size of the device.
+        force_cache_mode (bool): Force caching on/off for benchmarking. None uses default logic.
     """
     if dtype == np.float64:
         dtype_cuda = 'double'
@@ -229,9 +231,14 @@ constexpr int threads  =  nsq_per_block * nthreads_per_sq;
 constexpr int do_j = {int(do_j)};
 constexpr int do_k = {int(do_k)};
 constexpr int smem_stride = {padded_stride(nsq_per_block)};
+// Inject NPRIM_MAX to match host-side layout
+#define NPRIM_MAX {NPRIM_MAX}
 // for rys_roots
 constexpr int nroots = ((li+lj+lk+ll)/2+1);
 '''
+    # Add caching override if specified
+    if force_cache_mode is not None:
+        const += f'#define JQC_CACHE_OVERRIDE {int(force_cache_mode)}\n'
     idx_script = generate_lookup_table(li,lj,lk,ll)
     script = const + rys_roots_data[nroots] \
         + rys_roots_parallel_code \

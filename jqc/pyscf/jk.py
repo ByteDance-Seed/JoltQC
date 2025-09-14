@@ -30,7 +30,6 @@ from pyscf import lib
 from jqc.backend.linalg_helper import inplace_add_transpose, max_block_pooling
 from jqc.backend.jk_tasks import gen_screen_jk_tasks_kernel, MAX_PAIR_SIZE, QUEUE_DEPTH
 from jqc.backend.jk import gen_jk_kernel
-# cart2mol and mol2cart are now methods of BasisLayout class
 from jqc.constants import LMAX, TILE
 
 __all__ = [
@@ -219,7 +218,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                     # Launch FP32 and FP64 kernels asynchronously
                     if n_quartets_fp32 > 0:
                         jk_fp32_kernel = gen_jk_kernel(
-                            ang, nprim, do_j=with_j, do_k=with_k, 
+                            ang, nprim, do_j=with_j, do_k=with_k,
                             dtype=np.float32, n_dm=n_dm, omega=omega_fp32)
                         jk_fp32_kernel(
                             nbas, ao_loc, coords_fp32, ce_fp32,
@@ -227,10 +226,10 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                             n_quartets_fp32)
                         kern_counts += 1
                         ntasks_fp32 += n_quartets_fp32
- 
+
                     if n_quartets_fp64 > 0:
                         jk_fp64_kernel = gen_jk_kernel(
-                            ang, nprim, do_j=with_j, do_k=with_k, 
+                            ang, nprim, do_j=with_j, do_k=with_k,
                             dtype=np.float64, n_dm=n_dm, omega=omega_fp64)
                         jk_fp64_kernel(
                             nbas, ao_loc, coords_fp64, ce_fp64,
@@ -263,7 +262,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 vj, vjT = vj[:n_dm//2], vj[n_dm//2:]
                 vj += vjT.transpose(0,2,1)
             vj = inplace_add_transpose(vj)
-            vj = basis_layout.cart2mol(vj, remove_padding=True)
+            vj = basis_layout.cart2mol(vj)
             vj = vj.reshape(dm.shape)
 
         if with_k:
@@ -272,7 +271,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             else:
                 vk, vkT = vk[:n_dm//2], vk[n_dm//2:]
                 vk += vkT.transpose(0,2,1)
-            vk = basis_layout.cart2mol(vk, remove_padding=True)
+            vk = basis_layout.cart2mol(vk)
             vk = vk.reshape(dm.shape)
         
         if logger.verbose >= lib.logger.DEBUG:
@@ -307,8 +306,8 @@ def make_tile_pairs(l_ctr_bas_loc, q_matrix, cutoff, tile=TILE):
                 mask = cp.tril(mask)
             t_ij = (cp.arange(i0, i1, dtype=np.int32)[:,None] * ntiles +
                     cp.arange(j0, j1, dtype=np.int32))
-            ij = t_ij[mask]
-            if ij.size == 0:
-                continue
+            #ij = t_ij[mask]
+            #if ij.size == 0:
+            #    continue
             tile_pairs[i,j] = t_ij[mask]
     return tile_pairs

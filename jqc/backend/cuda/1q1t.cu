@@ -24,7 +24,10 @@ constexpr DataType PI_FAC = 34.98683665524972497;
 constexpr DataType half = .5;
 constexpr DataType one = 1.0;
 constexpr DataType zero = 0.0;
-constexpr int nprim_max = 16;
+#ifndef NPRIM_MAX
+#define NPRIM_MAX 16
+#endif
+constexpr int nprim_max = NPRIM_MAX;
 
 
 struct __align__(4*sizeof(DataType)) DataType4 {
@@ -101,34 +104,60 @@ void rys_jk(const int nbas,
     const DataType rr_kl = rlrk[0]*rlrk[0] + rlrk[1]*rlrk[1] + rlrk[2]*rlrk[2];
     DataType integral[integral_size] = {zero};
 
-    DataType2 reg_cei[npi], reg_cej[npj];
-    for (int ip = 0; ip < npi; ip++){
-        const int ish_ip = ip + ish*nprim_max;
-        reg_cei[ip] = coeff_exp[ish_ip];
-    }
-    for (int jp = 0; jp < npj; jp++){
-        const int jsh_jp = jp + jsh*nprim_max;
-        reg_cej[jp] = coeff_exp[jsh_jp];
-    }
-    // Cache per-(ip,jp) terms to avoid repeated expensive exp/div computations
-    DataType reg_cicj[npi*npj];
-    DataType reg_inv_aij[npi*npj];
-#pragma unroll
-    for (int ip = 0; ip < npi; ip++){
+    // Estimate register usage for caching cei, cej, cicj and inv_aij
+    // DataType can be float (1 register) or double (2 registers)
+    constexpr int registers_per_datatype = sizeof(DataType) / 4; // 4 bytes per 32-bit register
+    constexpr int estimated_registers = registers_per_datatype * (3 * gsize + integral_size + 2 * (npi + npj) + 2 * npi * npj);
+    constexpr bool use_cache = (estimated_registers <= 256);
+    constexpr bool use_ceij_cache = use_cache && (npi + npj <= 32); // Additional constraint for cei/cej caching
+
+    // Cache cei and cej if register usage is reasonable
+    DataType2 reg_cei[use_ceij_cache ? npi : 1], reg_cej[use_ceij_cache ? npj : 1];
+    if constexpr (use_ceij_cache) {
+        for (int ip = 0; ip < npi; ip++){
+            const int ish_ip = ip + ish*nprim_max;
+            reg_cei[ip] = coeff_exp[ish_ip];
+        }
         for (int jp = 0; jp < npj; jp++){
-            const DataType ai = reg_cei[ip].e;
-            const DataType aj = reg_cej[jp].e;
-            const DataType aij = ai + aj;
-            const DataType inv_aij = one / aij;
-            const DataType aj_aij = aj * inv_aij;
-            const DataType theta_ij = ai * aj_aij;
-            const DataType Kab = exp(-theta_ij * rr_ij);
-            const DataType ci = reg_cei[ip].c;
-            const DataType cj = reg_cej[jp].c;
-            const DataType cicj = fac_sym * ci * cj * Kab;
-            const int idx = ip + jp*npi;
-            reg_cicj[idx] = cicj;
-            reg_inv_aij[idx] = inv_aij;
+            const int jsh_jp = jp + jsh*nprim_max;
+            reg_cej[jp] = coeff_exp[jsh_jp];
+        }
+    }
+    
+    // Cache per-(ip,jp) terms to avoid repeated expensive exp/div computations if register usage is reasonable
+    DataType reg_cicj[use_cache ? npi*npj : 1];
+    DataType reg_inv_aij[use_cache ? npi*npj : 1];
+    
+    if constexpr (use_cache) {
+#pragma unroll
+        for (int ip = 0; ip < npi; ip++){
+            for (int jp = 0; jp < npj; jp++){
+                DataType ai, aj, ci, cj;
+                if constexpr (use_ceij_cache) {
+                    ai = reg_cei[ip].e;
+                    aj = reg_cej[jp].e;
+                    ci = reg_cei[ip].c;
+                    cj = reg_cej[jp].c;
+                } else {
+                    const int ish_ip = ip + ish*nprim_max;
+                    const int jsh_jp = jp + jsh*nprim_max;
+                    const DataType2 cei = coeff_exp[ish_ip];
+                    const DataType2 cej = coeff_exp[jsh_jp];
+                    ai = cei.e;
+                    aj = cej.e;
+                    ci = cei.c;
+                    cj = cej.c;
+                }
+                const DataType aij = ai + aj;
+                const DataType inv_aij = one / aij;
+                const DataType aj_aij = aj * inv_aij;
+                const DataType theta_ij = ai * aj_aij;
+                const DataType Kab = exp(-theta_ij * rr_ij);
+                const DataType cicj = fac_sym * ci * cj * Kab;
+                const int idx = ip + jp*npi;
+                reg_cicj[idx] = cicj;
+                reg_inv_aij[idx] = inv_aij;
+            }
         }
     }
 
@@ -151,13 +180,37 @@ void rys_jk(const int nbas,
         const DataType ckcl = ck * cl * Kcd;
         for (int ip = 0; ip < npi; ip++)
         for (int jp = 0; jp < npj; jp++){
-            const DataType ai = reg_cei[ip].e;
-            const DataType aj = reg_cej[jp].e;
+            DataType ai, aj, ci, cj;
+            if constexpr (use_ceij_cache) {
+                ai = reg_cei[ip].e;
+                aj = reg_cej[jp].e;
+                ci = reg_cei[ip].c;
+                cj = reg_cej[jp].c;
+            } else {
+                const int ish_ip = ip + ish*nprim_max;
+                const int jsh_jp = jp + jsh*nprim_max;
+                const DataType2 cei = coeff_exp[ish_ip];
+                const DataType2 cej = coeff_exp[jsh_jp];
+                ai = cei.e;
+                aj = cej.e;
+                ci = cei.c;
+                cj = cej.c;
+            }
             const DataType aij = ai + aj;
-            const int idx = ip + jp*npi;
-            const DataType inv_aij = reg_inv_aij[idx];
+
+            DataType inv_aij, cicj;
+            if constexpr (use_cache) {
+                const int idx = ip + jp*npi;
+                inv_aij = reg_inv_aij[idx];
+                cicj = reg_cicj[idx];
+            } else {
+                inv_aij = one / aij;
+                const DataType aj_aij = aj * inv_aij;
+                const DataType theta_ij = ai * aj_aij;
+                const DataType Kab = exp(-theta_ij * rr_ij);
+                cicj = fac_sym * ci * cj * Kab;
+            }
             const DataType aj_aij = aj * inv_aij;
-            const DataType cicj = reg_cicj[idx];
 
             const DataType xij = rjri[0] * aj_aij + ri.x;
             const DataType yij = rjri[1] * aj_aij + ri.y;
@@ -256,11 +309,9 @@ void rys_jk(const int nbas,
                             //for k in range(1, lkl):
                             //    for i in range(lij+1):
                             //        trr(i,k+1) = cp * trr(i,k) + k*b01 * trr(i,k-1) + i*b00 * trr(i-1,k)
-                            const int base_i_off_minus = i_off_minus;
-                            const int base_i_off_plus_k = i_off_plus_k;
                             for (int k = 1; k < lkl; ++k) {
-                                const int k_i_off_minus = base_i_off_minus + k * stride_k;
-                                const int k_i_off_plus_k = base_i_off_plus_k + k * stride_k;
+                                const int k_i_off_minus = i_off_minus + k * stride_k;
+                                const int k_i_off_plus_k = i_off_plus_k + k * stride_k;
                                 const DataType k_b01 = k * b01;  // Pre-compute to reduce FLOPs
 
                                 s2x = cpx*s1x + k_b01*s0x;
@@ -330,9 +381,10 @@ void rys_jk(const int nbas,
                 DataType* gz = g + gsize2;
 #pragma unroll
                 for (int i = 0; i < nfi; i++){
+                    const int base_ij_off_i = i*gstride_i;
                     for (int j = 0; j < nfj; j++){
                         const int addr_ij = i_idx[i] + j_idx[j];
-                        const int ij_off = i*gstride_i + j*gstride_j;
+                        const int ij_off = base_ij_off_i + j*gstride_j;
                         for (int k = 0; k < nfk; k++){
                             const int addr_ijk = addr_ij + k_idx[k];
                             int integral_off = ij_off + k*gstride_k;
@@ -373,10 +425,11 @@ void rys_jk(const int nbas,
                 DataType vj_lk[nfkl] = {zero};
 #pragma unroll
                 for (int i = 0; i < nfi; i++){
+                    const int base_off_i = i * gstride_i;
                     for (int j = 0; j < nfj; j++){
                         const int dm_offset = j*nao + i;
                         DataType dm_ij = __ldg(dm_ptr + dm_offset);
-                        int off = i * gstride_i + j * gstride_j;
+                        int off = base_off_i + j * gstride_j;
                         for (int k = 0; k < nfk; k++){
                             for (int l = 0; l < nfl; l++){
                                 vj_lk[l + k*nfl] += integral[l*gstride_l + off] * dm_ij;
@@ -413,9 +466,10 @@ void rys_jk(const int nbas,
                 double *vj_ptr = vj + vj_offset;
 #pragma unroll
                 for (int i = 0; i < nfi; i++){
+                    const int base_off_i = i*gstride_i;
                     for (int j = 0; j < nfj; j++){
                         DataType vj_ji = zero;
-                        int off = i*gstride_i + j*gstride_j;
+                        int off = base_off_i + j*gstride_j;
                         for (int k = 0; k < nfk; k++){
                             for (int l = 0; l < nfl; l++){
                                 vj_ji += integral[off + l*gstride_l] * dm_kl_cache[k + l*nfk];
@@ -423,7 +477,7 @@ void rys_jk(const int nbas,
                             off += gstride_k;
                         }
                         const int offset = j*nao + i;
-                        atomicAdd(vj_ptr + offset, (double)vj_ji); 
+                        atomicAdd(vj_ptr + offset, (double)vj_ji);
                     }
                 }
             }
@@ -446,9 +500,10 @@ void rys_jk(const int nbas,
                 double *vk_ptr = vk + vk_offset;
 #pragma unroll
                 for (int i = 0; i < nfi; i++){
+                    const int base_off_i = i*gstride_i;
                     for (int k = 0; k < nfk; k++){
                         DataType vk_ik = zero;
-                        int off = i*gstride_i + k * gstride_k;
+                        int off = base_off_i + k * gstride_k;
                         for (int j = 0; j < nfj; j++){
                             for (int l = 0; l < nfl; l++){
                                 vk_ik += integral[off + l*gstride_l] * dm_jl_cache[l + j*nfl];
@@ -478,9 +533,10 @@ void rys_jk(const int nbas,
                 double *vk_ptr = vk + vk_offset;
 #pragma unroll
                 for (int i = 0; i < nfi; i++){
+                    const int base_off_i = i*gstride_i;
                     for (int l = 0; l < nfl; l++){
                         DataType vk_il = zero;
-                        int off = i*gstride_i + l*gstride_l;
+                        int off = base_off_i + l*gstride_l;
                         for (int j = 0; j < nfj; j++){
                             for (int k = 0; k < nfk; k++){
                                 vk_il += integral[off + k*gstride_k] * dm_jk_cache[k + j*nfk];
@@ -509,9 +565,10 @@ void rys_jk(const int nbas,
                 double *vk_ptr = vk + vk_offset;
 #pragma unroll
                 for (int j = 0; j < nfj; j++){
+                    const int base_off_j = j * gstride_j;
                     for (int k = 0; k < nfk; k++){
                         DataType vk_jk = zero;
-                        int off = j * gstride_j + k * gstride_k;
+                        int off = base_off_j + k * gstride_k;
                         for (int i = 0; i < nfi; i++){
                             for (int l = 0; l < nfl; l++){
                                 vk_jk += integral[off + l*gstride_l] * dm_il_cache[l + i*nfl];
@@ -531,10 +588,11 @@ void rys_jk(const int nbas,
                 DataType *dm_ptr = dm + dm_offset;
 #pragma unroll
                 for (int i = 0; i < nfi; i++){
+                    const int base_off_i = i * gstride_i;
                     for (int k = 0; k < nfk; k++){
                         const int dm_offset = i*nao + k;
                         DataType dm_ik = __ldg(dm_ptr + dm_offset);
-                        int off = i * gstride_i + k * gstride_k;
+                        int off = base_off_i + k * gstride_k;
                         for (int j = 0; j < nfj; j++){
                             for (int l = 0; l < nfl; l++){
                                 vk_jl[l + j*nfl] += integral[off + l*gstride_l] * dm_ik;

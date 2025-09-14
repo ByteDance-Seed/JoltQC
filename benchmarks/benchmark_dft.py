@@ -25,8 +25,8 @@ atom = 'molecules/0031-irregular-nitrogenous.xyz'
 #atom = 'molecules/0051-elongated-halogenated.xyz'
 #atom = 'molecules/0084-elongated-halogenated.xyz'
 basis = 'def2-tzvpp'
-xc = 'wb97m-v'
-#xc = 'b3lyp'
+#xc = 'wb97m-v'
+xc = 'b3lyp'
 count = 1
 grids = (99,590)
 

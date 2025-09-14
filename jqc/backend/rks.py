@@ -20,6 +20,7 @@ Generate kernels for incremental DFT
 import numpy as np
 import cupy as cp
 from pathlib import Path
+from jqc.constants import NPRIM_MAX
 from functools import lru_cache
 code_path = Path(__file__).resolve().parent
 
@@ -57,6 +58,8 @@ constexpr int npj = {npj};
 constexpr int ndim = {ndim};
 constexpr int deriv = {1 if ndim > 1 else 0};
 constexpr int nthreads = {nthreads};
+// Inject NPRIM_MAX to match host-side layout
+#define NPRIM_MAX {NPRIM_MAX}
 '''
 
     script = const + eval_rho_cuda_code
@@ -114,6 +117,8 @@ constexpr int npj = {npj};
 constexpr int ndim = {ndim};
 constexpr int deriv = {1 if ndim > 1 else 0};
 constexpr int nthreads = {nthreads};
+// Inject NPRIM_MAX to match host-side layout
+#define NPRIM_MAX {NPRIM_MAX}
 '''
 
     script = const + eval_vxc_cuda_code
@@ -196,6 +201,8 @@ def estimate_log_aovalue(grid_coords, coords, coeff_exp, ang, nprim, log_cutoff=
     const = f'''
 constexpr int ang = {ang};
 constexpr int nprim = {nprim};
+// Inject NPRIM_MAX to match host-side layout
+#define NPRIM_MAX {NPRIM_MAX}
 '''
     script = const + estimate_aovalue_script
     mod = cp.RawModule(code=script, options=compile_options)

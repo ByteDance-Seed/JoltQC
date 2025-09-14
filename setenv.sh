@@ -15,5 +15,10 @@
 # limitations under the License.
 #
 
-# Add the current directory (or a specific path) to PYTHONPATH
+# Add the current repository to PYTHONPATH
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"
+
+# Also add a local gpu4pyscf checkout if present
+if [ -d "$HOME/Documents/gpu4pyscf" ]; then
+  export PYTHONPATH="${PYTHONPATH}:$HOME/Documents/gpu4pyscf"
+fi

@@ -293,7 +293,7 @@ void cart2sph(double *gcart, double *gsph, int nao, int nbas,
     _cart2sph_kernel<ang>(gsph_reg, gcart_reg);
 
     for (int i = 0; i < nf_sph; i++){
-        gsph[i*shell_stride] = gsph_reg[i];
+        atomicAdd(&gsph[i*shell_stride], gsph_reg[i]);
     }
 }
 

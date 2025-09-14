@@ -16,7 +16,10 @@
 */
 
 constexpr DataType max_val = 1e16;
-constexpr int nprim_max = 16;
+#ifndef NPRIM_MAX
+#define NPRIM_MAX 16
+#endif
+constexpr int nprim_max = NPRIM_MAX;
 constexpr DataType exp_cutoff = 36.8; // exp(-36.8) ~ 1e-16
 constexpr DataType rho_cutoff = 1e-16;
 constexpr DataType rho_cutoff2 = rho_cutoff * rho_cutoff;

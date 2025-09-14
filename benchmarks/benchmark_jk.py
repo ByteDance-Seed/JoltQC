@@ -18,6 +18,8 @@ import pyscf
 from pyscf import gto
 from gpu4pyscf import scf
 from jqc.pyscf import jk
+from jqc.pyscf.mol import BasisLayout
+from jqc.constants import TILE
 
 basis = gto.basis.parse('''
 #H   P
@@ -62,18 +64,18 @@ basis = gto.basis.parse('''
 #      0.02700058226E+00      1
 O    S
       0.02700058226E+00      1
-#      0.2700058226E+00      1 
-#      0.2700058226E+00      1
-#      0.2700058226E+00      1
-#      0.2700058226E+00      1
+      0.2700058226E+00      1 
+      0.2700058226E+00      1
+      0.2700058226E+00      1
+      0.2700058226E+00      1
 #      0.2700058226E+00      1
 ''')
 
 #atom = 'molecules/h2o.xyz'
-#atom = 'molecules/0031-irregular-nitrogenous.xyz'
+atom = 'molecules/0031-irregular-nitrogenous.xyz'
 #atom = 'molecules/0084-elongated-halogenated.xyz'
 #atom = 'molecules/0401-globular-nitrogenous.xyz'
-atom = 'molecules/0753-globular.xyz'
+#atom = 'molecules/0753-globular.xyz'
 n_dm = 1
 n_warmup = 3
 mol = pyscf.M(atom=atom,
@@ -89,6 +91,9 @@ dm = cp.ones_like(dm0)
 
 dm = cp.expand_dims(dm, axis=0)
 dm = cp.repeat(dm, repeats=n_dm, axis=0)
+
+# Create BasisLayout for JQC
+layout_jk = BasisLayout.from_sort_group_basis(mol, alignment=TILE)
 
 vhfopt = scf.jk._VHFOpt(mol).build()
 # warm up
@@ -108,15 +113,15 @@ print(f"Time with GPU4PySCF, {gpu4pyscf_time_ms}")
 
 ###### JQC / FP64 #######
 # Warm up
+get_jk_fp64 = jk.generate_jk_kernel(layout_jk, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
 for i in range(n_warmup):
-    get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
-    vj_jit, vk_jit = get_jk(mol, dm, hermi=1)
+    vj_jit, vk_jit = get_jk_fp64(mol, dm, hermi=1)
+
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mol.verbose = 4
-get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
-vj_jit, vk_jit = get_jk(mol, dm, hermi=1)
+vj_jit, vk_jit = get_jk_fp64(mol, dm, hermi=1)
 mol.verbose = 4
 end.record()
 end.synchronize()
@@ -129,15 +134,15 @@ print('vk diff:', cp.linalg.norm(vk - vk_jit))
 
 ###### JQC / FP32 #######
 # Warm up
+get_jk_fp32 = jk.generate_jk_kernel(layout_jk, cutoff_fp64=1e6, cutoff_fp32=1e-13)
 for i in range(n_warmup):
-    get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e6, cutoff_fp32=1e-13)
-    vj_jit, vk_jit = get_jk(mol, dm, hermi=1)
+    vj_jit, vk_jit = get_jk_fp32(mol, dm, hermi=1)
+
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mol.verbose = 6
-get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e6, cutoff_fp32=1e-13)
-vj_jit, vk_jit = get_jk(mol, dm, hermi=1)
+vj_jit, vk_jit = get_jk_fp32(mol, dm, hermi=1)
 mol.verbose = 6
 end.record()
 end.synchronize()
@@ -150,15 +155,15 @@ print('vk diff:', cp.linalg.norm(vk - vk_jit))
 
 ###### JQC / FP32 + FP64 #######
 # Warm up
+get_jk_mixed = jk.generate_jk_kernel(layout_jk, cutoff_fp64=1e-7, cutoff_fp32=1e-13)
 for i in range(n_warmup):
-    get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e-7, cutoff_fp32=1e-13)
-    vj_jit, vk_jit = get_jk(mol, dm, hermi=1)
+    vj_jit, vk_jit = get_jk_mixed(mol, dm, hermi=1)
+
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mol.verbose = 6
-get_jk = jk.generate_get_jk(mol, cutoff_fp64=1e-7, cutoff_fp32=1e-13)
-vj_jit, vk_jit = get_jk(mol, dm, hermi=1)
+vj_jit, vk_jit = get_jk_mixed(mol, dm, hermi=1)
 mol.verbose = 6
 end.record()
 end.synchronize()
@@ -169,44 +174,42 @@ print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
 print('vj diff:', cp.linalg.norm(vj - vj_jit))
 print('vk diff:', cp.linalg.norm(vk - vk_jit))
 
-###### JQC / FP32 #######
+###### JQC / FP32 J-only #######
 # Warm up
+get_j_fp32 = jk.generate_get_j(layout_jk, cutoff_fp64=1e6, cutoff_fp32=1e-13)
 for i in range(n_warmup):
-    get_j = jk.generate_get_j(mol, cutoff_fp64=1e6, cutoff_fp32=1e-13)
-    vj_jit = get_j(mol, dm, hermi=1)
-start = cp.cuda.Event()
-end = cp.cuda.Event()
-start.record()
-mol.verbose = 6
-get_j = jk.generate_get_j(mol, cutoff_fp64=1e6, cutoff_fp32=1e-13)
-vj_jit = get_j(mol, dm, hermi=1)
-mol.verbose = 6
-end.record()
-end.synchronize()
-jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
-print("------- Benchmark FP32 -----------")
-print(f"Time with JQC / FP32, {jqc_time_ms}")
-print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
-print('vj diff:', cp.linalg.norm(vj - vj_jit))
-print('vk diff:', cp.linalg.norm(vk - vk_jit))
+    vj_jit = get_j_fp32(mol, dm, hermi=1)
 
-###### JQC / FP32 #######
-# Warm up
-for i in range(n_warmup):
-    get_k = jk.generate_get_k(mol, cutoff_fp64=1e6, cutoff_fp32=1e-13)
-    vk_jit = get_k(mol, dm, hermi=1)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
 mol.verbose = 6
-get_k = jk.generate_get_k(mol, cutoff_fp64=1e6, cutoff_fp32=1e-13)
-vk_jit = get_k(mol, dm, hermi=1)
+vj_jit = get_j_fp32(mol, dm, hermi=1)
 mol.verbose = 6
 end.record()
 end.synchronize()
 jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
-print("------- Benchmark FP32 -----------")
-print(f"Time with JQC / FP32, {jqc_time_ms}")
+print("------- Benchmark FP32 J-only -----------")
+print(f"Time with JQC / FP32 J-only, {jqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
 print('vj diff:', cp.linalg.norm(vj - vj_jit))
+
+###### JQC / FP32 K-only #######
+# Warm up
+get_k_fp32 = jk.generate_get_k(layout_jk, cutoff_fp64=1e6, cutoff_fp32=1e-13)
+for i in range(n_warmup):
+    vk_jit = get_k_fp32(mol, dm, hermi=1)
+
+start = cp.cuda.Event()
+end = cp.cuda.Event()
+start.record()
+mol.verbose = 6
+vk_jit = get_k_fp32(mol, dm, hermi=1)
+mol.verbose = 6
+end.record()
+end.synchronize()
+jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
+print("------- Benchmark FP32 K-only -----------")
+print(f"Time with JQC / FP32 K-only, {jqc_time_ms}")
+print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
 print('vk diff:', cp.linalg.norm(vk - vk_jit))
