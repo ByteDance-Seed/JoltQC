@@ -250,7 +250,7 @@ def cart2cart(dm_src, angs, src_offset, dst_offset, nao, out=None):
 
     return dm_dst
 
-def mol2cart(mat, angs, ao_loc, bas_map, mol):
+def dm_from_mol(mat, angs, ao_loc, bas_map, mol):
     """
     Transform the matrix from the molecular basis to the cartesian basis.
     Now uses decontracted molecules with proper ao_loc properties.
@@ -264,7 +264,7 @@ def mol2cart(mat, angs, ao_loc, bas_map, mol):
         mat_cart = sph2cart(mat, angs, mol_ao_loc, ao_loc, nao)
     return mat_cart
 
-def cart2mol(mat, angs, ao_loc, bas_map, mol):
+def dm_to_mol(mat, angs, ao_loc, bas_map, mol):
     """
     Transform the matrix from the cartesian basis to the molecular basis.
     Now uses decontracted molecules with proper nao and ao_loc properties.

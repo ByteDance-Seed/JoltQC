@@ -142,7 +142,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         dms = dm.reshape(-1,nao_orig,nao_orig)
 
         # Convert the density matrix to cartesian basis
-        dms = basis_layout.mol2cart(dms)
+        dms = basis_layout.dm_from_mol(dms)
         dms = dms.reshape(-1, nao, nao)
         dm_cond = max_block_pooling(dms, ao_loc).astype(np.float32)
         dms = cp.asarray(dms, dtype=np.float64) # transfer to current device
@@ -262,7 +262,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 vj, vjT = vj[:n_dm//2], vj[n_dm//2:]
                 vj += vjT.transpose(0,2,1)
             vj = inplace_add_transpose(vj)
-            vj = basis_layout.cart2mol(vj)
+            vj = basis_layout.dm_to_mol(vj)
             vj = vj.reshape(dm.shape)
 
         if with_k:
@@ -271,7 +271,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             else:
                 vk, vkT = vk[:n_dm//2], vk[n_dm//2:]
                 vk += vkT.transpose(0,2,1)
-            vk = basis_layout.cart2mol(vk)
+            vk = basis_layout.dm_to_mol(vk)
             vk = vk.reshape(dm.shape)
         
         if logger.verbose >= lib.logger.DEBUG:

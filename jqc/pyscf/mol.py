@@ -239,7 +239,7 @@ class BasisLayout:
             dtype=np.dtype(dtype),
         )
 
-    def mol2cart(self, mat):
+    def dm_from_mol(self, mat):
         """
         Transform the matrix from the decontracted molecular basis to the internal layout.
         Always returns matrix with internal layout dimensions (including padding).
@@ -299,7 +299,7 @@ class BasisLayout:
 
         return mat_cart
 
-    def cart2mol(self, mat):
+    def dm_to_mol(self, mat):
         """
         Transform the matrix from the internal layout to the decontracted molecular basis.
         Always removes padding to return decontracted molecule dimensions.
