@@ -121,73 +121,45 @@ class BasisLayout:
         return int(self.group_key.shape[0])
 
     @property
-    def angs_decontracted(self) -> np.ndarray:
+    def angs_no_pad(self) -> np.ndarray:
         """
         Angular momentum values of sorted decontracted mol.
         """
-        angs = self._mol._bas[:, gto.ANG_OF]
-        idx = np.argsort(angs)
-        return angs[idx]
+        return self.angs[~self.pad_id]
 
     @property
     def ao_loc(self) -> np.ndarray:
         """
-        AO offsets for the decontracted molecule for each basis in internal format.
+        AO offsets for each basis in internal format.
         ao_loc[i] gives the starting AO index of basis i.
         """
         if self._ao_loc_cache is None:
-            # Compute from original molecule (decontracted basis)
-            bas = self._mol._bas
-            angs = bas[:, gto.ANG_OF]
-            nctr = bas[:, gto.NCTR_OF]
-            # Internal layout always uses cartesian AO dimensions
-            dims = [((l + 1) * (l + 2) // 2) for l in angs]
-            # Repeat by contraction count (decontracted view)
-            dims = np.repeat(dims, nctr)
+            angs = self.angs
+            dims = (angs + 1) * (angs + 2) // 2
+            dims[self.pad_id] = 0
             ao_loc = np.empty(len(dims) + 1, dtype=np.int32)
             ao_loc[0] = 0
             dims.cumsum(dtype=np.int32, out=ao_loc[1:])
-
-            # Map only non-padded entries to avoid indexing issues
-            _ao_loc = np.empty([self.nbasis + 1], dtype=np.int32)
-            non_padded_mask = ~self.pad_id
-            decontracted_indices = self.to_decontracted_map[non_padded_mask]
-            _ao_loc[:-1][non_padded_mask] = ao_loc[decontracted_indices]
-            _ao_loc[:-1][self.pad_id] = 0  # Padded entries get 0 offset
-            _ao_loc[-1] = ao_loc[-1]
-            # Keep numpy on cache for CPU-side logic; callers can cp.asarray when needed
-            self._ao_loc_cache = _ao_loc
+            self._ao_loc_cache = ao_loc
         return self._ao_loc_cache
 
     @property
-    def decontracted_ao_loc(self) -> np.ndarray:
+    def ao_loc_no_pad(self) -> np.ndarray:
         """
-        AO offsets for the decontracted molecule in cartesian format.
-        Its dimension should be consistent with angs_decontracted.
+        AO offsets for each basis in internal format without padding.
+        Its dimension should be consistent with angs_no_pad.
         """
-        if self._decontracted_ao_loc_cache is None:
-            bas = self._mol._bas
-            angs = bas[:, gto.ANG_OF]
-            nctr = bas[:, gto.NCTR_OF]
-            # Internal layout always uses cartesian AO dimensions
-            dims = [((l + 1) * (l + 2) // 2) for l in angs]
-            # Repeat by contraction count (decontracted view)
-            dims = np.repeat(dims, nctr)
-            ao_loc = np.empty(len(dims) + 1, dtype=np.int32)
-            ao_loc[0] = 0
-            dims.cumsum(dtype=np.int32, out=ao_loc[1:])
-
-            idx = np.argsort(angs)
-            ao_loc[:-1] = ao_loc[idx]
-
-            self._decontracted_ao_loc_cache = ao_loc
-        return self._decontracted_ao_loc_cache
+        
+        ao_loc = np.empty(len(self.angs_no_pad) + 1, dtype=np.int32)
+        ao_loc[:-1] = self.ao_loc[:-1][~self.pad_id]
+        ao_loc[-1] = self.ao_loc[-1]
+        return ao_loc
 
     @property
     def mol_ao_loc(self) -> cp.ndarray:
         """
-        AO shell offsets for the sorted original molecule in decontracted format.
-        Its dimension should be consistent with angs_decontracted
+        AO shell offsets for the original molecule in decontracted format.
+        Its dimension should be consistent with angs_no_pad
         """
         if self._mol_ao_loc_cache is None:
             # Compute from original molecule (decontracted basis)
@@ -203,9 +175,12 @@ class BasisLayout:
             ao_loc[0] = 0
             dims.cumsum(dtype=np.int32, out=ao_loc[1:])
 
-            idx = np.argsort(angs)
-            ao_loc[:-1] = ao_loc[idx]
-            self._mol_ao_loc_cache = cp.asarray(ao_loc)
+            split_idx = self.to_split_map[~self.pad_id]
+            decontracted_idx = self._split_to_decontracted[split_idx]
+            _ao_loc = np.empty(len(split_idx) + 1, dtype=np.int32)
+            _ao_loc[:-1] = ao_loc[decontracted_idx]
+            _ao_loc[-1] = ao_loc[-1]
+            self._mol_ao_loc_cache = cp.asarray(_ao_loc)
         return self._mol_ao_loc_cache
 
     @property
@@ -319,7 +294,7 @@ class BasisLayout:
         Transform matrix from decontracted molecular AO to decontracted cartesian AO.
         """
         mat_cp = cp.asarray(mat) if not isinstance(mat, cp.ndarray) else mat
-        src_offsets = self.decontracted_ao_loc
+        src_offsets = self.ao_loc_no_pad
         mol_ao_loc = self.mol_ao_loc
         nao = int(src_offsets[-1])
         is_cart = self.splitted_mol.cart
@@ -328,14 +303,14 @@ class BasisLayout:
             results = []
             transform_func = cart2cart if is_cart else sph2cart
             for i in range(mat_cp.shape[0]):
-                mat_2d = transform_func(mat_cp[i], self.angs_decontracted, mol_ao_loc, src_offsets, nao)
+                mat_2d = transform_func(mat_cp[i], self.angs_no_pad, mol_ao_loc, src_offsets, nao)
                 if mat_2d.ndim == 3 and mat_2d.shape[0] == 1:
                     mat_2d = mat_2d[0]
                 results.append(mat_2d)
             return cp.stack(results, axis=0)
         else:
             transform_func = cart2cart if is_cart else sph2cart
-            result = transform_func(mat_cp, self.angs_decontracted, mol_ao_loc, src_offsets, nao)
+            result = transform_func(mat_cp, self.angs_no_pad, mol_ao_loc, src_offsets, nao)
             return result[0] if result.ndim == 3 and result.shape[0] == 1 else result
 
     def dm_to_mol(self, mat):
@@ -343,7 +318,7 @@ class BasisLayout:
         Transform matrix from decontracted cartesian AO to decontracted molecular AO.
         """
         mat_cp = cp.asarray(mat) if isinstance(mat, np.ndarray) else mat
-        src_offsets = self.decontracted_ao_loc
+        src_offsets = self.ao_loc_no_pad
         mol_ao_loc = self.mol_ao_loc
         nao = int(mol_ao_loc[-1])
         is_cart = self.splitted_mol.cart
@@ -352,14 +327,14 @@ class BasisLayout:
             results = []
             transform_func = cart2cart if is_cart else cart2sph
             for i in range(mat_cp.shape[0]):
-                mat_2d = transform_func(mat_cp[i], self.angs_decontracted, src_offsets, mol_ao_loc, nao)
+                mat_2d = transform_func(mat_cp[i], self.angs_no_pad, src_offsets, mol_ao_loc, nao)
                 if mat_2d.ndim == 3 and mat_2d.shape[0] == 1:
                     mat_2d = mat_2d[0]
                 results.append(mat_2d)
             return cp.stack(results, axis=0)
         else:
             transform_func = cart2cart if is_cart else cart2sph
-            result = transform_func(mat_cp, self.angs_decontracted, src_offsets, mol_ao_loc, nao)
+            result = transform_func(mat_cp, self.angs_no_pad, src_offsets, mol_ao_loc, nao)
             return result[0] if result.ndim == 3 and result.shape[0] == 1 else result
 
 

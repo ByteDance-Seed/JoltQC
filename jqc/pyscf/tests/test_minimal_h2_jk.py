@@ -30,6 +30,15 @@ def test_minimal_h2_jk():
 
     # JoltQC JK kernel
     layout = BasisLayout.from_mol(mol, alignment=TILE)
+    print(layout.angs)
+    print(layout.angs_no_pad)
+    print(layout.to_split_map)
+    print(layout.nprims)
+    print(layout.pad_id)
+    print(layout.ao_loc)
+    print(layout.mol_ao_loc)
+    print(layout.ao_loc_no_pad)
+    #exit()
     get_jk = generate_jk_kernel(layout)
     vj_jqc, vk_jqc = get_jk(mol, dm, hermi=1)
     # Convert to numpy if they are CuPy arrays
@@ -39,10 +48,6 @@ def test_minimal_h2_jk():
         vk_jqc = vk_jqc.get() if isinstance(vk_jqc, cp.ndarray) else vk_jqc
     except Exception:
         pass
-    print(layout.angs)
-    print(layout.angs_decontracted)
-    print(layout.ao_loc)
-    print(layout.decontracted_ao_loc)
     
     # PySCF reference
     mf_ref = _hf.RHF(mol)
