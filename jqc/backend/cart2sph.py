@@ -228,7 +228,7 @@ def cart2cart(dm_src, angs, src_offset, dst_offset, nao, out=None):
         dst_offset_np = np.asarray(dst_offset)
 
     # Build comprehensive mapping for all AO pairs
-    nbas = len(src_offset_np)
+    nbas = len(src_offset_np) - 1  # offset arrays have nbas+1 elements
 
     # First, build a mapping from each internal AO to its source AO
     internal_to_source = []
@@ -249,31 +249,3 @@ def cart2cart(dm_src, angs, src_offset, dst_offset, nao, out=None):
                     dm_dst[b][dst_i, dst_j] += dm_src_cp[b][src_i, src_j]
 
     return dm_dst
-
-def dm_from_mol(mat, angs, ao_loc, bas_map, mol):
-    """
-    Transform the matrix from the molecular basis to the cartesian basis.
-    Now uses decontracted molecules with proper ao_loc properties.
-    """
-    nao = ao_loc[-1].item()
-    mol_ao_loc = mol.ao_loc[bas_map]
-    
-    if mol.cart:
-        mat_cart = cart2cart(mat, angs, mol_ao_loc, ao_loc, nao)
-    else:
-        mat_cart = sph2cart(mat, angs, mol_ao_loc, ao_loc, nao)
-    return mat_cart
-
-def dm_to_mol(mat, angs, ao_loc, bas_map, mol):
-    """
-    Transform the matrix from the cartesian basis to the molecular basis.
-    Now uses decontracted molecules with proper nao and ao_loc properties.
-    """
-    nao = mol.nao
-    mol_ao_loc = mol.ao_loc[bas_map]
-    
-    if mol.cart:
-        mat_mol = cart2cart(mat, angs, ao_loc, mol_ao_loc, nao)
-    else:
-        mat_mol = cart2sph(mat, angs, ao_loc, mol_ao_loc, nao)
-    return mat_mol

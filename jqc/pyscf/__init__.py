@@ -59,8 +59,8 @@ def apply(obj, cutoff_fp32=None, cutoff_fp64=None):
     mol = obj.mol
     
     # Generate basis layouts once and reuse them
-    layout_rks = BasisLayout.from_sort_group_basis(mol, alignment=1)
-    layout_jk = BasisLayout.from_sort_group_basis(mol, alignment=TILE)
+    layout_rks = BasisLayout.from_mol(mol, alignment=1)
+    layout_jk = BasisLayout.from_mol(mol, alignment=TILE)
 
     if obj.istype('RKS'):
         get_rho = rks.generate_get_rho(layout_rks, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)

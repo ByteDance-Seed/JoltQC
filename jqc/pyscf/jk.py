@@ -91,7 +91,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     ce_fp32 = basis_layout.ce_fp32
     coords_fp32 = basis_layout.coords_fp32
 
-    ao_loc = basis_layout.ao_loc
+    ao_loc = cp.asarray(basis_layout.ao_loc)
     nao = int(ao_loc[-1])
 
     group_key, group_offset = group_info

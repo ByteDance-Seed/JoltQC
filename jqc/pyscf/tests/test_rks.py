@@ -75,7 +75,7 @@ class KnownValues(unittest.TestCase):
         dm = dm.dot(dm.T)
         xctype = 'LDA'
 
-        basis_layout = BasisLayout.from_sort_group_basis(mol, alignment=1)
+        basis_layout = BasisLayout.from_mol(mol, alignment=1)
         _, rho_kern, vxc_kern = rks.generate_rks_kernel(basis_layout)
         rho = rho_kern(mol, grids, xctype, dm)
         
@@ -99,7 +99,7 @@ class KnownValues(unittest.TestCase):
         dm = dm.dot(dm.T)
         xctype = 'LDA'
 
-        basis_layout = BasisLayout.from_sort_group_basis(mol, alignment=1)
+        basis_layout = BasisLayout.from_mol(mol, alignment=1)
         _, rho_kern, vxc_kern = rks.generate_rks_kernel(basis_layout, cutoff_fp32=1e-13, cutoff_fp64=1e100)
         rho = rho_kern(mol, grids, xctype, dm)
         
@@ -122,7 +122,7 @@ class KnownValues(unittest.TestCase):
         dm = dm.dot(dm.T)
         xctype = 'GGA'
 
-        basis_layout = BasisLayout.from_sort_group_basis(mol, alignment=1)
+        basis_layout = BasisLayout.from_mol(mol, alignment=1)
         _, rho_kern, vxc_kern = rks.generate_rks_kernel(basis_layout)
         rho = rho_kern(mol, grids, xctype, dm)
 
@@ -148,7 +148,7 @@ class KnownValues(unittest.TestCase):
         dm = dm.dot(dm.T)
         xctype = 'MGGA'
 
-        basis_layout = BasisLayout.from_sort_group_basis(mol, alignment=1)
+        basis_layout = BasisLayout.from_mol(mol, alignment=1)
         _, rho_kern, vxc_kern = rks.generate_rks_kernel(basis_layout)
         rho = rho_kern(mol, grids, xctype, dm)
 
@@ -178,7 +178,7 @@ class KnownValues(unittest.TestCase):
         dm = cp.random.rand(nao, nao)
         dm = dm + dm.T
 
-        basis_layout = BasisLayout.from_sort_group_basis(mol, alignment=1)
+        basis_layout = BasisLayout.from_mol(mol, alignment=1)
         nr_nlc_vxc = rks.generate_nr_nlc_vxc(basis_layout)
 
         n, e, v = ni.nr_nlc_vxc(mol, grids, 'wb97m-v', dm)

@@ -81,8 +81,8 @@ class BasisSetDFTTests(unittest.TestCase):
         )
         
         # JoltQC calculation
-        layout_rks = BasisLayout.from_sort_group_basis(mol_test, alignment=1)
-        layout_jk = BasisLayout.from_sort_group_basis(mol_test, alignment=TILE)
+        layout_rks = BasisLayout.from_mol(mol_test, alignment=1)
+        layout_jk = BasisLayout.from_mol(mol_test, alignment=TILE)
         
         mf_jolt = dft.RKS(mol_test, xc='PBE')
         mf_jolt.grids.level = 3  # Lower grid level for speed
@@ -119,8 +119,8 @@ class BasisSetDFTTests(unittest.TestCase):
         )
         
         # JoltQC calculation
-        layout_rks = BasisLayout.from_sort_group_basis(mol_test, alignment=1)
-        layout_jk = BasisLayout.from_sort_group_basis(mol_test, alignment=TILE)
+        layout_rks = BasisLayout.from_mol(mol_test, alignment=1)
+        layout_jk = BasisLayout.from_mol(mol_test, alignment=TILE)
         
         mf_jolt = dft.RKS(mol_test, xc='B3LYP')
         mf_jolt.grids.level = 3  # Lower grid level for speed
@@ -161,8 +161,8 @@ class BasisSetDFTTests(unittest.TestCase):
                     )
                     
                     # JoltQC calculation
-                    layout_rks = BasisLayout.from_sort_group_basis(mol_test, alignment=1)
-                    layout_jk = BasisLayout.from_sort_group_basis(mol_test, alignment=TILE)
+                    layout_rks = BasisLayout.from_mol(mol_test, alignment=1)
+                    layout_jk = BasisLayout.from_mol(mol_test, alignment=TILE)
                     
                     mf_jolt = dft.RKS(mol_test, xc=xc)
                     mf_jolt.grids.level = 2  # Lower grid level for speed

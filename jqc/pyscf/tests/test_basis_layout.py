@@ -69,50 +69,50 @@ class TestBasisLayout(unittest.TestCase):
 
     def test_basis_layout_creation(self):
         """Test basic BasisLayout creation"""
-        layout = BasisLayout.from_sort_group_basis(self.mol_h2, alignment=TILE)
+        layout = BasisLayout.from_mol(self.mol_h2, alignment=TILE)
 
         # Basic properties should be set
         self.assertIsNotNone(layout.splitted_mol)
         self.assertIsNotNone(layout.ao_loc)
-        self.assertIsNotNone(layout.bas_id)
+        self.assertIsNotNone(layout.to_split_map)
+        self.assertIsNotNone(layout.to_decontracted_map)
         self.assertIsNotNone(layout.pad_id)
         self.assertIsNotNone(layout.angs)
 
         # Check dimensions are consistent
-        self.assertEqual(len(layout.bas_id), len(layout.pad_id))
-        self.assertEqual(len(layout.bas_id), len(layout.angs))
+        self.assertEqual(len(layout.to_split_map), len(layout.pad_id))
+        self.assertEqual(len(layout.to_split_map), len(layout.angs))
+        self.assertEqual(len(layout.to_split_map), len(layout.to_decontracted_map))
 
     def test_ao_loc_property(self):
         """Test ao_loc property returns correct dimensions"""
-        layout = BasisLayout.from_sort_group_basis(self.mol_h2, alignment=TILE)
+        layout = BasisLayout.from_mol(self.mol_h2, alignment=TILE)
 
-        # ao_loc should return internal layout dimensions (with padding)
-        dims = (layout.angs + 1) * (layout.angs + 2) // 2
-        expected_nao = np.sum(dims)
+        # ao_loc should return decontracted molecular dimensions (without padding)
+        expected_nao = int(layout.ao_loc[-1])
         actual_nao = layout.ao_loc[-1].item()
 
         # For debugging, let's see what we get
-        print(f"Internal layout nao: {expected_nao}")
+        print(f"Decontracted nao: {expected_nao}")
         print(f"ao_loc[-1]: {actual_nao}")
-        print(f"ao_loc: {layout.ao_loc.get()}")
+        print(f"ao_loc: {layout.ao_loc}")
 
         self.assertEqual(actual_nao, expected_nao,
-                        "ao_loc should match internal layout dimensions")
+                        "ao_loc should match decontracted molecular dimensions")
 
     def test_dm_from_mol_dimensions(self):
         """Test dm_from_mol returns correct dimensions"""
-        layout = BasisLayout.from_sort_group_basis(self.mol_h2, alignment=TILE)
+        layout = BasisLayout.from_mol(self.mol_h2, alignment=TILE)
 
         # Input: decontracted molecule dimensions (original molecule)
-        input_nao = int(layout.decontracted_ao_loc[-1])
+        input_nao = int(layout.ao_loc[-1])
         input_matrix = np.eye(input_nao)
 
         # Transform
         output_matrix = layout.dm_from_mol(input_matrix)
 
-        # Output: internal layout dimensions (with padding)
-        dims = (layout.angs + 1) * (layout.angs + 2) // 2
-        expected_total_nao = np.sum(dims)
+        # Output: decontracted dimensions (without padding)
+        expected_total_nao = int(layout.ao_loc[-1])
 
         print(f"Input matrix shape: {input_matrix.shape}")
         print(f"Output matrix shape: {output_matrix.shape}")
@@ -125,18 +125,17 @@ class TestBasisLayout(unittest.TestCase):
 
     def test_dm_to_mol_dimensions(self):
         """Test dm_to_mol returns correct dimensions"""
-        layout = BasisLayout.from_sort_group_basis(self.mol_h2, alignment=TILE)
+        layout = BasisLayout.from_mol(self.mol_h2, alignment=TILE)
 
-        # Start with internal layout dimensions
-        dims = (layout.angs + 1) * (layout.angs + 2) // 2
-        internal_nao = np.sum(dims)
-        input_matrix = cp.eye(internal_nao)
+        # Start with decontracted dimensions
+        decontracted_nao = int(layout.ao_loc[-1])
+        input_matrix = cp.eye(decontracted_nao)
 
         # Transform back to decontracted molecule
         output_matrix = layout.dm_to_mol(input_matrix)
 
         # Should get decontracted molecule dimensions (original molecule)
-        expected_nao = int(layout.decontracted_ao_loc[-1])
+        expected_nao = int(layout.ao_loc[-1])
 
         print(f"Input matrix shape: {input_matrix.shape}")
         print(f"Output matrix shape: {output_matrix.shape}")
@@ -147,10 +146,10 @@ class TestBasisLayout(unittest.TestCase):
 
     def test_matrix_transformation_stability(self):
         """Test that matrix transformations are numerically stable"""
-        layout = BasisLayout.from_sort_group_basis(self.mol_h2, alignment=TILE)
+        layout = BasisLayout.from_mol(self.mol_h2, alignment=TILE)
 
         # Test with various types of matrices
-        input_nao = int(layout.decontracted_ao_loc[-1])
+        input_nao = int(layout.ao_loc[-1])
 
         test_matrices = {
             'identity': np.eye(input_nao),
@@ -195,24 +194,67 @@ class TestBasisLayout(unittest.TestCase):
                                f"{matrix_type}: Max value {max_val} should be reasonable")
 
     def test_basis_mapping_consistency(self):
-        """Test that bas_id provides correct mapping to decontracted basis"""
-        layout = BasisLayout.from_sort_group_basis(self.mol_h2, alignment=TILE)
+        """Test that to_split_map provides correct mapping to decontracted basis"""
+        layout = BasisLayout.from_mol(self.mol_h2, alignment=TILE)
 
-        # Check that bas_id indices are valid for the split molecule
-        max_bas_id = np.max(layout.bas_id)
+        # Check that to_split_map indices are valid for the split molecule
+        max_to_split_map = np.max(layout.to_split_map)
         split_mol_nbas = layout.splitted_mol.nbas
 
-        print(f"bas_id: {layout.bas_id}")
-        print(f"max bas_id: {max_bas_id}")
+        print(f"to_split_map: {layout.to_split_map}")
+        print(f"max to_split_map: {max_to_split_map}")
         print(f"split molecule nbas: {split_mol_nbas}")
-        print(f"decontracted_ao_loc: {layout.decontracted_ao_loc}")
+        print(f"ao_loc: {layout.ao_loc}")
 
-        self.assertLessEqual(max_bas_id, split_mol_nbas - 1,
-                           "bas_id should contain valid indices for split molecule basis functions")
+        self.assertLessEqual(max_to_split_map, split_mol_nbas - 1,
+                           "to_split_map should contain valid indices for split molecule basis functions")
+
+    def test_to_decontracted_map_consistency(self):
+        """Test that to_decontracted_map provides correct mapping to decontracted basis"""
+        layout = BasisLayout.from_mol(self.mol_h2, alignment=TILE)
+
+        # Check that the cache is initially None (lazy evaluation)
+        self.assertIsNone(layout._to_decontracted_map_cache,
+                         "to_decontracted_map cache should be None before first access")
+
+        # Check that to_decontracted_map indices are valid for the decontracted molecule
+        non_padded_mask = ~layout.pad_id
+        decontracted_indices = layout.to_decontracted_map[non_padded_mask]
+        max_decontracted_index = np.max(decontracted_indices)
+        decontracted_mol_nbas = len(layout.ao_loc) - 1
+
+        # Check that the cache is now populated (lazy evaluation worked)
+        self.assertIsNotNone(layout._to_decontracted_map_cache,
+                           "to_decontracted_map cache should be populated after first access")
+
+        print(f"to_decontracted_map: {layout.to_decontracted_map}")
+        print(f"max decontracted index: {max_decontracted_index}")
+        print(f"decontracted molecule nbas: {decontracted_mol_nbas}")
+
+        self.assertLessEqual(max_decontracted_index, decontracted_mol_nbas - 1,
+                           "to_decontracted_map should contain valid indices for decontracted molecule basis functions")
+
+        # Check that padded entries have invalid indices
+        padded_indices = layout.to_decontracted_map[layout.pad_id]
+        self.assertTrue(np.all(padded_indices == -1),
+                       "Padded entries should have invalid indices (-1)")
+
+        # Verify composition: to_decontracted_map should equal split_to_decontracted[to_split_map]
+        expected_mapping = np.empty_like(layout.to_decontracted_map)
+        expected_mapping[non_padded_mask] = layout._split_to_decontracted[layout.to_split_map[non_padded_mask]]
+        expected_mapping[layout.pad_id] = -1
+
+        np.testing.assert_array_equal(layout.to_decontracted_map, expected_mapping,
+                                     "to_decontracted_map should be composition of to_split_map and split_to_decontracted")
+
+        # Verify that multiple accesses return the same cached object
+        second_access = layout.to_decontracted_map
+        self.assertIs(layout.to_decontracted_map, second_access,
+                     "Multiple accesses should return the same cached object")
 
     def test_padding_logic(self):
         """Test padding identification and handling"""
-        layout = BasisLayout.from_sort_group_basis(self.mol_h2, alignment=TILE)
+        layout = BasisLayout.from_mol(self.mol_h2, alignment=TILE)
 
         # Count non-padded vs padded functions
         n_real = np.sum(~layout.pad_id)
@@ -231,17 +273,17 @@ class TestBasisLayout(unittest.TestCase):
         """Test BasisLayout with different alignment values"""
         for alignment in [1, 4, 16]:
             with self.subTest(alignment=alignment):
-                layout = BasisLayout.from_sort_group_basis(self.mol_h2, alignment=alignment)
+                layout = BasisLayout.from_mol(self.mol_h2, alignment=alignment)
 
                 # Basic functionality should work regardless of alignment
-                input_nao = int(layout.decontracted_ao_loc[-1])
+                input_nao = int(layout.ao_loc[-1])
                 input_matrix = np.eye(input_nao)
                 cart_matrix = layout.dm_from_mol(input_matrix)
 
                 # Check that transformations produce expected dimensions
-                internal_nao = layout.ao_loc[-1].item()
-                self.assertEqual(cart_matrix.shape[0], internal_nao)
-                self.assertEqual(cart_matrix.shape[1], internal_nao)
+                decontracted_nao = layout.ao_loc[-1].item()
+                self.assertEqual(cart_matrix.shape[0], decontracted_nao)
+                self.assertEqual(cart_matrix.shape[1], decontracted_nao)
 
                 recovered_matrix = layout.dm_to_mol(cart_matrix)
                 self.assertEqual(recovered_matrix.shape[0], input_nao)
@@ -251,12 +293,12 @@ class TestBasisLayout(unittest.TestCase):
 
     def test_3d_array_handling(self):
         """Test that transformations work with 3D arrays (multiple matrices)"""
-        layout = BasisLayout.from_sort_group_basis(self.mol_h2, alignment=TILE)
+        layout = BasisLayout.from_mol(self.mol_h2, alignment=TILE)
 
         # Test with batch of 3 matrices
         n_batch = 3
-        input_nao = int(layout.decontracted_ao_loc[-1])
-        internal_nao = layout.ao_loc[-1].item()
+        input_nao = int(layout.ao_loc[-1])
+        decontracted_nao = layout.ao_loc[-1].item()
         input_batch = np.random.rand(n_batch, input_nao, input_nao)
 
         # Transform and check dimensions
@@ -268,7 +310,7 @@ class TestBasisLayout(unittest.TestCase):
         print(f"Recovered batch shape: {recovered_batch.shape}")
 
         # Check dimensions are correct
-        self.assertEqual(cart_batch.shape, (n_batch, internal_nao, internal_nao))
+        self.assertEqual(cart_batch.shape, (n_batch, decontracted_nao, decontracted_nao))
         self.assertEqual(recovered_batch.shape, (n_batch, input_nao, input_nao))
 
         # Check that no NaN or Inf values are produced
@@ -280,7 +322,7 @@ class TestBasisLayout(unittest.TestCase):
     def test_angs_ordered_in_groups(self):
         """Test that angs array is ordered in groups by angular momentum"""
         # Test with H2 cc-pVDZ which has both s and p functions
-        layout_h2 = BasisLayout.from_sort_group_basis(self.mol_h2, alignment=TILE)
+        layout_h2 = BasisLayout.from_mol(self.mol_h2, alignment=TILE)
 
         print(f"H2 cc-pVDZ angs: {layout_h2.angs}")
 
@@ -289,7 +331,7 @@ class TestBasisLayout(unittest.TestCase):
                        f"H2 cc-pVDZ angs not properly grouped: {angs_h2}")
 
         # Also test with H2O cc-pVDZ which has s, p, and d functions
-        layout_h2o = BasisLayout.from_sort_group_basis(self.mol_h2o, alignment=TILE)
+        layout_h2o = BasisLayout.from_mol(self.mol_h2o, alignment=TILE)
 
         print(f"H2O cc-pVDZ angs: {layout_h2o.angs}")
 

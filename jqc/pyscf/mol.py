@@ -67,7 +67,7 @@ class BasisLayout:
     nprims: np.ndarray     # shape (nbasis_total,),               int32
 
     # maps / masks
-    bas_id: np.ndarray     # shape (nbasis_total,),               int32
+    to_split_map: np.ndarray     # shape (nbasis_total,),               int32
     pad_id: np.ndarray     # shape (nbasis_total,),               bool
 
     # group_info
@@ -83,7 +83,8 @@ class BasisLayout:
     # Mapping from split basis index -> decontracted basis index
     _split_to_decontracted: Optional[np.ndarray] = None
 
-    # bas_id maps from internal sorted/grouped basis layout back to split molecule basis indices
+    # to_split_map maps from internal sorted/grouped basis layout back to split molecule basis indices
+    # to_decontracted_map is lazily computed as a property
 
     # cached q_matrix (computed lazily)
     _q_matrix_cache: Optional[ArrayLike] = None
@@ -93,8 +94,12 @@ class BasisLayout:
     _coords_fp32_cache: Optional[ArrayLike] = None
 
     # cached ao_loc (computed lazily)
-    _ao_loc_cache: Optional[cp.ndarray] = None
+    _ao_loc_cache: Optional[np.ndarray] = None
+    _mol_ao_loc_cache: Optional[cp.ndarray] = None
     _decontracted_ao_loc_cache: Optional[np.ndarray] = None
+    _ao_loc_no_pad_cache: Optional[np.ndarray] = None
+    _mol_ao_loc_no_pad_cache: Optional[np.ndarray] = None
+    _to_decontracted_map_cache: Optional[np.ndarray] = None
     
 
     # --------- Compatibility accessors ---------
@@ -109,30 +114,82 @@ class BasisLayout:
     # --------- Convenience properties ---------
     @property
     def nbasis(self) -> int:
-        return int(self.bas_id.shape[0])
+        return int(self.to_split_map.shape[0])
 
     @property
     def ngroups(self) -> int:
         return int(self.group_key.shape[0])
 
     @property
-    def ao_loc(self) -> cp.ndarray:
+    def angs_decontracted(self) -> np.ndarray:
         """
-        AO shell offsets for the internal layout (with padding).
-        Returns ao_loc for the internal format dimensions, including padding.
+        Angular momentum values of sorted decontracted mol.
+        """
+        angs = self._mol._bas[:, gto.ANG_OF]
+        idx = np.argsort(angs)
+        return angs[idx]
+
+    @property
+    def ao_loc(self) -> np.ndarray:
+        """
+        AO offsets for the decontracted molecule for each basis in internal format.
+        ao_loc[i] gives the starting AO index of basis i.
         """
         if self._ao_loc_cache is None:
-            # Use internal layout dimensions for cartesian basis (with padding)
-            dims = (self.angs + 1) * (self.angs + 2) // 2
-            self._ao_loc_cache = cp.concatenate((cp.array([0]), cp.asarray(np.cumsum(dims)))).astype(np.int32)
+            # Compute from original molecule (decontracted basis)
+            bas = self._mol._bas
+            angs = bas[:, gto.ANG_OF]
+            nctr = bas[:, gto.NCTR_OF]
+            # Internal layout always uses cartesian AO dimensions
+            dims = [((l + 1) * (l + 2) // 2) for l in angs]
+            # Repeat by contraction count (decontracted view)
+            dims = np.repeat(dims, nctr)
+            ao_loc = np.empty(len(dims) + 1, dtype=np.int32)
+            ao_loc[0] = 0
+            dims.cumsum(dtype=np.int32, out=ao_loc[1:])
+
+            # Map only non-padded entries to avoid indexing issues
+            _ao_loc = np.empty([self.nbasis + 1], dtype=np.int32)
+            non_padded_mask = ~self.pad_id
+            decontracted_indices = self.to_decontracted_map[non_padded_mask]
+            _ao_loc[:-1][non_padded_mask] = ao_loc[decontracted_indices]
+            _ao_loc[:-1][self.pad_id] = 0  # Padded entries get 0 offset
+            _ao_loc[-1] = ao_loc[-1]
+            # Keep numpy on cache for CPU-side logic; callers can cp.asarray when needed
+            self._ao_loc_cache = _ao_loc
         return self._ao_loc_cache
 
     @property
     def decontracted_ao_loc(self) -> np.ndarray:
         """
-        AO offsets for the decontracted molecule.
+        AO offsets for the decontracted molecule in cartesian format.
+        Its dimension should be consistent with angs_decontracted.
         """
         if self._decontracted_ao_loc_cache is None:
+            bas = self._mol._bas
+            angs = bas[:, gto.ANG_OF]
+            nctr = bas[:, gto.NCTR_OF]
+            # Internal layout always uses cartesian AO dimensions
+            dims = [((l + 1) * (l + 2) // 2) for l in angs]
+            # Repeat by contraction count (decontracted view)
+            dims = np.repeat(dims, nctr)
+            ao_loc = np.empty(len(dims) + 1, dtype=np.int32)
+            ao_loc[0] = 0
+            dims.cumsum(dtype=np.int32, out=ao_loc[1:])
+
+            idx = np.argsort(angs)
+            ao_loc[:-1] = ao_loc[idx]
+
+            self._decontracted_ao_loc_cache = ao_loc
+        return self._decontracted_ao_loc_cache
+
+    @property
+    def mol_ao_loc(self) -> cp.ndarray:
+        """
+        AO shell offsets for the sorted original molecule in decontracted format.
+        Its dimension should be consistent with angs_decontracted
+        """
+        if self._mol_ao_loc_cache is None:
             # Compute from original molecule (decontracted basis)
             bas = self._mol._bas
             angs = bas[:,gto.ANG_OF]
@@ -145,8 +202,26 @@ class BasisLayout:
             ao_loc = np.empty(len(dims)+1, dtype=np.int32)
             ao_loc[0] = 0
             dims.cumsum(dtype=np.int32, out=ao_loc[1:])
-            self._decontracted_ao_loc_cache = ao_loc
-        return self._decontracted_ao_loc_cache
+
+            idx = np.argsort(angs)
+            ao_loc[:-1] = ao_loc[idx]
+            self._mol_ao_loc_cache = cp.asarray(ao_loc)
+        return self._mol_ao_loc_cache
+
+    @property
+    def to_decontracted_map(self) -> np.ndarray:
+        """
+        Lazy evaluation property for to_decontracted_map.
+        Maps from internal sorted/grouped basis layout back to decontracted molecule basis indices.
+        """
+        if self._to_decontracted_map_cache is None:
+            # Compute to_decontracted_map: internal -> decontracted
+            # This is the composition of to_split_map (internal -> split) and split_to_decontracted (split -> decontracted)
+            to_decontracted_map = np.empty(len(self.to_split_map), dtype=np.int32)
+            to_decontracted_map[~self.pad_id] = self._split_to_decontracted[self.to_split_map[~self.pad_id]]
+            to_decontracted_map[self.pad_id] = -1  # Invalid index for padded entries
+            self._to_decontracted_map_cache = to_decontracted_map
+        return self._to_decontracted_map_cache
 
     @property
     def splitted_mol(self) -> object:
@@ -174,7 +249,7 @@ class BasisLayout:
             # Compute raw q_matrix using split molecule
             q_matrix_raw = compute_q_matrix(self._splitted_mol)
             # Apply basis mapping to reorder according to sorted basis
-            q_matrix_mapped = q_matrix_raw[self.bas_id[:,None], self.bas_id]
+            q_matrix_mapped = q_matrix_raw[self.to_split_map[:,None], self.to_split_map]
             # Set Q matrix for padded basis to -100 (screening value)
             q_matrix_mapped[self.pad_id, :] = -100
             q_matrix_mapped[:, self.pad_id] = -100
@@ -202,7 +277,7 @@ class BasisLayout:
         return self._coords_fp32_cache
 
     @classmethod
-    def from_sort_group_basis(cls, mol, alignment: int = 4, dtype=np.float64) -> "BasisLayout":
+    def from_mol(cls, mol, alignment: int = 4, dtype=np.float64) -> "BasisLayout":
         """
         Creates a BasisLayout from a molecule using split basis functions.
         First creates a split mol, then calls sort_group_basis on it.
@@ -220,7 +295,7 @@ class BasisLayout:
         splitted_mol, split_to_decontracted = split_basis(mol)
 
         # Then call sort_group_basis on the split molecule
-        bas_info, bas_id, pad_id, group_info = sort_group_basis(splitted_mol, alignment=alignment, dtype=dtype)
+        bas_info, to_split_map, pad_id, group_info = sort_group_basis(splitted_mol, alignment=alignment, dtype=dtype)
         ce, coords, angs, nprims = bas_info
         group_key, group_offset = group_info
 
@@ -229,7 +304,7 @@ class BasisLayout:
             coords=coords,
             angs=np.asarray(angs, dtype=np.int32),
             nprims=np.asarray(nprims, dtype=np.int32),
-            bas_id=np.asarray(bas_id, dtype=np.int32),
+            to_split_map=np.asarray(to_split_map, dtype=np.int32),
             pad_id=np.asarray(pad_id, dtype=bool),
             group_key=np.asarray(group_key, dtype=np.int32),
             group_offset=np.asarray(group_offset),
@@ -241,126 +316,51 @@ class BasisLayout:
 
     def dm_from_mol(self, mat):
         """
-        Transform the matrix from the decontracted molecular basis to the internal layout.
-        Always returns matrix with internal layout dimensions (including padding).
-
-        Args:
-            mat: Matrix to transform (decontracted molecule dimensions)
-
-        Returns:
-            Transformed matrix in internal layout basis with padding
+        Transform matrix from decontracted molecular AO to decontracted cartesian AO.
         """
-        # Use cached ao_loc and precomputed mappings
-        ao_loc = self.ao_loc
-        nao = int(ao_loc[-1])
-
-        # Map from decontracted molecule to internal layout
-        # Compose mapping: internal index -> split index (bas_id) -> decontracted index
-        if self._split_to_decontracted is None:
-            raise ValueError("split-to-decontracted map is not set")
-        parent_map = self._split_to_decontracted[self.bas_id]
-        # Use the decontracted molecule's ao_loc for the source mapping
-        mol_ao_loc = self.decontracted_ao_loc[parent_map]
-
-        # Optimize array conversion - avoid copy when possible
-        if isinstance(mat, cp.ndarray):
-            mat_cp = mat
-        else:
-            mat_cp = cp.asarray(mat)
-
-        # Cache common values
+        mat_cp = cp.asarray(mat) if not isinstance(mat, cp.ndarray) else mat
+        src_offsets = self.decontracted_ao_loc
+        mol_ao_loc = self.mol_ao_loc
+        nao = int(src_offsets[-1])
         is_cart = self.splitted_mol.cart
-        ao_loc_slice = ao_loc[:-1]
 
-        # WORKAROUND: Process 3D arrays as sequential 2D transformations
-        # due to CUDA kernel issue with batch processing
         if mat_cp.ndim == 3:
-            n_batch = mat_cp.shape[0]
-            # Pre-allocate results list for better memory efficiency
-            results = [None] * n_batch
+            results = []
             transform_func = cart2cart if is_cart else sph2cart
-
-            for i in range(n_batch):
-                mat_2d = transform_func(mat_cp[i], self.angs, mol_ao_loc, ao_loc_slice, nao)
-                # Optimize dimension checking
-                if hasattr(mat_2d, 'ndim') and mat_2d.ndim == 3 and mat_2d.shape[0] == 1:
+            for i in range(mat_cp.shape[0]):
+                mat_2d = transform_func(mat_cp[i], self.angs_decontracted, mol_ao_loc, src_offsets, nao)
+                if mat_2d.ndim == 3 and mat_2d.shape[0] == 1:
                     mat_2d = mat_2d[0]
-                results[i] = mat_2d
-            mat_cart = cp.stack(results, axis=0)
+                results.append(mat_2d)
+            return cp.stack(results, axis=0)
         else:
-            if is_cart:
-                mat_cart = cart2cart(mat_cp, self.angs, mol_ao_loc, ao_loc_slice, nao)
-            else:
-                mat_cart = sph2cart(mat_cp, self.angs, mol_ao_loc, ao_loc_slice, nao)
-
-            # Optimize dimension checking
-            if mat_cp.ndim == 2 and hasattr(mat_cart, 'ndim') and mat_cart.ndim == 3 and mat_cart.shape[0] == 1:
-                mat_cart = mat_cart[0]
-
-        return mat_cart
+            transform_func = cart2cart if is_cart else sph2cart
+            result = transform_func(mat_cp, self.angs_decontracted, mol_ao_loc, src_offsets, nao)
+            return result[0] if result.ndim == 3 and result.shape[0] == 1 else result
 
     def dm_to_mol(self, mat):
         """
-        Transform the matrix from the internal layout to the decontracted molecular basis.
-        Always removes padding to return decontracted molecule dimensions.
-
-        Args:
-            mat: Matrix to transform (with padding dimensions from internal layout)
-
-        Returns:
-            Transformed matrix in decontracted molecular basis (without padding)
+        Transform matrix from decontracted cartesian AO to decontracted molecular AO.
         """
-        # Optimize array conversion - avoid copy when possible
-        if isinstance(mat, np.ndarray):
-            mat_cp = cp.asarray(mat)
-        else:
-            mat_cp = mat
-
-        # Remove padding: Filter out padding basis functions using cached mask
-        non_pad_mask = ~self.pad_id
-        angs = self.angs[non_pad_mask]
-        bas_map = self.bas_id[non_pad_mask]
-        # Use source offsets from the full internal layout (do not recompact)
-        ao_loc_full = self.ao_loc
-        src_offsets = ao_loc_full[:-1][non_pad_mask]
-
-        # Map from internal layout to decontracted molecule
-        # Compose mapping: internal(non-pad) -> split -> decontracted
-        if self._split_to_decontracted is None:
-            raise ValueError("split-to-decontracted map is not set")
-        parent_map = self._split_to_decontracted[bas_map]
-        # Target AO dimension is that of the decontracted/original molecule
-        nao = int(self.decontracted_ao_loc[-1])
-        mol_ao_loc = self.decontracted_ao_loc[parent_map]
-
-        # Cache common values
+        mat_cp = cp.asarray(mat) if isinstance(mat, np.ndarray) else mat
+        src_offsets = self.decontracted_ao_loc
+        mol_ao_loc = self.mol_ao_loc
+        nao = int(mol_ao_loc[-1])
         is_cart = self.splitted_mol.cart
 
-        # WORKAROUND: Process 3D arrays as sequential 2D transformations
-        # due to CUDA kernel issue with batch processing
         if mat_cp.ndim == 3:
-            n_batch = mat_cp.shape[0]
-            # Pre-allocate results list for better memory efficiency
-            results = [None] * n_batch
+            results = []
             transform_func = cart2cart if is_cart else cart2sph
-
-            for i in range(n_batch):
-                mat_2d = transform_func(mat_cp[i], angs, src_offsets, mol_ao_loc, nao)
-                # Optimize dimension checking
-                if hasattr(mat_2d, 'ndim') and mat_2d.ndim == 3 and mat_2d.shape[0] == 1:
+            for i in range(mat_cp.shape[0]):
+                mat_2d = transform_func(mat_cp[i], self.angs_decontracted, src_offsets, mol_ao_loc, nao)
+                if mat_2d.ndim == 3 and mat_2d.shape[0] == 1:
                     mat_2d = mat_2d[0]
-                results[i] = mat_2d
-            mat_mol = cp.stack(results, axis=0)
+                results.append(mat_2d)
+            return cp.stack(results, axis=0)
         else:
-            if is_cart:
-                mat_mol = cart2cart(mat_cp, angs, src_offsets, mol_ao_loc, nao)
-            else:
-                mat_mol = cart2sph(mat_cp, angs, src_offsets, mol_ao_loc, nao)
-
-            # Optimize dimension checking
-            if mat_cp.ndim == 2 and hasattr(mat_mol, 'ndim') and mat_mol.ndim == 3 and mat_mol.shape[0] == 1:
-                mat_mol = mat_mol[0]
-        return mat_mol
+            transform_func = cart2cart if is_cart else cart2sph
+            result = transform_func(mat_cp, self.angs_decontracted, src_offsets, mol_ao_loc, nao)
+            return result[0] if result.ndim == 3 and result.shape[0] == 1 else result
 
 
 def format_bas_cache(sorted_mol, dtype=np.float64):
@@ -471,13 +471,13 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
             'coeff_ptr': coeff_ptr,
             'nprim': nprim,
             'ang': ang,
-            'bas_id': i
+            'to_split_map': i
         })
 
     # Pre-allocate arrays for each pattern
     coords_by_pattern = {}
     ce_by_pattern = {}
-    bas_id_by_pattern = {}
+    to_split_map_by_pattern = {}
     pad_id_by_pattern = {}
     
     # Pre-compute normalization factors to avoid repeated calculations
@@ -495,7 +495,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         # Pre-allocate final arrays
         coords_by_pattern[pattern] = np.empty((padded_count, 4), dtype=np.float64)
         ce_by_pattern[pattern] = np.empty((padded_count, 2*NPRIM_MAX), dtype=dtype)
-        bas_id_by_pattern[pattern] = np.empty(padded_count, dtype=np.int32)
+        to_split_map_by_pattern[pattern] = np.empty(padded_count, dtype=np.int32)
         pad_id_by_pattern[pattern] = np.empty(padded_count, dtype=bool)
 
         # Get normalization factor once per pattern
@@ -508,7 +508,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
             exp_ptr = data['exp_ptr']
             coeff_ptr = data['coeff_ptr']
             nprim = data['nprim']
-            bas_id = data['bas_id']
+            to_split_map = data['to_split_map']
 
             # Get coefficients and exponents (nctr=1, so length is nprim)
             coeffs = _env[coeff_ptr:coeff_ptr+nprim] * norm_fac  # Apply norm factor directly
@@ -522,7 +522,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
             coords_by_pattern[pattern][idx] = coord
             ce_by_pattern[pattern][idx, 0:2*nprim:2] = coeffs
             ce_by_pattern[pattern][idx, 1:2*nprim:2] = exps
-            bas_id_by_pattern[pattern][idx] = bas_id
+            to_split_map_by_pattern[pattern][idx] = to_split_map
             pad_id_by_pattern[pattern][idx] = False
             idx += 1
 
@@ -530,7 +530,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         if idx < padded_count:
             coords_by_pattern[pattern][idx:] = coords_by_pattern[pattern][0]
             ce_by_pattern[pattern][idx:] = ce_by_pattern[pattern][0]
-            bas_id_by_pattern[pattern][idx:] = bas_id_by_pattern[pattern][0]
+            to_split_map_by_pattern[pattern][idx:] = to_split_map_by_pattern[pattern][0]
             pad_id_by_pattern[pattern][idx:] = True
 
     # Optimize sorting with explicit key function to avoid lambda overhead
@@ -542,12 +542,12 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     sorted_keys = sorted(coords_by_pattern.keys(), key=_pattern_sort_key)
 
     # Calculate total size for pre-allocation
-    total_count = sum(len(bas_id_by_pattern[key]) for key in sorted_keys)
+    total_count = sum(len(to_split_map_by_pattern[key]) for key in sorted_keys)
 
     # Pre-allocate final arrays directly on GPU for better efficiency
     ce = cp.empty((total_count, 2*NPRIM_MAX), dtype=dtype)
     coords = cp.empty((total_count, 4), dtype=dtype)  # Use target dtype directly
-    bas_id = np.empty(total_count, dtype=np.int32)  # Keep on CPU for indexing
+    to_split_map = np.empty(total_count, dtype=np.int32)  # Keep on CPU for indexing
     pad_id = np.empty(total_count, dtype=bool)      # Keep on CPU for masking
     angs = np.empty(total_count, dtype=np.int32)    # Keep on CPU
     nprims = np.empty(total_count, dtype=np.int32)  # Keep on CPU
@@ -560,9 +560,9 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     for key in sorted_keys:
         pattern_ce = ce_by_pattern[key]
         pattern_coords = coords_by_pattern[key]
-        pattern_bas_id = bas_id_by_pattern[key]
+        pattern_to_split_map = to_split_map_by_pattern[key]
         pattern_pad_id = pad_id_by_pattern[key]
-        bas_count = len(pattern_bas_id)
+        bas_count = len(pattern_to_split_map)
 
         # Copy data directly to final arrays
         # GPU arrays - direct copy
@@ -570,7 +570,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         coords[offset:offset+bas_count] = cp.asarray(pattern_coords, dtype=dtype)
 
         # CPU arrays - direct assignment
-        bas_id[offset:offset+bas_count] = pattern_bas_id
+        to_split_map[offset:offset+bas_count] = pattern_to_split_map
         pad_id[offset:offset+bas_count] = pattern_pad_id
         angs[offset:offset+bas_count] = key[0]
         nprims[offset:offset+bas_count] = key[1]
@@ -600,7 +600,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     '''
     group_key = np.asarray(group_key)
     group_offset = np.asarray(group_offset)
-    return bas_info, bas_id, pad_id, (group_key, group_offset)
+    return bas_info, to_split_map, pad_id, (group_key, group_offset)
 
 def split_basis(mol):
     """
@@ -817,7 +817,7 @@ if __name__ == '__main__':
     mol.build()
 
     print("=== Test 1: Normal molecule (cc-pvdz) ===")
-    layout = BasisLayout.from_sort_group_basis(mol)
+    layout = BasisLayout.from_mol(mol)
     print(f"Original mol.nao: {mol.nao}")
     print(f"Layout nbasis: {layout.nbasis}")
     print(f"Layout ao_loc shape: {layout.ao_loc.shape}")
@@ -836,13 +836,13 @@ if __name__ == '__main__':
         print(f"Original mol.nao: {mol2.nao}")
         print(f"Max primitives in original mol: {max(mol2._bas[:, gto.NPRIM_OF])}")
 
-        layout2 = BasisLayout.from_sort_group_basis(mol2)
+        layout2 = BasisLayout.from_mol(mol2)
         print(f"Layout nbasis: {layout2.nbasis}")
         print(f"Layout ao_loc shape: {layout2.ao_loc.shape}")
-        print(f"Original mol.ao_loc matches layout ao_loc: {np.array_equal(mol2.ao_loc, layout2.ao_loc.get())}")
+        print(f"Original mol.ao_loc matches layout ao_loc: {np.array_equal(mol2.ao_loc, layout2.ao_loc)}")
 
-        # bas_id provides the mapping from internal sorted layout to split basis indices
-        print(f"Basis mapping established: {len(layout2.bas_id)} split->decontracted mappings")
+        # to_split_map provides the mapping from internal sorted layout to split basis indices
+        print(f"Basis mapping established: {len(layout2.to_split_map)} split->decontracted mappings")
 
     except Exception as e:
         print(f"Test 2 failed (basis may not be available): {e}")

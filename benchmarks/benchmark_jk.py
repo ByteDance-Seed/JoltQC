@@ -93,7 +93,7 @@ dm = cp.expand_dims(dm, axis=0)
 dm = cp.repeat(dm, repeats=n_dm, axis=0)
 
 # Create BasisLayout for JQC
-layout_jk = BasisLayout.from_sort_group_basis(mol, alignment=TILE)
+layout_jk = BasisLayout.from_mol(mol, alignment=TILE)
 
 vhfopt = scf.jk._VHFOpt(mol).build()
 # warm up

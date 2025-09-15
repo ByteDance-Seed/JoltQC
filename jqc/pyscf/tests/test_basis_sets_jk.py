@@ -67,7 +67,7 @@ class BasisSetJKTests(unittest.TestCase):
         dm = dm.dot(dm.T)
         
         # JoltQC calculation
-        basis_layout = BasisLayout.from_sort_group_basis(mol_test, alignment=TILE)
+        basis_layout = BasisLayout.from_mol(mol_test, alignment=TILE)
         get_jk_jit = jk.generate_jk_kernel(basis_layout)
         vj, vk = get_jk_jit(mol_test, dm, hermi=1)
         vj_jolt = vj.get()

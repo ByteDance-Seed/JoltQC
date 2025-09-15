@@ -229,7 +229,8 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     ce_fp32 = basis_layout.ce_fp32
     coords_fp32 = basis_layout.coords_fp32
 
-    ao_loc = basis_layout.ao_loc
+    # Ensure device array for kernels
+    ao_loc = cp.asarray(basis_layout.ao_loc)
     nao = int(ao_loc[-1])
     nbas = basis_layout.nbasis
     group_key, group_offset = basis_layout.group_info
