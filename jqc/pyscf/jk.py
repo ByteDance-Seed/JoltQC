@@ -76,35 +76,31 @@ def generate_get_veff():
     return get_veff
 
 def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    bas_cache, group_info = basis_layout.bas_info, basis_layout.group_info
-    
-    # Use lazy q_matrix property - computed only when accessed
+    # Cache frequently accessed properties to reduce overhead
+    group_info = basis_layout.group_info
     q_matrix = basis_layout.q_matrix
-    
     nbas = basis_layout.nbasis
     mol = basis_layout._mol
-
-    log_cutoff_fp64 = np.float32(math.log(cutoff_fp64))
-    log_cutoff_fp32 = np.float32(math.log(cutoff_fp32))
-
-    ce_fp64, coords_fp64, _, _ = bas_cache
     ce_fp32 = basis_layout.ce_fp32
     coords_fp32 = basis_layout.coords_fp32
-
+    ce_fp64 = basis_layout.ce_fp64
+    coords_fp64 = basis_layout.coords_fp64
     ao_loc = cp.asarray(basis_layout.ao_loc)
+
     nao = int(ao_loc[-1])
+
+    # Pre-compute log cutoffs
+    log_cutoff_fp64 = np.float32(math.log(cutoff_fp64))
+    log_cutoff_fp32 = np.float32(math.log(cutoff_fp32))
 
     group_key, group_offset = group_info
     uniq_l = group_key[:,0]
     l_symb = [lib.param.ANGULAR[i] for i in uniq_l]
-    n_groups = np.count_nonzero(uniq_l <= LMAX)
+    n_groups = basis_layout.ngroups
 
     info = cp.empty(4, dtype=np.uint32)
     cutoff = np.log(PAIR_CUTOFF) #- log_max_dm / 2
     tile_pairs = make_tile_pairs(group_offset, q_matrix, cutoff)
-    
-    if np.any(uniq_l > LMAX):
-        raise RuntimeError('LMAX > 4 is not supported')
 
     tasks = [(i,j,k,l) for i in range(n_groups)
                         for j in range(i+1)
@@ -144,10 +140,13 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         # Convert the density matrix to cartesian basis
         dms = basis_layout.dm_from_mol(dms)
         dms = dms.reshape(-1, nao, nao)
-        dm_cond = max_block_pooling(dms, ao_loc).astype(np.float32)
-        dms = cp.asarray(dms, dtype=np.float64) # transfer to current device
-        dms_fp32 = cp.asarray(dms, dtype=np.float32)
-        
+
+        # Optimize array conversions - compute both fp64 and fp32 versions together
+        dms = cp.asarray(dms, dtype=np.float64, order='C')
+        dms_fp32 = dms.astype(np.float32)
+        dm_cond = max_block_pooling(dms_fp32, ao_loc)
+
+        # Pre-compute omega values
         omega_fp32 = np.float32(omega) if omega is not None else None
         omega_fp64 = np.float64(omega) if omega is not None else None
 
@@ -221,7 +220,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                             ang, nprim, do_j=with_j, do_k=with_k,
                             dtype=np.float32, n_dm=n_dm, omega=omega_fp32)
                         jk_fp32_kernel(
-                            nbas, ao_loc, coords_fp32, ce_fp32,
+                            nbas, nao, ao_loc, coords_fp32, ce_fp32,
                             dms_fp32, vj, vk, omega_fp32, quartet_list,
                             n_quartets_fp32)
                         kern_counts += 1
@@ -232,7 +231,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                             ang, nprim, do_j=with_j, do_k=with_k,
                             dtype=np.float64, n_dm=n_dm, omega=omega_fp64)
                         jk_fp64_kernel(
-                            nbas, ao_loc, coords_fp64, ce_fp64,
+                            nbas, nao, ao_loc, coords_fp64, ce_fp64,
                             dms, vj, vk, omega_fp64, quartet_list[offset:],
                             n_quartets_fp64)
                         kern_counts += 1

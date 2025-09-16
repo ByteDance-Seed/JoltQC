@@ -41,6 +41,17 @@ ao_cutoff = 1e-13
 GROUP_BOX_SIZE = 3.0
 DIM_BY_XC = {"LDA": 1, "GGA": 4, "MGGA": 5}
 
+# Fused kernel using CuPy's ElementwiseKernel for better performance
+_nelec_excsum_elementwise = cp.ElementwiseKernel(
+    'T rho, T weights, T exc',
+    'T nelec_contrib, T excsum_contrib',
+    '''
+    nelec_contrib = rho * weights;
+    excsum_contrib = rho * weights * exc;
+    ''',
+    'nelec_excsum_fused'
+)
+
 def arg_group_grids(mol, coords, box_size=GROUP_BOX_SIZE):
     """
     Parition the entire space into small boxes according to the input box_size.
@@ -224,22 +235,41 @@ def generate_get_rho(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     return get_rho
 
 def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    # Cache frequently accessed properties to reduce overhead
     mol = basis_layout._mol
-    ce_fp64, coords_fp64, angs, nprims = basis_layout.bas_info
+    _, _, angs, nprims = basis_layout.bas_info
     ce_fp32 = basis_layout.ce_fp32
     coords_fp32 = basis_layout.coords_fp32
-
-    # Ensure device array for kernels
+    ce_fp64 = basis_layout.ce_fp64
+    coords_fp64 = basis_layout.coords_fp64
     ao_loc = cp.asarray(basis_layout.ao_loc)
-    nao = int(ao_loc[-1])
     nbas = basis_layout.nbasis
     group_key, group_offset = basis_layout.group_info
+
+    # Pre-compute constants
+    nao = int(ao_loc[-1])
     log_ao_cutoff = math.log(ao_cutoff)
 
     log_cutoff_fp32 = np.log(cutoff_fp32).astype(np.float32)
     log_cutoff_fp64 = np.log(cutoff_fp64).astype(np.float32)
     log_cutoff_max = np.log(1e100).astype(np.float32)
     logger = lib.logger.new_logger(mol, mol.verbose)
+
+    def compute_ao_sparsity(grid_coords, log_aodm_cutoff):
+        """Helper function to compute AO sparsity pattern - avoids code duplication"""
+        n_groups = len(group_offset) - 1
+        ao_sparsity = {}
+        for i in range(n_groups):
+            ish0, ish1 = group_offset[i], group_offset[i+1]
+            x = coords_fp32[ish0:ish1]
+            ce = ce_fp32[ish0:ish1]
+            a = angs[ish0].item()
+            n = nprims[ish0].item()
+            s = estimate_log_aovalue(grid_coords, x, ce, a, n, log_cutoff=log_aodm_cutoff)
+            log_maxval, indices, nnz = s
+            indices += ish0
+            ao_sparsity[i] = (log_maxval, indices, nnz)
+        return ao_sparsity
     
     _cache = {'dm_prev': 0, 'rho_prev': 0, 'wv_prev': 0, 'vxcmat_prev': 0}
     def rks_fun(ni, mol, grids, xc_code, dm, **kwargs):
@@ -270,22 +300,21 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         # Evaluate rho on grids for given density matrix (incremental)
         weights = grids.weights
         dm_diff = dm - dm_prev
-        rho_diff = rho_fun(mol, grids, xctype, dm_diff)
-        rho = rho_prev + rho_diff
+        rho = rho_prev + rho_fun(mol, grids, xctype, dm_diff)
 
         # Evaluate vxc on grids via libxc
         exc, vxc = ni.eval_xc_eff(xc_code, rho, deriv=1, xctype=xctype)[:2]
 
-        # Integrate vxc on grids
-        den = rho[0] * weights
-        vxc = cp.asarray(vxc, order='C')
-        exc = cp.asarray(exc, order='C')
-        excsum = float(cp.dot(den, exc[:,0]))
-        nelec = float(den.sum())
+        # Integrate vxc on grids using fused elementwise kernel for better performance
+        vxc = cp.asarray(vxc, dtype=vxc.dtype, order='C')
+        exc = cp.asarray(exc, dtype=exc.dtype, order='C')
+        nelec_contrib, excsum_contrib = _nelec_excsum_elementwise(rho[0], weights, exc[:,0])
+        nelec = float(cp.sum(nelec_contrib))
+        excsum = float(cp.sum(excsum_contrib))
         wv = vxc * weights
         wv_diff = wv - wv_prev
-        vxcmat_diff = vxc_fun(mol, grids, xctype, wv_diff)
-        vxcmat = vxcmat_prev + vxcmat_diff
+        #vxcmat_diff = vxc_fun(mol, grids, xctype, wv_diff)
+        vxcmat = vxcmat_prev + vxc_fun(mol, grids, xctype, wv_diff)
 
         _cache['dm_prev'] = dm.copy()
         _cache['rho_prev'] = rho
@@ -300,34 +329,27 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     def rho_fun(mol, grids, xctype, dm):
         ngrids = grids.coords.shape[0]
         grid_coords = cp.asarray(grids.coords.T, dtype=np.float64, order='C')
+
         # Transform density matrix from molecular to cartesian basis
         dm = basis_layout.dm_from_mol(dm)
-        dm_cond = max_block_pooling(dm, ao_loc)
-        dm_cond = cp.asarray(dm_cond, dtype=np.float32)
-        # Cast after log; CuPy's log does not accept dtype kwarg
-        log_dm_shell = cp.log(dm_cond + 1e-200).astype(cp.float32)
+        dm_fp32 = dm.astype(np.float32)
+
+        # Optimize array operations - combine conversions
+        dm_cond = max_block_pooling(dm_fp32, ao_loc)
+        log_dm_shell = cp.log(dm_cond + 1e-200, dtype=cp.float32)
         log_dm = cp.max(log_dm_shell).item()
-        log_aodm_cutoff = log_ao_cutoff - log_dm # ao.T * dm * ao < cutoff
+        log_aodm_cutoff = log_ao_cutoff - log_dm
+
         n_groups = len(group_offset) - 1
         xctype = xctype.upper()
         ndim = DIM_BY_XC[xctype]
 
-        # Estimate the value of AO on grids, construct the sparsity
-        ao_sparsity = {}
-        for i in range(n_groups):
-            ish0, ish1 = group_offset[i], group_offset[i+1]
-            x = coords_fp32[ish0:ish1]
-            ce = ce_fp32[ish0:ish1]
-            a = angs[ish0].item()
-            n = nprims[ish0].item()
-            s = estimate_log_aovalue(grid_coords, x, ce, a, n, log_cutoff=log_aodm_cutoff)
-            log_maxval, indices, nnz = s
-            indices += ish0
-            ao_sparsity[i] = (log_maxval, indices, nnz)
+        # Use helper function to compute AO sparsity
+        ao_sparsity = compute_ao_sparsity(grid_coords, log_aodm_cutoff)
 
-        rho = cp.zeros((ndim, ngrids), dtype=np.float64)
-        dm = cp.asarray(dm, dtype=np.float64)
-        dm_fp32 = cp.asarray(dm, dtype=np.float32)
+        rho = cp.zeros((ndim, ngrids), dtype=np.float64, order='C')
+        # Optimize array conversions - compute both dtypes together
+        dm = cp.asarray(dm, dtype=np.float64, order='C')
 
         for i in range(n_groups):
             for j in range(i, n_groups):
@@ -364,28 +386,20 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     def vxc_fun(mol, grids, xctype, wv):
         ngrids = grids.coords.shape[0]
         grid_coords = cp.asarray(grids.coords.T, dtype=np.float64, order='C')
-        vxc = cp.zeros([1, nao, nao], dtype=np.float64)
+        vxc = cp.zeros([1, nao, nao], dtype=np.float64, order='C')
+
+        # Optimize wv_max computation
         ngrids_per_atom = ngrids / mol.natm
-        wv_max = cp.max(cp.abs(wv)).item() + 1e-300
-        wv_max = wv_max * ngrids_per_atom # roughly integrate(wv * ao.T * ao) < cutoff
+        wv_max = (cp.max(cp.abs(wv)).item() + 1e-300) * ngrids_per_atom
         log_wv_max = math.log(wv_max)
         log_aodm_cutoff = log_ao_cutoff - log_wv_max
+
         n_groups = len(group_offset) - 1
         xctype = xctype.upper()
         ndim = DIM_BY_XC[xctype]
 
-        # Estimate the value of AO on grids, construct the sparsity
-        ao_sparsity = {}
-        for i in range(n_groups):
-            ish0, ish1 = group_offset[i], group_offset[i+1]
-            x = coords_fp32[ish0:ish1]
-            ce = ce_fp32[ish0:ish1]
-            a = angs[ish0].item()
-            n = nprims[ish0].item()
-            s = estimate_log_aovalue(grid_coords, x, ce, a, n, log_cutoff=log_aodm_cutoff)
-            log_maxval, indices, nnz = s
-            indices += ish0
-            ao_sparsity[i] = (log_maxval, indices, nnz)
+        # Use helper function to compute AO sparsity
+        ao_sparsity = compute_ao_sparsity(grid_coords, log_aodm_cutoff)
 
         for i in range(n_groups):
             for j in range(i, n_groups):
@@ -440,8 +454,7 @@ def generate_nr_nlc_vxc(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         
         # Compute rho incrementally
         dm_diff = dms - dm_prev
-        rho_diff = rho_fun(mol, grids, 'GGA', dm_diff)
-        rho = rho_prev + rho_diff
+        rho = rho_prev + rho_fun(mol, grids, 'GGA', dm_diff)
         
         # Compute VV10 exchange-correlation
         exc = 0
@@ -453,9 +466,10 @@ def generate_nr_nlc_vxc(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             exc += e * fac
             vxc += v * fac
 
-        den = rho[0] * grids.weights
-        nelec = den.sum()
-        excsum = cp.dot(den, exc)
+        # Use fused elementwise kernel for density integration
+        nelec_contrib, excsum_contrib = _nelec_excsum_elementwise(rho[0], grids.weights, exc)
+        nelec = float(cp.sum(nelec_contrib))
+        excsum = float(cp.sum(excsum_contrib))
         
         # Compute wv incrementally
         vv_vxc = xc_deriv.transform_vxc(rho, vxc, 'GGA', spin=0)
@@ -464,7 +478,7 @@ def generate_nr_nlc_vxc(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         vmat_diff = vxc_fun(mol, grids, 'GGA', wv_diff)
         vmat = vmat_prev + vmat_diff
         
-        # Update cache
+        # Update cache - keep necessary copies for correctness
         _cache['dm_prev'] = dms.copy()
         _cache['rho_prev'] = rho
         _cache['wv_prev'] = wv

@@ -214,7 +214,7 @@ class TestBasisLayout(unittest.TestCase):
         layout = BasisLayout.from_mol(self.mol_h2, alignment=TILE)
 
         # Check that the cache is initially None (lazy evaluation)
-        self.assertIsNone(layout._to_decontracted_map_cache,
+        self.assertIsNone(layout._to_decontracted_map,
                          "to_decontracted_map cache should be None before first access")
 
         # Check that to_decontracted_map indices are valid for the decontracted molecule
@@ -224,7 +224,7 @@ class TestBasisLayout(unittest.TestCase):
         decontracted_mol_nbas = len(layout.ao_loc) - 1
 
         # Check that the cache is now populated (lazy evaluation worked)
-        self.assertIsNotNone(layout._to_decontracted_map_cache,
+        self.assertIsNotNone(layout._to_decontracted_map,
                            "to_decontracted_map cache should be populated after first access")
 
         print(f"to_decontracted_map: {layout.to_decontracted_map}")

@@ -194,7 +194,7 @@ def update_frags(i,j,k,l,dtype_str):
         # Use the same argument structure as jk.py
         n_quartets = int(info[1].get())  # Number of quartets to process
         omega = dtype(0.0)  # Use the same precision as the kernel
-        args = (nbas, ao_loc, coords, ce_data,
+        args = (nbas, nao, ao_loc, coords, ce_data,
                 dms, vj, vk, omega, pool, n_quartets)
         fun(*args)
         
@@ -228,7 +228,7 @@ def update_frags(i,j,k,l,dtype_str):
         # Use the same argument structure as jk.py
         n_quartets = int(info[1].get())  # Number of quartets to process
         omega = dtype(0.0)  # Use the same precision as the kernel
-        args = (nbas, ao_loc, coords, ce_data,
+        args = (nbas, nao, ao_loc, coords, ce_data,
                 dms, vj, vk, omega, pool, n_quartets)
         fun(*args)
         start = cp.cuda.Event()

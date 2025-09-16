@@ -16,9 +16,6 @@
 */
 
 constexpr DataType max_val = 1e16;
-#ifndef NPRIM_MAX
-#define NPRIM_MAX 16
-#endif
 constexpr int nprim_max = NPRIM_MAX;
 constexpr int warpsize = 32;
 constexpr DataType exp_cutoff = 36.8; // exp(-36.8) ~ 1e-16
@@ -125,7 +122,8 @@ void eval_vxc(
     log_cutoff_a -= log_max_wv0;
     log_cutoff_b -= log_max_wv0;
     
-    __shared__ DataType vxc_smem[num_warps * nfij];
+    constexpr int smem_size = num_warps * nfij;
+    __shared__ DataType vxc_smem[smem_size];
 
     for (int jsh_nz = 0; jsh_nz < nnzj; jsh_nz++){
         const int offset = jsh_nz + block_id * nbas_j;
@@ -392,7 +390,7 @@ void eval_vxc(
                         }
                         vxc_ij = warp_reduce(vxc_ij);
                         if (lane == 0){
-                            vxc_smem[(i + j * nfi) + warp_id * nfij] = vxc_ij;
+                            vxc_smem[(i + j * nfi) * num_warps + warp_id] = vxc_ij;
                         }
                     }
                 }
@@ -401,16 +399,24 @@ void eval_vxc(
 
             const DataType fac = (ish == jsh) ? half : one;
             // Block reduction
-            for (int ij = threadIdx.x; ij < nfij; ij+=nthreads){
-                DataType vxc_ij = zero;
-                for (int k = 0; k < num_warps; k++){
-                    vxc_ij += vxc_smem[ij + k * nfij];
+            const int rank = threadIdx.x % num_warps;
+            const int ntasks = (smem_size + 31) / 32 * 32;
+            for (int idx = threadIdx.x; idx < ntasks; idx += nthreads){
+                DataType vxc_ij = idx < smem_size ? vxc_smem[idx] : 0.0;
+                // Warp reduction
+                // Assume nthreads = 256
+                vxc_ij += __shfl_down_sync(0xffffffff, vxc_ij, 4);
+                vxc_ij += __shfl_down_sync(0xffffffff, vxc_ij, 2);
+                vxc_ij += __shfl_down_sync(0xffffffff, vxc_ij, 1);
+
+                if (rank == 0){
+                    vxc_ij = fac * vxc_ij;
+                    const int ij = idx / num_warps;
+                    const int i = ij % nfi;
+                    const int j = ij / nfi;
+                    const int offset = (i0+i)*nao + j0 + j;
+                    atomicAdd(vxc_mat + offset, (double)vxc_ij);
                 }
-                vxc_ij = fac * vxc_ij;
-                const int i = ij % nfi;
-                const int j = ij / nfi;
-                const int offset = (i0+i)*nao + j0 + j;
-                atomicAdd(vxc_mat + offset, (double)vxc_ij);
             }
         }
     }

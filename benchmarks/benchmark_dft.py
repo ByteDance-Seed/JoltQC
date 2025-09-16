@@ -24,9 +24,9 @@ import jqc.pyscf
 atom = 'molecules/0031-irregular-nitrogenous.xyz'
 #atom = 'molecules/0051-elongated-halogenated.xyz'
 #atom = 'molecules/0084-elongated-halogenated.xyz'
-basis = 'def2-tzvpp'
-#xc = 'wb97m-v'
-xc = 'b3lyp'
+basis = 'def2-tzvpd'
+xc = 'wb97m-v'
+#xc = 'b3lyp'
 count = 1
 grids = (99,590)
 
@@ -36,7 +36,7 @@ lib.num_threads(8)
 # GPU4PySCF
 ##################
 
-verbose = 4
+verbose = 0
 
 mol = pyscf.M(atom=atom, basis=basis, output=f'gpu4pyscf-{basis}.log', verbose=verbose)
 mf = dft.RKS(mol, xc=xc)
@@ -60,6 +60,7 @@ elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Time with GPU4PySCF, {elapsed_time_ms/count} ms")
 print(f'Total energy by GPU4PySCF, {e_tot}')
 mf = None
+
 cp.get_default_memory_pool().free_all_blocks()
 
 #######################

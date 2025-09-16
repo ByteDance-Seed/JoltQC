@@ -24,9 +24,6 @@ constexpr DataType PI_FAC = 34.98683665524972497;
 constexpr DataType half = .5;
 constexpr DataType one = 1.0;
 constexpr DataType zero = 0.0;
-#ifndef NPRIM_MAX
-#define NPRIM_MAX 16
-#endif
 constexpr int nprim_max = NPRIM_MAX;
 
 struct __align__(4*sizeof(DataType)) DataType4 {
@@ -38,15 +35,16 @@ struct __align__(2*sizeof(DataType)) DataType2 {
 };
 
 extern "C" __global__
-void rys_jk(const int nbas,  
-        const int* __restrict__ ao_loc, 
+void rys_jk(const int nbas,
+        const int nao,
+        const int* __restrict__ ao_loc,
         const DataType4* __restrict__ coords,
         const DataType2* __restrict__ coeff_exp,
-        DataType* dm, 
-        double* vj, 
+        DataType* dm,
+        double* vj,
         double* vk,
         const DataType omega,
-        const ushort4* __restrict__ shl_quartet_idx, 
+        const ushort4* __restrict__ shl_quartet_idx,
         const int ntasks)
 {
     const int tx = threadIdx.x;
@@ -474,9 +472,7 @@ void rys_jk(const int nbas,
             }
         }
     }
-    
-    const int nao = ao_loc[nbas];
-    
+
     const int i0 = ao_loc[ish];
     const int j0 = ao_loc[jsh];
     const int k0 = ao_loc[ksh];
@@ -532,10 +528,10 @@ void rys_jk(const int nbas,
         }
         
         if constexpr(do_j && ntij > 1){
-            __syncthreads();
             const int vj_offset = l0*nao + k0;
             double *vj_ptr = vj + vj_offset;
             constexpr int stride = nfkl * smem_stride;
+            __syncthreads();
             for (int kl = ty; kl < nfkl; kl += nthreads_per_sq){
                 DataType vj_tmp = zero;
                 const int off = kl * smem_stride;
@@ -594,10 +590,10 @@ void rys_jk(const int nbas,
         }
         
         if constexpr(do_j && ntkl > 1){
-            __syncthreads();
             const int vj_offset = j0*nao + i0;
             double *vj_ptr = vj + vj_offset;
             constexpr int stride = nfij * smem_stride;
+            __syncthreads();
             for (int ij = ty; ij < nfij; ij += nthreads_per_sq){
                 DataType vj_tmp = zero;
                 const int off = ij * smem_stride;
@@ -716,9 +712,9 @@ void rys_jk(const int nbas,
         }
 
         if constexpr(do_k && ntjk > 1){
-            __syncthreads();
             const int vk_offset = i0*nao + l0;
             double *vk_ptr = vk + vk_offset;
+            __syncthreads();
             for (int il = ty; il < nfil; il += nthreads_per_sq){
                 DataType vk_tmp = zero;
                 constexpr int stride = nfil * smem_stride;
@@ -776,10 +772,10 @@ void rys_jk(const int nbas,
             }
         }
         if constexpr(do_k && ntil > 1){
-            __syncthreads();
             const int vk_offset = j0*nao + k0;
             double *vk_ptr = vk + vk_offset;
             constexpr int stride = nfjk * smem_stride;
+            __syncthreads();
             for (int jk = ty; jk < nfjk; jk += nthreads_per_sq){
                 DataType vk_tmp = zero;
                 const int off = jk * smem_stride;
@@ -836,10 +832,10 @@ void rys_jk(const int nbas,
         }
 
         if constexpr(do_k && ntik > 1){
-            __syncthreads();
             const int vk_offset = j0*nao + l0;
             double *vk_ptr = vk + vk_offset;
             constexpr int stride = nfjl * smem_stride;
+            __syncthreads();
             for (int jl = ty; jl < nfjl; jl+=nthreads_per_sq){
                 DataType vk_tmp = zero;
                 const int off = jl * smem_stride;

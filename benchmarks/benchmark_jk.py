@@ -63,18 +63,18 @@ basis = gto.basis.parse('''
 #O    S
 #      0.02700058226E+00      1
 O    S
-      0.02700058226E+00      1
+      0.2700058226E+00      1
       0.2700058226E+00      1 
       0.2700058226E+00      1
-      0.2700058226E+00      1
-      0.2700058226E+00      1
+#      0.2700058226E+00      1
+#      0.2700058226E+00      1
 #      0.2700058226E+00      1
 ''')
 
 #atom = 'molecules/h2o.xyz'
-atom = 'molecules/0031-irregular-nitrogenous.xyz'
+#atom = 'molecules/0031-irregular-nitrogenous.xyz'
 #atom = 'molecules/0084-elongated-halogenated.xyz'
-#atom = 'molecules/0401-globular-nitrogenous.xyz'
+atom = 'molecules/0401-globular-nitrogenous.xyz'
 #atom = 'molecules/0753-globular.xyz'
 n_dm = 1
 n_warmup = 3

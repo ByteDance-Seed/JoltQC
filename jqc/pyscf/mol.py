@@ -83,23 +83,15 @@ class BasisLayout:
     # Mapping from split basis index -> decontracted basis index
     _split_to_decontracted: Optional[np.ndarray] = None
 
-    # to_split_map maps from internal sorted/grouped basis layout back to split molecule basis indices
-    # to_decontracted_map is lazily computed as a property
-
-    # cached q_matrix (computed lazily)
-    _q_matrix_cache: Optional[ArrayLike] = None
-
-    # cached FP32 arrays (computed lazily)
-    _ce_fp32_cache: Optional[ArrayLike] = None
-    _coords_fp32_cache: Optional[ArrayLike] = None
-
-    # cached ao_loc (computed lazily)
-    _ao_loc_cache: Optional[np.ndarray] = None
-    _mol_ao_loc_cache: Optional[cp.ndarray] = None
-    _decontracted_ao_loc_cache: Optional[np.ndarray] = None
-    _ao_loc_no_pad_cache: Optional[np.ndarray] = None
-    _mol_ao_loc_no_pad_cache: Optional[np.ndarray] = None
-    _to_decontracted_map_cache: Optional[np.ndarray] = None
+    # Cached properties (computed lazily)
+    _q_matrix: Optional[ArrayLike] = None
+    _ce_fp32: Optional[ArrayLike] = None
+    _coords_fp32: Optional[ArrayLike] = None
+    _ao_loc: Optional[np.ndarray] = None
+    _mol_ao_loc: Optional[cp.ndarray] = None
+    _ao_loc_no_pad: Optional[np.ndarray] = None
+    _to_decontracted_map: Optional[np.ndarray] = None
+    _angs_no_pad: Optional[np.ndarray] = None
     
 
     # --------- Compatibility accessors ---------
@@ -125,7 +117,9 @@ class BasisLayout:
         """
         Angular momentum values of sorted decontracted mol.
         """
-        return self.angs[~self.pad_id]
+        if self._angs_no_pad is None:
+            self._angs_no_pad = self.angs[~self.pad_id]
+        return self._angs_no_pad
 
     @property
     def ao_loc(self) -> np.ndarray:
@@ -133,15 +127,15 @@ class BasisLayout:
         AO offsets for each basis in internal format.
         ao_loc[i] gives the starting AO index of basis i.
         """
-        if self._ao_loc_cache is None:
+        if self._ao_loc is None:
             angs = self.angs
             dims = (angs + 1) * (angs + 2) // 2
             dims[self.pad_id] = 0
             ao_loc = np.empty(len(dims) + 1, dtype=np.int32)
             ao_loc[0] = 0
             dims.cumsum(dtype=np.int32, out=ao_loc[1:])
-            self._ao_loc_cache = ao_loc
-        return self._ao_loc_cache
+            self._ao_loc = ao_loc
+        return self._ao_loc
 
     @property
     def ao_loc_no_pad(self) -> np.ndarray:
@@ -149,11 +143,12 @@ class BasisLayout:
         AO offsets for each basis in internal format without padding.
         Its dimension should be consistent with angs_no_pad.
         """
-        
-        ao_loc = np.empty(len(self.angs_no_pad) + 1, dtype=np.int32)
-        ao_loc[:-1] = self.ao_loc[:-1][~self.pad_id]
-        ao_loc[-1] = self.ao_loc[-1]
-        return ao_loc
+        if self._ao_loc_no_pad is None:
+            ao_loc = np.empty(len(self.angs_no_pad) + 1, dtype=np.int32)
+            ao_loc[:-1] = self.ao_loc[:-1][~self.pad_id]
+            ao_loc[-1] = self.ao_loc[-1]
+            self._ao_loc_no_pad = cp.asarray(ao_loc)
+        return self._ao_loc_no_pad
 
     @property
     def mol_ao_loc(self) -> cp.ndarray:
@@ -161,7 +156,7 @@ class BasisLayout:
         AO shell offsets for the original molecule in decontracted format.
         Its dimension should be consistent with angs_no_pad
         """
-        if self._mol_ao_loc_cache is None:
+        if self._mol_ao_loc is None:
             # Compute from original molecule (decontracted basis)
             bas = self._mol._bas
             angs = bas[:,gto.ANG_OF]
@@ -180,8 +175,8 @@ class BasisLayout:
             _ao_loc = np.empty(len(split_idx) + 1, dtype=np.int32)
             _ao_loc[:-1] = ao_loc[decontracted_idx]
             _ao_loc[-1] = ao_loc[-1]
-            self._mol_ao_loc_cache = cp.asarray(_ao_loc)
-        return self._mol_ao_loc_cache
+            self._mol_ao_loc = cp.asarray(_ao_loc)
+        return self._mol_ao_loc
 
     @property
     def to_decontracted_map(self) -> np.ndarray:
@@ -189,14 +184,14 @@ class BasisLayout:
         Lazy evaluation property for to_decontracted_map.
         Maps from internal sorted/grouped basis layout back to decontracted molecule basis indices.
         """
-        if self._to_decontracted_map_cache is None:
+        if self._to_decontracted_map is None:
             # Compute to_decontracted_map: internal -> decontracted
             # This is the composition of to_split_map (internal -> split) and split_to_decontracted (split -> decontracted)
             to_decontracted_map = np.empty(len(self.to_split_map), dtype=np.int32)
             to_decontracted_map[~self.pad_id] = self._split_to_decontracted[self.to_split_map[~self.pad_id]]
             to_decontracted_map[self.pad_id] = -1  # Invalid index for padded entries
-            self._to_decontracted_map_cache = to_decontracted_map
-        return self._to_decontracted_map_cache
+            self._to_decontracted_map = to_decontracted_map
+        return self._to_decontracted_map
 
     @property
     def splitted_mol(self) -> object:
@@ -217,7 +212,7 @@ class BasisLayout:
         Computes and caches the fully processed q_matrix only when accessed.
         Uses the stored split molecule to ensure dimensions match the split basis functions.
         """
-        if self._q_matrix_cache is None:
+        if self._q_matrix is None:
             # Use stored split molecule for q_matrix computation
             if self._splitted_mol is None:
                 raise ValueError("q_matrix requires _splitted_mol reference to be set")
@@ -229,27 +224,43 @@ class BasisLayout:
             q_matrix_mapped[self.pad_id, :] = -100
             q_matrix_mapped[:, self.pad_id] = -100
             # Convert to CuPy array with proper dtype for GPU computation
-            self._q_matrix_cache = cp.asarray(q_matrix_mapped, dtype=np.float32)
-            
-        return self._q_matrix_cache
+            self._q_matrix = cp.asarray(q_matrix_mapped, dtype=np.float32)
+
+        return self._q_matrix
 
     @property
     def ce_fp32(self) -> ArrayLike:
         """
         Lazy evaluation property for FP32 coefficient and exponent array.
+        Converts from base fp64 arrays.
         """
-        if self._ce_fp32_cache is None:
-            self._ce_fp32_cache = self.ce.astype(np.float32)
-        return self._ce_fp32_cache
+        if self._ce_fp32 is None:
+            self._ce_fp32 = self.ce.astype(np.float32)
+        return self._ce_fp32
 
     @property
     def coords_fp32(self) -> ArrayLike:
         """
         Lazy evaluation property for FP32 coordinates array.
+        Converts from base fp64 arrays.
         """
-        if self._coords_fp32_cache is None:
-            self._coords_fp32_cache = self.coords.astype(np.float32)
-        return self._coords_fp32_cache
+        if self._coords_fp32 is None:
+            self._coords_fp32 = self.coords.astype(np.float32)
+        return self._coords_fp32
+
+    @property
+    def ce_fp64(self) -> ArrayLike:
+        """
+        FP64 coefficient and exponent array (base storage is always fp64).
+        """
+        return self.ce
+
+    @property
+    def coords_fp64(self) -> ArrayLike:
+        """
+        FP64 coordinates array (base storage is always fp64).
+        """
+        return self.coords
 
     @classmethod
     def from_mol(cls, mol, alignment: int = 4, dtype=np.float64) -> "BasisLayout":
@@ -273,6 +284,10 @@ class BasisLayout:
         bas_info, to_split_map, pad_id, group_info = sort_group_basis(splitted_mol, alignment=alignment, dtype=dtype)
         ce, coords, angs, nprims = bas_info
         group_key, group_offset = group_info
+
+        # Assert angular momentum constraint (JoltQC kernels support up to g orbitals, l=4)
+        max_ang = np.max(angs[~pad_id]) if np.any(~pad_id) else 0
+        assert max_ang <= 4, f"Angular momentum {max_ang} exceeds maximum supported value of 4"
 
         return cls(
             ce=ce,
@@ -336,64 +351,6 @@ class BasisLayout:
             transform_func = cart2cart if is_cart else cart2sph
             result = transform_func(mat_cp, self.angs_no_pad, src_offsets, mol_ao_loc, nao)
             return result[0] if result.ndim == 3 and result.shape[0] == 1 else result
-
-
-def format_bas_cache(sorted_mol, dtype=np.float64):
-    """
-    Format the basis cache used in JQC.
-    coords:    [nbas, 3]
-    coeffs:    [nbas, nprim_max]
-    exponents: [nbas, nprim_max]
-    ao_loc:    [nbas + 1]
-    nprims:    [nbas]
-    angs:      [nbas]
-
-    Args:
-        sorted_mol (pyscf.gto.Mole): The sorted pyscf Mole object. Must be decontracted.
-        dtype (numpy.dtype, optional): The data type of the arrays. Defaults to np.float64.
-
-    Returns:
-        tuple: A tuple containing the formatted basis cache.
-    """
-    _bas = sorted_mol._bas
-    _env = sorted_mol._env
-    coord_ptr = _bas[:, PTR_BAS_COORD]
-    nbas = _bas.shape[0]
-    
-    coords = np.empty([nbas, 3], dtype=dtype, order='C')
-    coeffs = np.empty([nbas, NPRIM_MAX], dtype=dtype, order='C')
-    exponents = np.empty([nbas, NPRIM_MAX], dtype=dtype, order='C')
-    nprims = np.empty(nbas, dtype=np.int32)
-    angs = np.empty(nbas, dtype=np.int32)
-
-    for i in range(nbas):
-        exp_ptr = _bas[i, gto.PTR_EXP]
-        coeff_ptr = _bas[i, gto.PTR_COEFF]
-        nprim = _bas[i, gto.NPRIM_OF]
-        nctr = _bas[i, gto.NCTR_OF]
-        ang = _bas[i, gto.ANG_OF]
-        coeff = _env[coeff_ptr:coeff_ptr+nprim*nctr].copy()
-        # Apply normalization factor (consistent with libcint) for both spherical and cartesian
-        if ang < 2:
-            fac = ((2*ang + 1) / (4.0 * np.pi))**.5
-            coeff *= fac
-    
-        coeffs[i,:nprim] = coeff
-        # Exponents array length is nprim (shared across contractions)
-        exponents[i,:nprim] = _env[exp_ptr:exp_ptr+nprim]
-        coords[i,:] = _env[coord_ptr[i]:coord_ptr[i]+3]
-        nprims[i] = nprim
-        angs[i] = ang
-
-    coords = cp.asarray(coords, dtype=dtype)
-    coeffs = cp.asarray(coeffs, dtype=dtype)
-    exponents = cp.asarray(exponents, dtype=dtype)
-    nprims = cp.asarray(nprims)
-    angs = cp.asarray(angs)
-
-    ao_loc = cp.array(sorted_mol.ao_loc)
-    bas_cache = (coords, coeffs, exponents, ao_loc, nprims, angs)
-    return bas_cache
 
 def sort_group_basis(mol, alignment=4, dtype=np.float64):
     """
@@ -519,19 +476,19 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     # Calculate total size for pre-allocation
     total_count = sum(len(to_split_map_by_pattern[key]) for key in sorted_keys)
 
-    # Pre-allocate final arrays directly on GPU for better efficiency
-    ce = cp.empty((total_count, 2*NPRIM_MAX), dtype=dtype)
-    coords = cp.empty((total_count, 4), dtype=dtype)  # Use target dtype directly
-    to_split_map = np.empty(total_count, dtype=np.int32)  # Keep on CPU for indexing
-    pad_id = np.empty(total_count, dtype=bool)      # Keep on CPU for masking
-    angs = np.empty(total_count, dtype=np.int32)    # Keep on CPU
-    nprims = np.empty(total_count, dtype=np.int32)  # Keep on CPU
-    
+    # Pre-allocate CPU arrays for batching
+    all_ce_data = np.empty((total_count, 2*NPRIM_MAX), dtype=dtype, order='C')
+    all_coords_data = np.empty((total_count, 4), dtype=dtype, order='C')
+    to_split_map = np.empty(total_count, dtype=np.int32)
+    pad_id = np.empty(total_count, dtype=bool)
+    angs = np.empty(total_count, dtype=np.int32)
+    nprims = np.empty(total_count, dtype=np.int32)
+
     group_key = []
     group_offset = []
     offset = 0
-    
-    # Fill arrays directly without concatenation, optimized for GPU
+
+    # Fill CPU arrays first, then batch transfer to GPU
     for key in sorted_keys:
         pattern_ce = ce_by_pattern[key]
         pattern_coords = coords_by_pattern[key]
@@ -539,10 +496,9 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         pattern_pad_id = pad_id_by_pattern[key]
         bas_count = len(pattern_to_split_map)
 
-        # Copy data directly to final arrays
-        # GPU arrays - direct copy
-        ce[offset:offset+bas_count] = cp.asarray(pattern_ce)
-        coords[offset:offset+bas_count] = cp.asarray(pattern_coords, dtype=dtype)
+        # Copy data to CPU arrays for batching
+        all_ce_data[offset:offset+bas_count] = pattern_ce
+        all_coords_data[offset:offset+bas_count] = pattern_coords
 
         # CPU arrays - direct assignment
         to_split_map[offset:offset+bas_count] = pattern_to_split_map
@@ -554,6 +510,10 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         group_offset.append(offset)
         offset += bas_count
     group_offset.append(offset)
+
+    # Batch transfer to GPU - single transfer per array type
+    ce = cp.asarray(all_ce_data, dtype=dtype, order='C')
+    coords = cp.asarray(all_coords_data, dtype=dtype, order='C')
 
     # Arrays are already in target format - no additional conversions needed
     # ce and coords are already CuPy arrays with correct order
