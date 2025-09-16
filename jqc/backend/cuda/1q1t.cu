@@ -27,9 +27,19 @@ constexpr DataType zero = 0.0;
 constexpr int prim_stride = PRIM_STRIDE;
 
 
-struct __align__(4*sizeof(DataType)) DataType4 {
-    DataType x, y, z, w;
+// Make coordinate stride configurable via COORD_STRIDE
+static_assert(COORD_STRIDE >= 3, "COORD_STRIDE must be >= 3");
+struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {
+    DataType x, y, z;
+#if COORD_STRIDE >= 4
+    DataType w;
+#endif
+#if COORD_STRIDE > 4
+    DataType pad[COORD_STRIDE - 4];
+#endif
 };
+static_assert(sizeof(DataType4) == COORD_STRIDE*sizeof(DataType),
+              "DataType4 size must equal COORD_STRIDE*sizeof(DataType)");
 
 struct __align__(2*sizeof(DataType)) DataType2 {
     DataType c, e;

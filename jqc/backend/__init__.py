@@ -13,7 +13,6 @@
 # limitations under the License.
 #
 
-from . import jk, jk_1q1t, jk_1qnt
 from .cart2sph import cart2sph, sph2cart
 from .linalg_helper import inplace_add_transpose, l2_block_pooling, max_block_pooling
 from .rks import gen_rho_kernel, gen_vxc_kernel
@@ -23,9 +22,6 @@ __all__ = [
     "gen_rho_kernel",
     "gen_vxc_kernel",
     "inplace_add_transpose",
-    "jk",
-    "jk_1q1t",
-    "jk_1qnt",
     "l2_block_pooling",
     "max_block_pooling",
     "sph2cart",

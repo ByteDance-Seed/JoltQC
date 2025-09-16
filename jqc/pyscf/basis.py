@@ -64,7 +64,7 @@ ArrayLike = np.ndarray
 @dataclass
 class BasisLayout:
     ce: ArrayLike  # shape (nbasis_total, PRIM_STRIDE), np/cp
-    coords: ArrayLike  # shape (nbasis_total, 4),             np/cp
+    coords: ArrayLike  # shape (nbasis_total, COORD_STRIDE),  np/cp
     angs: np.ndarray  # shape (nbasis_total,),               int32
     nprims: np.ndarray  # shape (nbasis_total,),               int32
 
@@ -449,7 +449,9 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         padded_count = count + ((alignment - count % alignment) % alignment)
 
         # Pre-allocate final arrays
-        coords_by_pattern[pattern] = np.empty((padded_count, 4), dtype=np.float64)
+        coords_by_pattern[pattern] = np.empty(
+            (padded_count, COORD_STRIDE), dtype=np.float64
+        )
         ce_by_pattern[pattern] = np.empty((padded_count, PRIM_STRIDE), dtype=dtype)
         to_split_map_by_pattern[pattern] = np.empty(padded_count, dtype=np.int32)
         pad_id_by_pattern[pattern] = np.empty(padded_count, dtype=bool)
@@ -473,7 +475,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
             exps = _env[exp_ptr : exp_ptr + nprim]
 
             # Get coordinates - optimize by direct slicing
-            coord = np.zeros(4, dtype=np.float64)
+            coord = np.zeros(COORD_STRIDE, dtype=np.float64)
             coord[:3] = _env[coord_ptr : coord_ptr + 3]
 
             # Fill arrays directly (no loop needed since nctr=1)
@@ -505,7 +507,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     # Pre-allocate CPU arrays for batching
     # Use PRIM_STRIDE (padded) to match per-pattern CE buffers
     all_ce_data = np.empty((total_count, PRIM_STRIDE), dtype=dtype, order="C")
-    all_coords_data = np.empty((total_count, 4), dtype=dtype, order="C")
+    all_coords_data = np.empty((total_count, COORD_STRIDE), dtype=dtype, order="C")
     to_split_map = np.empty(total_count, dtype=np.int32)
     pad_id = np.empty(total_count, dtype=bool)
     angs = np.empty(total_count, dtype=np.int32)
