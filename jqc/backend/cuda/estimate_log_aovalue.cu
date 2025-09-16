@@ -16,7 +16,7 @@
 */
 
 constexpr int ng_per_thread = 256;
-constexpr int nprim_max = NPRIM_MAX;
+constexpr int prim_stride = PRIM_STRIDE;
 constexpr float exp_cutoff = 36.8;
 
 extern "C" __global__
@@ -56,7 +56,7 @@ void estimate_log_aovalue(
         float bas_z = xi.z;
         float coeffs_reg[nprim], exps_reg[nprim];
         for (int ip = 0; ip < nprim; ip++){
-            const int offset = nprim_max * ish + ip;
+            const int offset = prim_stride * ish + ip;
             const float2 ce = coeff_exp[offset];
             coeffs_reg[ip] = ce.x;
             exps_reg[ip] = ce.y;

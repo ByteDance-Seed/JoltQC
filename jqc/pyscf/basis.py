@@ -50,20 +50,19 @@ import numpy as np
 import cupy as cp
 from pyscf import gto, lib
 from pyscf.scf import _vhf
-from jqc.constants import NPRIM_MAX
+from jqc.constants import NPRIM_MAX, COORD_STRIDE, PRIM_STRIDE
 
 # Import transformation functions at module level to avoid repeated local imports
 from jqc.backend.cart2sph import cart2cart, cart2sph, sph2cart
 
-__all__ = ["format_bas_cache", "sort_group_basis", "split_basis", "compute_q_matrix"]
+__all__ = ["sort_group_basis", "split_basis", "compute_q_matrix"]
 PTR_BAS_COORD = 7
 
 ArrayLike = np.ndarray
 
-
 @dataclass
 class BasisLayout:
-    ce: ArrayLike  # shape (nbasis_total, 2*NPRIM_MAX), np/cp
+    ce: ArrayLike  # shape (nbasis_total, PRIM_STRIDE), np/cp
     coords: ArrayLike  # shape (nbasis_total, 4),             np/cp
     angs: np.ndarray  # shape (nbasis_total,),               int32
     nprims: np.ndarray  # shape (nbasis_total,),               int32
@@ -450,7 +449,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
 
         # Pre-allocate final arrays
         coords_by_pattern[pattern] = np.empty((padded_count, 4), dtype=np.float64)
-        ce_by_pattern[pattern] = np.empty((padded_count, 2 * NPRIM_MAX), dtype=dtype)
+        ce_by_pattern[pattern] = np.empty((padded_count, PRIM_STRIDE), dtype=dtype)
         to_split_map_by_pattern[pattern] = np.empty(padded_count, dtype=np.int32)
         pad_id_by_pattern[pattern] = np.empty(padded_count, dtype=bool)
 
@@ -503,7 +502,8 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     total_count = sum(len(to_split_map_by_pattern[key]) for key in sorted_keys)
 
     # Pre-allocate CPU arrays for batching
-    all_ce_data = np.empty((total_count, 2 * NPRIM_MAX), dtype=dtype, order="C")
+    # Use PRIM_STRIDE (padded) to match per-pattern CE buffers
+    all_ce_data = np.empty((total_count, PRIM_STRIDE), dtype=dtype, order="C")
     all_coords_data = np.empty((total_count, 4), dtype=dtype, order="C")
     to_split_map = np.empty(total_count, dtype=np.int32)
     pad_id = np.empty(total_count, dtype=bool)

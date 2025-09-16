@@ -22,7 +22,7 @@ import cupy as cp
 import numpy as np
 from jqc.backend.util import generate_lookup_table
 from jqc.backend.cuda_scripts import rys_roots_data, rys_roots_code, jk_1q1t_cuda_code
-from jqc.constants import NPRIM_MAX
+from jqc.constants import NPRIM_MAX, PRIM_STRIDE, COORD_STRIDE
 
 __all__ = ["gen_jk_kernel"]
 
@@ -62,8 +62,11 @@ constexpr int rys_type = {rys_type};   // 0: omega = 0.0; -1: omega < 0.0; 1 ome
 constexpr int do_j = {int(do_j)};
 constexpr int do_k = {int(do_k)};
 constexpr int nsq_per_block = {nsq_per_block};
-// Inject NPRIM_MAX to match host-side layout
+// Inject constants to match host-side layout
 #define NPRIM_MAX {NPRIM_MAX}
+// PRIM_STRIDE in device code counts (c,e) pairs (DataType2), not scalars
+#define PRIM_STRIDE {PRIM_STRIDE // 2}
+#define COORD_STRIDE {COORD_STRIDE}
 
 // for rys_roots
 constexpr int nroots = ((li+lj+lk+ll)/2+1);

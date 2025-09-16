@@ -27,7 +27,7 @@ from jqc.backend.cuda_scripts import (
     rys_roots_parallel_code,
     jk_1qnt_cuda_code,
 )
-from jqc.constants import NPRIM_MAX
+from jqc.constants import NPRIM_MAX, PRIM_STRIDE, COORD_STRIDE
 
 __all__ = ["gen_jk_kernel"]
 
@@ -255,8 +255,11 @@ constexpr int threads  =  nsq_per_block * nthreads_per_sq;
 constexpr int do_j = {int(do_j)};
 constexpr int do_k = {int(do_k)};
 constexpr int smem_stride = {padded_stride(nsq_per_block)};
-// Inject NPRIM_MAX to match host-side layout
+// Inject constants to match host-side layout
 #define NPRIM_MAX {NPRIM_MAX}
+// PRIM_STRIDE in device code counts (c,e) pairs (DataType2), not scalars
+#define PRIM_STRIDE {PRIM_STRIDE // 2}
+#define COORD_STRIDE {COORD_STRIDE}
 // for rys_roots
 constexpr int nroots = ((li+lj+lk+ll)/2+1);
 """

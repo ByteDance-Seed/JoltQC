@@ -16,7 +16,7 @@
 */
 
 constexpr DataType max_val = 1e16;
-constexpr int nprim_max = NPRIM_MAX;
+constexpr int prim_stride = PRIM_STRIDE;
 constexpr DataType exp_cutoff = 36.8; // exp(-36.8) ~ 1e-16
 constexpr DataType rho_cutoff = 1e-16;
 constexpr DataType rho_cutoff2 = rho_cutoff * rho_cutoff;
@@ -95,7 +95,7 @@ void eval_rho(
         DataType cej_2e = zero;
         // Original code:
         // for (int jp = 0; jp < npj; jp++){
-        //     const int jp_offset = jp + jsh*nprim_max;
+        //     const int jp_offset = jp + jsh*prim_stride;
         //     const DataType2 coeff_expj = coeff_exp[jp_offset];
         //     const DataType e = coeff_expj.e;
         //     const DataType e_rr = e * rr_gj;
@@ -105,7 +105,7 @@ void eval_rho(
         //     cej_2e += ce * e;
         // }
         // Optimized version - early continue to avoid exp() calls:
-        const int jprim_base = jsh * nprim_max;
+        const int jprim_base = jsh * prim_stride;
         #pragma unroll
         for (int jp = 0; jp < npj; jp++){
             const int jp_off = jprim_base + jp;
@@ -210,7 +210,7 @@ void eval_rho(
             
             // Original code:
             // for (int ip = 0; ip < npi; ip++){
-            //     const int offset = ip + ish*nprim_max;
+            //     const int offset = ip + ish*prim_stride;
             //     const DataType2 coeff_expi = coeff_exp[offset];
             //     const DataType e = coeff_expi.e;
             //     const DataType e_rr = e * rr_gi;
@@ -220,7 +220,7 @@ void eval_rho(
             //     cei_2e += ce * e;
             // }
             // Optimized version - early continue to avoid exp() calls:
-            const int iprim_base = ish * nprim_max;
+            const int iprim_base = ish * prim_stride;
             #pragma unroll
             for (int ip = 0; ip < npi; ip++){
                 const int ip_off = iprim_base + ip;

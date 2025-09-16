@@ -24,7 +24,7 @@ constexpr DataType PI_FAC = 34.98683665524972497;
 constexpr DataType half = .5;
 constexpr DataType one = 1.0;
 constexpr DataType zero = 0.0;
-constexpr int nprim_max = NPRIM_MAX;
+constexpr int prim_stride = PRIM_STRIDE;
 
 
 struct __align__(4*sizeof(DataType)) DataType4 {
@@ -113,11 +113,11 @@ void rys_jk(const int nbas,
     DataType2 reg_cei[use_ceij_cache ? npi : 1], reg_cej[use_ceij_cache ? npj : 1];
     if constexpr (use_ceij_cache) {
         for (int ip = 0; ip < npi; ip++){
-            const int ish_ip = ip + ish*nprim_max;
+            const int ish_ip = ip + ish*prim_stride;
             reg_cei[ip] = coeff_exp[ish_ip];
         }
         for (int jp = 0; jp < npj; jp++){
-            const int jsh_jp = jp + jsh*nprim_max;
+            const int jsh_jp = jp + jsh*prim_stride;
             reg_cej[jp] = coeff_exp[jsh_jp];
         }
     }
@@ -137,8 +137,8 @@ void rys_jk(const int nbas,
                     ci = reg_cei[ip].c;
                     cj = reg_cej[jp].c;
                 } else {
-                    const int ish_ip = ip + ish*nprim_max;
-                    const int jsh_jp = jp + jsh*nprim_max;
+                    const int ish_ip = ip + ish*prim_stride;
+                    const int jsh_jp = jp + jsh*prim_stride;
                     const DataType2 cei = coeff_exp[ish_ip];
                     const DataType2 cej = coeff_exp[jsh_jp];
                     ai = cei.e;
@@ -162,8 +162,8 @@ void rys_jk(const int nbas,
 #pragma unroll
     for (int kp = 0; kp < npk; kp++)
     for (int lp = 0; lp < npl; lp++){
-        const int ksh_kp = kp + ksh*nprim_max;
-        const int lsh_lp = lp + lsh*nprim_max;
+        const int ksh_kp = kp + ksh*prim_stride;
+        const int lsh_lp = lp + lsh*prim_stride;
         const DataType2 cek = coeff_exp[ksh_kp];
         const DataType2 cel = coeff_exp[lsh_lp];
         const DataType ak = cek.e;
@@ -185,8 +185,8 @@ void rys_jk(const int nbas,
                 ci = reg_cei[ip].c;
                 cj = reg_cej[jp].c;
             } else {
-                const int ish_ip = ip + ish*nprim_max;
-                const int jsh_jp = jp + jsh*nprim_max;
+                const int ish_ip = ip + ish*prim_stride;
+                const int jsh_jp = jp + jsh*prim_stride;
                 const DataType2 cei = coeff_exp[ish_ip];
                 const DataType2 cej = coeff_exp[jsh_jp];
                 ai = cei.e;

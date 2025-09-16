@@ -16,7 +16,7 @@
 */
 
 constexpr DataType max_val = 1e16;
-constexpr int nprim_max = NPRIM_MAX;
+constexpr int prim_stride = PRIM_STRIDE;
 constexpr int warpsize = 32;
 constexpr DataType exp_cutoff = 36.8; // exp(-36.8) ~ 1e-16
 constexpr DataType vxc_cutoff = 1e-16;
@@ -148,7 +148,7 @@ void eval_vxc(
         DataType cej_2e = zero;
         // Original code:
         // for (int jp = 0; jp < npj; jp++){
-        //     const int offset = nprim_max * jsh + jp;
+        //     const int offset = prim_stride * jsh + jp;
         //     const DataType2 coeff_expj = coeff_exp[offset];
         //     const DataType e = coeff_expj.e;
         //     const DataType e_rr = e * rr_gj;
@@ -158,7 +158,7 @@ void eval_vxc(
         //     cej_2e += ce * e;
         // }
         // Optimized version - early continue to avoid exp() calls:
-        const int jprim_base = nprim_max * jsh;
+        const int jprim_base = prim_stride * jsh;
         #pragma unroll
         for (int jp = 0; jp < npj; jp++){
             const int jp_off = jprim_base + jp;
@@ -271,7 +271,7 @@ void eval_vxc(
             DataType cei_2e = zero;
             // Original code:
             // for (int ip = 0; ip < npi; ip++){
-            //     const int ip_offset = ip + ish*nprim_max;
+            //     const int ip_offset = ip + ish*prim_stride;
             //     const DataType2 coeff_expi = coeff_exp[ip_offset];
             //     const DataType e = coeff_expi.e;
             //     const DataType e_rr = e * rr_gi;
@@ -281,7 +281,7 @@ void eval_vxc(
             //     cei_2e += ce * e;
             // }
             // Optimized version - early continue to avoid exp() calls:
-            const int iprim_base = ish * nprim_max;
+            const int iprim_base = ish * prim_stride;
             #pragma unroll
             for (int ip = 0; ip < npi; ip++){
                 const int ip_off = iprim_base + ip;

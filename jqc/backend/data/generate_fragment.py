@@ -77,7 +77,7 @@ def generate_fragments(ang, max_threads=256):
 
 def update_frags(i, j, k, l, dtype_str):
     from jqc.pyscf import jk
-    from jqc.pyscf.basis import format_bas_cache, sort_group_basis, compute_q_matrix
+    from jqc.pyscf.basis import sort_group_basis, compute_q_matrix
     from jqc.backend import jk_1qnt as jk_algo1
     from jqc.backend import jk_1q1t as jk_algo0
     from jqc.backend.jk import device_name
