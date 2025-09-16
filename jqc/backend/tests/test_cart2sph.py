@@ -29,8 +29,6 @@ O    P
       0.2700058226E+00      1
 O    D
       0.2700058226E+00      1
-O    F
-      0.2700058226E+00      1
       """
     mol_cart = gto.M(atom="O 0 0 0", basis=basis, cart=True, output="/dev/null")
     mol_sph = gto.M(atom="O 0 0 0", basis=basis, cart=False, output="/dev/null")
@@ -60,27 +58,40 @@ class KnownValues(unittest.TestCase):
         self.assertLess(np.linalg.norm(s_sph - s_cart2sph.get()), 1e-10)
 
     def test_sph2cart(self):
+        basis = """
+O    S
+      0.2700058226E+00      1
+O    P
+      0.2700058226E+00      1
+O    D
+      0.2700058226E+00      1
+O    F
+      0.2700058226E+00      1
+      """
+        mol_cart = gto.M(atom="O 0 0 0", basis=basis, cart=True, output="/dev/null")
+        mol_sph = gto.M(atom="O 0 0 0", basis=basis, cart=False, output="/dev/null")
+
+        s_sph = mol_sph.intor("int1e_ovlp")
         angs = mol_cart._bas[:, gto.ANG_OF]
 
         cart_offset = mol_cart.ao_loc
         sph_offset = mol_sph.ao_loc
 
+        s_sph = cp.asarray(s_sph, order="C")
+
+        _c2s = {}
+        for l in range(5):
+            c2s = gto.mole.cart2sph(l, normalized="sp")
+            _c2s[l] = cp.asarray(c2s, order="C")
+
         eye = cp.eye(mol_sph.nao)
-
-        from pyscf.gto.moleintor import libcgto
-
-        c2s_coeffs = {}
-        for l in range(4):
-            c2s = libcgto.cart2sph_coeff(l)
-            c2s_coeffs[l] = cp.asarray(c2s, order="C")
-
         s0 = sph2cart(eye, angs, sph_offset, cart_offset, mol_cart.nao)
         s1 = cp.empty([mol_cart.nao, mol_cart.nao])
 
         for p in range(len(cart_offset) - 1):
             for q in range(len(sph_offset) - 1):
-                c2s_left = c2s_coeffs[angs[p]]
-                c2s_right = c2s_coeffs[angs[q]]
+                c2s_left = _c2s[angs[p]]
+                c2s_right = _c2s[angs[q]]
 
                 sph_block = eye[
                     sph_offset[p] : sph_offset[p + 1], sph_offset[q] : sph_offset[q + 1]
@@ -91,6 +102,8 @@ class KnownValues(unittest.TestCase):
                     cart_offset[q] : cart_offset[q + 1],
                 ] = cart_block
 
+        mol_cart.stdout.close()
+        mol_sph.stdout.close()
         self.assertLess(cp.linalg.norm(s0 - s1).item(), 1e-10)
 
 
