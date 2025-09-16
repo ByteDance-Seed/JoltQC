@@ -51,35 +51,39 @@ import cupy as cp
 from pyscf import gto, lib
 from pyscf.scf import _vhf
 from jqc.constants import NPRIM_MAX
+
 # Import transformation functions at module level to avoid repeated local imports
 from jqc.backend.cart2sph import cart2cart, cart2sph, sph2cart
 
-__all__ = ['format_bas_cache', 'sort_group_basis', 'split_basis', 'compute_q_matrix']
+__all__ = ["format_bas_cache", "sort_group_basis", "split_basis", "compute_q_matrix"]
 PTR_BAS_COORD = 7
 
 ArrayLike = np.ndarray
 
+
 @dataclass
 class BasisLayout:
-    ce: ArrayLike          # shape (nbasis_total, 2*NPRIM_MAX), np/cp
-    coords: ArrayLike      # shape (nbasis_total, 4),             np/cp
-    angs: np.ndarray       # shape (nbasis_total,),               int32
-    nprims: np.ndarray     # shape (nbasis_total,),               int32
+    ce: ArrayLike  # shape (nbasis_total, 2*NPRIM_MAX), np/cp
+    coords: ArrayLike  # shape (nbasis_total, 4),             np/cp
+    angs: np.ndarray  # shape (nbasis_total,),               int32
+    nprims: np.ndarray  # shape (nbasis_total,),               int32
 
     # maps / masks
-    to_split_map: np.ndarray     # shape (nbasis_total,),               int32
-    pad_id: np.ndarray     # shape (nbasis_total,),               bool
+    to_split_map: np.ndarray  # shape (nbasis_total,),               int32
+    pad_id: np.ndarray  # shape (nbasis_total,),               bool
 
     # group_info
-    group_key: np.ndarray      # shape (ngroups, 2) -> [ang, nprim], int32
-    group_offset: np.ndarray   # shape (ngroups+1,),                int64/int32
+    group_key: np.ndarray  # shape (ngroups, 2) -> [ang, nprim], int32
+    group_offset: np.ndarray  # shape (ngroups+1,),                int64/int32
 
     # dtype bookkeeping (optional but handy)
     dtype: np.dtype
 
     # molecule references
     _mol: Optional[object] = None  # original pyscf.gto.Mole reference
-    _splitted_mol: Optional[object] = None  # split pyscf.gto.Mole reference (decontracted + split)
+    _splitted_mol: Optional[object] = (
+        None  # split pyscf.gto.Mole reference (decontracted + split)
+    )
     # Mapping from split basis index -> decontracted basis index
     _split_to_decontracted: Optional[np.ndarray] = None
 
@@ -92,7 +96,6 @@ class BasisLayout:
     _ao_loc_no_pad: Optional[np.ndarray] = None
     _to_decontracted_map: Optional[np.ndarray] = None
     _angs_no_pad: Optional[np.ndarray] = None
-    
 
     # --------- Compatibility accessors ---------
     @property
@@ -159,14 +162,14 @@ class BasisLayout:
         if self._mol_ao_loc is None:
             # Compute from original molecule (decontracted basis)
             bas = self._mol._bas
-            angs = bas[:,gto.ANG_OF]
-            nctr = bas[:,gto.NCTR_OF]
+            angs = bas[:, gto.ANG_OF]
+            nctr = bas[:, gto.NCTR_OF]
             if self._mol.cart:
-                dims = [ [(l+1)*(l+2)//2] * n for l, n in zip(angs, nctr) ]
+                dims = [[(l + 1) * (l + 2) // 2] * n for l, n in zip(angs, nctr)]
             else:
-                dims = [ [2*l + 1] * n for l, n in zip(angs, nctr) ]
+                dims = [[2 * l + 1] * n for l, n in zip(angs, nctr)]
             dims = np.concatenate(dims)
-            ao_loc = np.empty(len(dims)+1, dtype=np.int32)
+            ao_loc = np.empty(len(dims) + 1, dtype=np.int32)
             ao_loc[0] = 0
             dims.cumsum(dtype=np.int32, out=ao_loc[1:])
 
@@ -188,7 +191,9 @@ class BasisLayout:
             # Compute to_decontracted_map: internal -> decontracted
             # This is the composition of to_split_map (internal -> split) and split_to_decontracted (split -> decontracted)
             to_decontracted_map = np.empty(len(self.to_split_map), dtype=np.int32)
-            to_decontracted_map[~self.pad_id] = self._split_to_decontracted[self.to_split_map[~self.pad_id]]
+            to_decontracted_map[~self.pad_id] = self._split_to_decontracted[
+                self.to_split_map[~self.pad_id]
+            ]
             to_decontracted_map[self.pad_id] = -1  # Invalid index for padded entries
             self._to_decontracted_map = to_decontracted_map
         return self._to_decontracted_map
@@ -219,7 +224,9 @@ class BasisLayout:
             # Compute raw q_matrix using split molecule
             q_matrix_raw = compute_q_matrix(self._splitted_mol)
             # Apply basis mapping to reorder according to sorted basis
-            q_matrix_mapped = q_matrix_raw[self.to_split_map[:,None], self.to_split_map]
+            q_matrix_mapped = q_matrix_raw[
+                self.to_split_map[:, None], self.to_split_map
+            ]
             # Set Q matrix for padded basis to -100 (screening value)
             q_matrix_mapped[self.pad_id, :] = -100
             q_matrix_mapped[:, self.pad_id] = -100
@@ -281,13 +288,17 @@ class BasisLayout:
         splitted_mol, split_to_decontracted = split_basis(mol)
 
         # Then call sort_group_basis on the split molecule
-        bas_info, to_split_map, pad_id, group_info = sort_group_basis(splitted_mol, alignment=alignment, dtype=dtype)
+        bas_info, to_split_map, pad_id, group_info = sort_group_basis(
+            splitted_mol, alignment=alignment, dtype=dtype
+        )
         ce, coords, angs, nprims = bas_info
         group_key, group_offset = group_info
 
         # Assert angular momentum constraint (JoltQC kernels support up to g orbitals, l=4)
         max_ang = np.max(angs[~pad_id]) if np.any(~pad_id) else 0
-        assert max_ang <= 4, f"Angular momentum {max_ang} exceeds maximum supported value of 4"
+        assert (
+            max_ang <= 4
+        ), f"Angular momentum {max_ang} exceeds maximum supported value of 4"
 
         return cls(
             ce=ce,
@@ -318,14 +329,18 @@ class BasisLayout:
             results = []
             transform_func = cart2cart if is_cart else sph2cart
             for i in range(mat_cp.shape[0]):
-                mat_2d = transform_func(mat_cp[i], self.angs_no_pad, mol_ao_loc, src_offsets, nao)
+                mat_2d = transform_func(
+                    mat_cp[i], self.angs_no_pad, mol_ao_loc, src_offsets, nao
+                )
                 if mat_2d.ndim == 3 and mat_2d.shape[0] == 1:
                     mat_2d = mat_2d[0]
                 results.append(mat_2d)
             return cp.stack(results, axis=0)
         else:
             transform_func = cart2cart if is_cart else sph2cart
-            result = transform_func(mat_cp, self.angs_no_pad, mol_ao_loc, src_offsets, nao)
+            result = transform_func(
+                mat_cp, self.angs_no_pad, mol_ao_loc, src_offsets, nao
+            )
             return result[0] if result.ndim == 3 and result.shape[0] == 1 else result
 
     def dm_to_mol(self, mat):
@@ -342,15 +357,20 @@ class BasisLayout:
             results = []
             transform_func = cart2cart if is_cart else cart2sph
             for i in range(mat_cp.shape[0]):
-                mat_2d = transform_func(mat_cp[i], self.angs_no_pad, src_offsets, mol_ao_loc, nao)
+                mat_2d = transform_func(
+                    mat_cp[i], self.angs_no_pad, src_offsets, mol_ao_loc, nao
+                )
                 if mat_2d.ndim == 3 and mat_2d.shape[0] == 1:
                     mat_2d = mat_2d[0]
                 results.append(mat_2d)
             return cp.stack(results, axis=0)
         else:
             transform_func = cart2cart if is_cart else cart2sph
-            result = transform_func(mat_cp, self.angs_no_pad, src_offsets, mol_ao_loc, nao)
+            result = transform_func(
+                mat_cp, self.angs_no_pad, src_offsets, mol_ao_loc, nao
+            )
             return result[0] if result.ndim == 3 and result.shape[0] == 1 else result
+
 
 def sort_group_basis(mol, alignment=4, dtype=np.float64):
     """
@@ -369,21 +389,23 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         basis_mask := padding mask for basis_info
         group_info := (group_key, group_offset)
     """
-    
+
     _bas = mol._bas
     _env = mol._env
     _atm = mol._atm
-    
+
     # Assert that all basis functions are decontracted (nctr = 1)
     for i in range(mol._bas.shape[0]):
         nctr = _bas[i, gto.NCTR_OF]
-        assert nctr == 1, f"Basis function {i} has nctr={nctr}, expected nctr=1. mol must be decontracted."
+        assert (
+            nctr == 1
+        ), f"Basis function {i} has nctr={nctr}, expected nctr=1. mol must be decontracted."
 
     # Pre-calculate sizes to avoid intermediate copies
     nbas = _bas.shape[0]
     pattern_counts = defaultdict(int)
     pattern_data = defaultdict(list)
-    
+
     # First pass: count basis functions by pattern and collect data
     for i in range(nbas):
         nprim = _bas[i, gto.NPRIM_OF]
@@ -391,32 +413,34 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         ang = _bas[i, gto.ANG_OF]
         pattern = (ang, nprim)
         pattern_counts[pattern] += 1  # nctr is always 1
-        
+
         iatm = _bas[i, gto.ATOM_OF]
         coord_ptr = _atm[iatm, gto.PTR_COORD]
         exp_ptr = _bas[i, gto.PTR_EXP]
         coeff_ptr = _bas[i, gto.PTR_COEFF]
-        
-        pattern_data[pattern].append({
-            'coord_ptr': coord_ptr,
-            'exp_ptr': exp_ptr,
-            'coeff_ptr': coeff_ptr,
-            'nprim': nprim,
-            'ang': ang,
-            'to_split_map': i
-        })
+
+        pattern_data[pattern].append(
+            {
+                "coord_ptr": coord_ptr,
+                "exp_ptr": exp_ptr,
+                "coeff_ptr": coeff_ptr,
+                "nprim": nprim,
+                "ang": ang,
+                "to_split_map": i,
+            }
+        )
 
     # Pre-allocate arrays for each pattern
     coords_by_pattern = {}
     ce_by_pattern = {}
     to_split_map_by_pattern = {}
     pad_id_by_pattern = {}
-    
+
     # Pre-compute normalization factors to avoid repeated calculations
     norm_factors = {}
     for ang in set(key[0] for key in pattern_counts.keys()):
         if ang < 2:
-            norm_factors[ang] = ((2*ang + 1) / (4.0 * np.pi))**0.5
+            norm_factors[ang] = ((2 * ang + 1) / (4.0 * np.pi)) ** 0.5
         else:
             norm_factors[ang] = 1.0
 
@@ -426,7 +450,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
 
         # Pre-allocate final arrays
         coords_by_pattern[pattern] = np.empty((padded_count, 4), dtype=np.float64)
-        ce_by_pattern[pattern] = np.empty((padded_count, 2*NPRIM_MAX), dtype=dtype)
+        ce_by_pattern[pattern] = np.empty((padded_count, 2 * NPRIM_MAX), dtype=dtype)
         to_split_map_by_pattern[pattern] = np.empty(padded_count, dtype=np.int32)
         pad_id_by_pattern[pattern] = np.empty(padded_count, dtype=bool)
 
@@ -436,24 +460,26 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         # Fill arrays without intermediate copies
         idx = 0
         for data in pattern_data[pattern]:
-            coord_ptr = data['coord_ptr']
-            exp_ptr = data['exp_ptr']
-            coeff_ptr = data['coeff_ptr']
-            nprim = data['nprim']
-            to_split_map = data['to_split_map']
+            coord_ptr = data["coord_ptr"]
+            exp_ptr = data["exp_ptr"]
+            coeff_ptr = data["coeff_ptr"]
+            nprim = data["nprim"]
+            to_split_map = data["to_split_map"]
 
             # Get coefficients and exponents (nctr=1, so length is nprim)
-            coeffs = _env[coeff_ptr:coeff_ptr+nprim] * norm_fac  # Apply norm factor directly
-            exps = _env[exp_ptr:exp_ptr+nprim]
+            coeffs = (
+                _env[coeff_ptr : coeff_ptr + nprim] * norm_fac
+            )  # Apply norm factor directly
+            exps = _env[exp_ptr : exp_ptr + nprim]
 
             # Get coordinates - optimize by direct slicing
             coord = np.zeros(4, dtype=np.float64)
-            coord[:3] = _env[coord_ptr:coord_ptr+3]
+            coord[:3] = _env[coord_ptr : coord_ptr + 3]
 
             # Fill arrays directly (no loop needed since nctr=1)
             coords_by_pattern[pattern][idx] = coord
-            ce_by_pattern[pattern][idx, 0:2*nprim:2] = coeffs
-            ce_by_pattern[pattern][idx, 1:2*nprim:2] = exps
+            ce_by_pattern[pattern][idx, 0 : 2 * nprim : 2] = coeffs
+            ce_by_pattern[pattern][idx, 1 : 2 * nprim : 2] = exps
             to_split_map_by_pattern[pattern][idx] = to_split_map
             pad_id_by_pattern[pattern][idx] = False
             idx += 1
@@ -477,8 +503,8 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     total_count = sum(len(to_split_map_by_pattern[key]) for key in sorted_keys)
 
     # Pre-allocate CPU arrays for batching
-    all_ce_data = np.empty((total_count, 2*NPRIM_MAX), dtype=dtype, order='C')
-    all_coords_data = np.empty((total_count, 4), dtype=dtype, order='C')
+    all_ce_data = np.empty((total_count, 2 * NPRIM_MAX), dtype=dtype, order="C")
+    all_coords_data = np.empty((total_count, 4), dtype=dtype, order="C")
     to_split_map = np.empty(total_count, dtype=np.int32)
     pad_id = np.empty(total_count, dtype=bool)
     angs = np.empty(total_count, dtype=np.int32)
@@ -497,14 +523,14 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         bas_count = len(pattern_to_split_map)
 
         # Copy data to CPU arrays for batching
-        all_ce_data[offset:offset+bas_count] = pattern_ce
-        all_coords_data[offset:offset+bas_count] = pattern_coords
+        all_ce_data[offset : offset + bas_count] = pattern_ce
+        all_coords_data[offset : offset + bas_count] = pattern_coords
 
         # CPU arrays - direct assignment
-        to_split_map[offset:offset+bas_count] = pattern_to_split_map
-        pad_id[offset:offset+bas_count] = pattern_pad_id
-        angs[offset:offset+bas_count] = key[0]
-        nprims[offset:offset+bas_count] = key[1]
+        to_split_map[offset : offset + bas_count] = pattern_to_split_map
+        pad_id[offset : offset + bas_count] = pattern_pad_id
+        angs[offset : offset + bas_count] = key[0]
+        nprims[offset : offset + bas_count] = key[1]
 
         group_key.append([key[0], key[1]])
         group_offset.append(offset)
@@ -512,16 +538,16 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     group_offset.append(offset)
 
     # Batch transfer to GPU - single transfer per array type
-    ce = cp.asarray(all_ce_data, dtype=dtype, order='C')
-    coords = cp.asarray(all_coords_data, dtype=dtype, order='C')
+    ce = cp.asarray(all_ce_data, dtype=dtype, order="C")
+    coords = cp.asarray(all_coords_data, dtype=dtype, order="C")
 
     # Arrays are already in target format - no additional conversions needed
     # ce and coords are already CuPy arrays with correct order
 
     # Store info at basis level
     bas_info = (ce, coords, angs, nprims)
-    
-    '''
+
+    """
     group_size = 25600
     splitted_group_key = []
     splitted_group_offset = []
@@ -532,10 +558,11 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     splitted_group_offset.append(group_offset[-1])
     group_key = np.asarray(splitted_group_key)
     group_offset = np.asarray(splitted_group_offset)
-    '''
+    """
     group_key = np.asarray(group_key)
     group_offset = np.asarray(group_offset)
     return bas_info, to_split_map, pad_id, (group_key, group_offset)
+
 
 def split_basis(mol):
     """
@@ -586,9 +613,9 @@ def split_basis(mol):
         coeff_ptr = _bas[i, gto.PTR_COEFF]
 
         # Get exponents and coefficients
-        exps = _env[exp_ptr:exp_ptr+nprim]
-        coeffs = _env[coeff_ptr:coeff_ptr+nprim*nctr]
-        
+        exps = _env[exp_ptr : exp_ptr + nprim]
+        coeffs = _env[coeff_ptr : coeff_ptr + nprim * nctr]
+
         if nctr == 1:
             # For nctr = 1, check if we need to split due to nprim > NPRIM_MAX
             if nprim <= NPRIM_MAX:
@@ -605,7 +632,7 @@ def split_basis(mol):
                     start_prim = k * NPRIM_MAX
                     end_prim = min((k + 1) * NPRIM_MAX, nprim)
                     split_nprim = end_prim - start_prim
-                    
+
                     # Add split exponents to environment
                     exp_ptr_new = len(new_env_list)
                     new_env_list.extend(exps[start_prim:end_prim])
@@ -616,14 +643,14 @@ def split_basis(mol):
 
                     # Create new basis entry for this split
                     new_bas_entry = [
-                        iatm,              # ATOM_OF (same atom as original)
-                        ang,               # ANG_OF
-                        split_nprim,       # NPRIM_OF (split size)
-                        1,                 # NCTR_OF (always 1)
-                        0,                 # KAPPA (unused)
-                        exp_ptr_new,       # PTR_EXP (split exponents)
-                        coeff_ptr_new,     # PTR_COEFF (split coefficients)
-                        _bas[i, 7]         # PTR_BAS_COORD (same as original)
+                        iatm,  # ATOM_OF (same atom as original)
+                        ang,  # ANG_OF
+                        split_nprim,  # NPRIM_OF (split size)
+                        1,  # NCTR_OF (always 1)
+                        0,  # KAPPA (unused)
+                        exp_ptr_new,  # PTR_EXP (split exponents)
+                        coeff_ptr_new,  # PTR_COEFF (split coefficients)
+                        _bas[i, 7],  # PTR_BAS_COORD (same as original)
                     ]
                     new_bas_list.append(new_bas_entry)
                     original_bas_map.append(decontracted_idx)
@@ -645,14 +672,14 @@ def split_basis(mol):
 
                     # Create new basis entry with nctr = 1 for the same atom
                     new_bas_entry = [
-                        iatm,              # ATOM_OF (same atom as original)
-                        ang,               # ANG_OF
-                        nprim,             # NPRIM_OF
-                        1,                 # NCTR_OF (always 1 for decontracted)
-                        0,                 # KAPPA (unused)
-                        exp_ptr,           # PTR_EXP (reuse original)
-                        coeff_ptr_new,     # PTR_COEFF (separate for each)
-                        _bas[i, 7]         # PTR_BAS_COORD (same as original)
+                        iatm,  # ATOM_OF (same atom as original)
+                        ang,  # ANG_OF
+                        nprim,  # NPRIM_OF
+                        1,  # NCTR_OF (always 1 for decontracted)
+                        0,  # KAPPA (unused)
+                        exp_ptr,  # PTR_EXP (reuse original)
+                        coeff_ptr_new,  # PTR_COEFF (separate for each)
+                        _bas[i, 7],  # PTR_BAS_COORD (same as original)
                     ]
                     new_bas_list.append(new_bas_entry)
                     original_bas_map.append(decontracted_idx)
@@ -665,7 +692,7 @@ def split_basis(mol):
                         start_prim = k * NPRIM_MAX
                         end_prim = min((k + 1) * NPRIM_MAX, nprim)
                         split_nprim = end_prim - start_prim
-                        
+
                         # Add split exponents to environment
                         exp_ptr_new = len(new_env_list)
                         new_env_list.extend(exps[start_prim:end_prim])
@@ -676,14 +703,14 @@ def split_basis(mol):
 
                         # Create new basis entry for this split
                         new_bas_entry = [
-                            iatm,              # ATOM_OF (same atom as original)
-                            ang,               # ANG_OF
-                            split_nprim,       # NPRIM_OF (split size)
-                            1,                 # NCTR_OF (always 1)
-                            0,                 # KAPPA (unused)
-                            exp_ptr_new,       # PTR_EXP (split exponents)
-                            coeff_ptr_new,     # PTR_COEFF (split coefficients)
-                            _bas[i, 7]         # PTR_BAS_COORD (same as original)
+                            iatm,  # ATOM_OF (same atom as original)
+                            ang,  # ANG_OF
+                            split_nprim,  # NPRIM_OF (split size)
+                            1,  # NCTR_OF (always 1)
+                            0,  # KAPPA (unused)
+                            exp_ptr_new,  # PTR_EXP (split exponents)
+                            coeff_ptr_new,  # PTR_COEFF (split coefficients)
+                            _bas[i, 7],  # PTR_BAS_COORD (same as original)
                         ]
                         new_bas_list.append(new_bas_entry)
                         original_bas_map.append(decontracted_idx)
@@ -697,8 +724,9 @@ def split_basis(mol):
     # Do not call build() - return the unbuilt molecule and mapping
     return new_mol, np.array(original_bas_map)
 
+
 def compute_q_matrix(mol):
-    """ 
+    """
     Compute the Q matrix in infinite norm for the given molecule.
 
     Args:
@@ -710,23 +738,31 @@ def compute_q_matrix(mol):
     nbas = mol.nbas
     ao_loc = mol.ao_loc
     q_matrix = np.empty((nbas, nbas))
-    intor = mol._add_suffix('int2e')
+    intor = mol._add_suffix("int2e")
     _vhf.libcvhf.CVHFnr_int2e_q_cond(
-        getattr(_vhf.libcvhf, intor), lib.c_null_ptr(),
-        q_matrix.ctypes, ao_loc.ctypes,
-        mol._atm.ctypes, ctypes.c_int(mol.natm),
-        mol._bas.ctypes, ctypes.c_int(mol.nbas), mol._env.ctypes)
+        getattr(_vhf.libcvhf, intor),
+        lib.c_null_ptr(),
+        q_matrix.ctypes,
+        ao_loc.ctypes,
+        mol._atm.ctypes,
+        ctypes.c_int(mol.natm),
+        mol._bas.ctypes,
+        ctypes.c_int(mol.nbas),
+        mol._env.ctypes,
+    )
     q_matrix = np.log(q_matrix + 1e-300).astype(np.float32)
     return q_matrix
 
+
 def cluster_into_tile(coords, tile=4):
     """
-    Greedy heuristic of grouping coords into tiles 
+    Greedy heuristic of grouping coords into tiles
     """
     from scipy.spatial.distance import pdist, squareform
+
     coords = np.asarray(coords)
 
-    distance_matrix = squareform(pdist(coords, metric='euclidean')) 
+    distance_matrix = squareform(pdist(coords, metric="euclidean"))
     n = distance_matrix.shape[0]
     unassigned = set(range(n))
     clusters = []
@@ -735,20 +771,21 @@ def cluster_into_tile(coords, tile=4):
         i = unassigned.pop()
         # find nearest 3 among remaining
         dists = [(j, distance_matrix[i, j]) for j in unassigned]
-        nearest = sorted(dists, key=lambda x: x[1])[:tile-1]
+        nearest = sorted(dists, key=lambda x: x[1])[: tile - 1]
         cluster = [i] + [j for j, _ in nearest]
         for j, _ in nearest:
             unassigned.remove(j)
         clusters += cluster
     return clusters
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     from pyscf import gto
 
     # Test 1: Normal molecule with basis functions within NPRIM_MAX
     mol = gto.Mole()
-    mol.atom = 'H 0 0 0; H 0 0 1'
-    mol.basis = 'cc-pvdz'
+    mol.atom = "H 0 0 0; H 0 0 1"
+    mol.basis = "cc-pvdz"
     mol.build()
 
     print("=== Test 1: Normal molecule (cc-pvdz) ===")
@@ -764,8 +801,8 @@ if __name__ == '__main__':
     print("\n=== Test 2: Molecule with large basis (cc-pCV5Z) ===")
     try:
         mol2 = gto.Mole()
-        mol2.atom = 'C 0 0 0'
-        mol2.basis = 'cc-pCV5Z'  # This often has basis functions with > 16 primitives
+        mol2.atom = "C 0 0 0"
+        mol2.basis = "cc-pCV5Z"  # This often has basis functions with > 16 primitives
         mol2.build()
 
         print(f"Original mol.nao: {mol2.nao}")
@@ -774,10 +811,14 @@ if __name__ == '__main__':
         layout2 = BasisLayout.from_mol(mol2)
         print(f"Layout nbasis: {layout2.nbasis}")
         print(f"Layout ao_loc shape: {layout2.ao_loc.shape}")
-        print(f"Original mol.ao_loc matches layout ao_loc: {np.array_equal(mol2.ao_loc, layout2.ao_loc)}")
+        print(
+            f"Original mol.ao_loc matches layout ao_loc: {np.array_equal(mol2.ao_loc, layout2.ao_loc)}"
+        )
 
         # to_split_map provides the mapping from internal sorted layout to split basis indices
-        print(f"Basis mapping established: {len(layout2.to_split_map)} split->decontracted mappings")
+        print(
+            f"Basis mapping established: {len(layout2.to_split_map)} split->decontracted mappings"
+        )
 
     except Exception as e:
         print(f"Test 2 failed (basis may not be available): {e}")
@@ -785,8 +826,8 @@ if __name__ == '__main__':
     print("\n=== Test 3: Simulated large primitive basis ===")
     # Manually test the split_basis function with artificial data
     mol3 = gto.Mole()
-    mol3.atom = 'H 0 0 0'
-    mol3.basis = 'sto-3g'
+    mol3.atom = "H 0 0 0"
+    mol3.basis = "sto-3g"
     mol3.spin = 1  # Correct spin for single hydrogen
     mol3.build()
 

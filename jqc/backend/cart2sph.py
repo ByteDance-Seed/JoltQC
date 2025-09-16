@@ -13,26 +13,27 @@
 # limitations under the License.
 #
 
-''' 
+"""
 Cartesian to spherical, and spherical to cartesian basis transformations.
-'''
+"""
 
 import numpy as np
 import cupy as cp
 from jqc.backend.cuda_scripts import code_path
 
-__all__ = ['cart2sph', 'sph2cart']
+__all__ = ["cart2sph", "sph2cart"]
 
-compile_options = ('-std=c++17','--use_fast_math', '--minimal')
+compile_options = ("-std=c++17", "--use_fast_math", "--minimal")
 
-with open(f'{code_path}/cuda/cart2sph.cu') as f:
+with open(f"{code_path}/cuda/cart2sph.cu") as f:
     cart2sph_scripts = f.read()
 
-with open(f'{code_path}/cuda/sph2cart.cu') as f:
+with open(f"{code_path}/cuda/sph2cart.cu") as f:
     sph2cart_scripts = f.read()
 
 _cart2sph_kernel_cache = {}
 _sph2cart_kernel_cache = {}
+
 
 def cart2sph(dm_cart, angs, cart_offset, sph_offset, nao_sph, out=None):
     """
@@ -47,20 +48,20 @@ def cart2sph(dm_cart, angs, cart_offset, sph_offset, nao_sph, out=None):
     Returns:
         The spherical density matrix.
     """
-    assert dm_cart.flags['C_CONTIGUOUS']
+    assert dm_cart.flags["C_CONTIGUOUS"]
     is_2d = dm_cart.ndim == 2
     if is_2d:
         dm_cart = dm_cart[None]
     ndms = dm_cart.shape[0]
     cart_offset = cp.asarray(cart_offset, dtype=cp.int32)
     sph_offset = cp.asarray(sph_offset, dtype=cp.int32)
-    buf = cp.zeros_like(dm_cart, order='C')
+    buf = cp.zeros_like(dm_cart, order="C")
     nao_cart = dm_cart.shape[-1]
     diff = angs[1:] != angs[:-1]
     offsets = np.concatenate(([0], np.nonzero(diff)[0] + 1, [angs.size]))
     # Initialize output array before any kernel calls
     if out is None:
-        dm_sph = cp.zeros((ndms, nao_sph, nao_sph), order='C')
+        dm_sph = cp.zeros((ndms, nao_sph, nao_sph), order="C")
     else:
         dm_sph = out
         dm_sph.fill(0)
@@ -75,15 +76,27 @@ def cart2sph(dm_cart, angs, cart_offset, sph_offset, nao_sph, out=None):
         nbatch = p1 - p0
         ang = angs[p0]
         if ang not in _cart2sph_kernel_cache:
-            const = f'constexpr int ang = {ang};'
+            const = f"constexpr int ang = {ang};"
             scripts = const + cart2sph_scripts
             mod = cp.RawModule(code=scripts, options=compile_options)
-            _cart2sph_kernel_cache[ang] = mod.get_function('cart2sph')
+            _cart2sph_kernel_cache[ang] = mod.get_function("cart2sph")
         kernel = _cart2sph_kernel_cache[ang]
 
-        args = (dm_cart, buf, nao_cart, nbatch, cart_ao_stride, sph_ao_stride, shell_stride,
-               cart_offset[p0:p1], sph_offset[p0:p1])
-        blocks = ((nao_cart + threads[0] - 1) // threads[0], (nbatch + threads[1] - 1) // threads[1])
+        args = (
+            dm_cart,
+            buf,
+            nao_cart,
+            nbatch,
+            cart_ao_stride,
+            sph_ao_stride,
+            shell_stride,
+            cart_offset[p0:p1],
+            sph_offset[p0:p1],
+        )
+        blocks = (
+            (nao_cart + threads[0] - 1) // threads[0],
+            (nbatch + threads[1] - 1) // threads[1],
+        )
         kernel(blocks, threads, args)
 
     # cart2sph for cols
@@ -94,15 +107,27 @@ def cart2sph(dm_cart, angs, cart_offset, sph_offset, nao_sph, out=None):
         nbatch = p1 - p0
         ang = angs[p0]
         if ang not in _cart2sph_kernel_cache:
-            const = f'constexpr int ang = {ang};'
+            const = f"constexpr int ang = {ang};"
             scripts = const + cart2sph_scripts
             mod = cp.RawModule(code=scripts, options=compile_options)
-            _cart2sph_kernel_cache[ang] = mod.get_function('cart2sph')
+            _cart2sph_kernel_cache[ang] = mod.get_function("cart2sph")
         kernel = _cart2sph_kernel_cache[ang]
 
-        args = (buf, dm_sph, nao_sph, nbatch, cart_ao_stride, sph_ao_stride, shell_stride,
-               cart_offset[p0:p1], sph_offset[p0:p1])
-        blocks = ((nao_cart + threads[0] - 1) // threads[0], (nbatch + threads[1] - 1) // threads[1])
+        args = (
+            buf,
+            dm_sph,
+            nao_sph,
+            nbatch,
+            cart_ao_stride,
+            sph_ao_stride,
+            shell_stride,
+            cart_offset[p0:p1],
+            sph_offset[p0:p1],
+        )
+        blocks = (
+            (nao_cart + threads[0] - 1) // threads[0],
+            (nbatch + threads[1] - 1) // threads[1],
+        )
         kernel(blocks, threads, args)
 
     if is_2d:
@@ -123,7 +148,7 @@ def sph2cart(dm_sph, angs, sph_offset, cart_offset, nao_cart, out=None):
     Returns:
         The cartesian density matrix.
     """
-    assert dm_sph.flags['C_CONTIGUOUS']
+    assert dm_sph.flags["C_CONTIGUOUS"]
     is_2d = dm_sph.ndim == 2
     if is_2d:
         dm_sph = dm_sph[None]
@@ -132,11 +157,11 @@ def sph2cart(dm_sph, angs, sph_offset, cart_offset, nao_cart, out=None):
 
     cart_offset = cp.asarray(cart_offset, dtype=cp.int32)
     sph_offset = cp.asarray(sph_offset, dtype=cp.int32)
-    buf = cp.zeros((ndms, nao_cart, nao_cart), order='C')
+    buf = cp.zeros((ndms, nao_cart, nao_cart), order="C")
 
     # Initialize output array before any kernel calls
     if out is None:
-        dm_cart = cp.zeros((ndms, nao_cart, nao_cart), order='C')
+        dm_cart = cp.zeros((ndms, nao_cart, nao_cart), order="C")
     else:
         dm_cart = out
         dm_cart.fill(0)
@@ -153,15 +178,27 @@ def sph2cart(dm_sph, angs, sph_offset, cart_offset, nao_cart, out=None):
         nbatch = p1 - p0
         ang = angs[p0]
         if ang not in _sph2cart_kernel_cache:
-            const = f'constexpr int ang = {ang};'
+            const = f"constexpr int ang = {ang};"
             scripts = const + sph2cart_scripts
             mod = cp.RawModule(code=scripts, options=compile_options)
-            _sph2cart_kernel_cache[ang] = mod.get_function('sph2cart')
+            _sph2cart_kernel_cache[ang] = mod.get_function("sph2cart")
         kernel = _sph2cart_kernel_cache[ang]
 
-        args = (buf, dm_sph, nao_sph, nbatch, cart_ao_stride, sph_ao_stride, shell_stride,
-               cart_offset[p0:p1], sph_offset[p0:p1])
-        blocks = ((nao_sph + threads[0] - 1) // threads[0], (nbatch + threads[1] - 1) // threads[1])
+        args = (
+            buf,
+            dm_sph,
+            nao_sph,
+            nbatch,
+            cart_ao_stride,
+            sph_ao_stride,
+            shell_stride,
+            cart_offset[p0:p1],
+            sph_offset[p0:p1],
+        )
+        blocks = (
+            (nao_sph + threads[0] - 1) // threads[0],
+            (nbatch + threads[1] - 1) // threads[1],
+        )
         kernel(blocks, threads, args)
 
     # sph2cart for cols
@@ -172,20 +209,33 @@ def sph2cart(dm_sph, angs, sph_offset, cart_offset, nao_cart, out=None):
         nbatch = p1 - p0
         ang = angs[p0]
         if ang not in _sph2cart_kernel_cache:
-            const = f'constexpr int ang = {ang};'
+            const = f"constexpr int ang = {ang};"
             scripts = const + sph2cart_scripts
             mod = cp.RawModule(code=scripts, options=compile_options)
-            _sph2cart_kernel_cache[ang] = mod.get_function('sph2cart')
+            _sph2cart_kernel_cache[ang] = mod.get_function("sph2cart")
         kernel = _sph2cart_kernel_cache[ang]
 
-        args = (dm_cart, buf, nao_cart, nbatch, cart_ao_stride, sph_ao_stride, shell_stride,
-               cart_offset[p0:p1], sph_offset[p0:p1])
-        blocks = ((nao_cart + threads[0] - 1) // threads[0], (nbatch + threads[1] - 1) // threads[1])
+        args = (
+            dm_cart,
+            buf,
+            nao_cart,
+            nbatch,
+            cart_ao_stride,
+            sph_ao_stride,
+            shell_stride,
+            cart_offset[p0:p1],
+            sph_offset[p0:p1],
+        )
+        blocks = (
+            (nao_cart + threads[0] - 1) // threads[0],
+            (nbatch + threads[1] - 1) // threads[1],
+        )
         kernel(blocks, threads, args)
 
     if is_2d:
         return dm_cart[0]
     return dm_cart
+
 
 def cart2cart(dm_src, angs, src_offset, dst_offset, nao, out=None):
     """
@@ -245,7 +295,12 @@ def cart2cart(dm_src, angs, src_offset, dst_offset, nao, out=None):
     for b in range(ndms):
         for dst_i, src_i in internal_to_source:
             for dst_j, src_j in internal_to_source:
-                if dst_i < nao and dst_j < nao and src_i < dm_src_cp.shape[-1] and src_j < dm_src_cp.shape[-1]:
+                if (
+                    dst_i < nao
+                    and dst_j < nao
+                    and src_i < dm_src_cp.shape[-1]
+                    and src_j < dm_src_cp.shape[-1]
+                ):
                     dm_dst[b][dst_i, dst_j] += dm_src_cp[b][src_i, src_j]
 
     return dm_dst

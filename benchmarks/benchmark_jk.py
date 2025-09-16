@@ -18,7 +18,7 @@ import pyscf
 from pyscf import gto
 from gpu4pyscf import scf
 from jqc.pyscf import jk
-from jqc.pyscf.mol import BasisLayout
+from jqc.pyscf.basis import BasisLayout
 from jqc.constants import TILE
 
 basis = gto.basis.parse('''

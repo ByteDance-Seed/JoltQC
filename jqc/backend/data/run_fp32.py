@@ -32,15 +32,16 @@ n_groups = 5
 commands = []
 # 8-fold symmetry is applied
 for i in range(n_groups):
-    for j in range(i+1):
-        for k in range(i+1):
-            for l in range(k+1):
+    for j in range(i + 1):
+        for k in range(i + 1):
+            for l in range(k + 1):
                 cmd = f" python3 generate_fragment.py {i} {j} {k} {l} fp32 > logs/{i}{j}{k}{l}_fp32.log"
                 commands.append(env_cmd + " && " + cmd)
 
 max_concurrent_jobs = 1
 q = queue.Queue()
 lock = threading.Lock()
+
 
 # Worker function
 def worker():
@@ -56,6 +57,7 @@ def worker():
         with lock:
             print(f"Finished: {cmd}")
         q.task_done()
+
 
 # Fill the queue
 for cmd in commands:

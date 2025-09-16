@@ -18,7 +18,7 @@ import numpy as np
 import cupy as cp
 import pyscf
 from pyscf import gto
-from jqc.pyscf.mol import BasisLayout, split_basis
+from jqc.pyscf.basis import BasisLayout, split_basis
 from jqc.constants import TILE, NPRIM_MAX
 
 
@@ -29,22 +29,19 @@ class TestBasisLayout(unittest.TestCase):
         """Set up test molecules"""
         # Simple H2 molecule with cc-pVDZ basis
         self.mol_h2 = pyscf.M(
-            atom='H 0 0 0; H 0 0 1.4',
-            basis='cc-pvdz',
-            output='/dev/null',
-            verbose=0
+            atom="H 0 0 0; H 0 0 1.4", basis="cc-pvdz", output="/dev/null", verbose=0
         )
 
         # Water molecule for more complex testing with cc-pVDZ basis
         self.mol_h2o = pyscf.M(
-            atom='''
+            atom="""
             O 0.0 0.0 0.1174
             H -0.757 0.0 -0.4696
             H 0.757 0.0 -0.4696
-            ''',
-            basis='cc-pvdz',
-            output='/dev/null',
-            verbose=0
+            """,
+            basis="cc-pvdz",
+            output="/dev/null",
+            verbose=0,
         )
 
     def tearDown(self):
@@ -97,8 +94,11 @@ class TestBasisLayout(unittest.TestCase):
         print(f"ao_loc[-1]: {actual_nao}")
         print(f"ao_loc: {layout.ao_loc}")
 
-        self.assertEqual(actual_nao, expected_nao,
-                        "ao_loc should match decontracted molecular dimensions")
+        self.assertEqual(
+            actual_nao,
+            expected_nao,
+            "ao_loc should match decontracted molecular dimensions",
+        )
 
     def test_dm_from_mol_dimensions(self):
         """Test dm_from_mol returns correct dimensions"""
@@ -152,15 +152,15 @@ class TestBasisLayout(unittest.TestCase):
         input_nao = int(layout.ao_loc[-1])
 
         test_matrices = {
-            'identity': np.eye(input_nao),
-            'random_symmetric': None,
-            'diagonal': np.diag(np.random.rand(input_nao)),
-            'ones': np.ones((input_nao, input_nao)),
+            "identity": np.eye(input_nao),
+            "random_symmetric": None,
+            "diagonal": np.diag(np.random.rand(input_nao)),
+            "ones": np.ones((input_nao, input_nao)),
         }
 
         # Generate random symmetric matrix
         rand_matrix = np.random.rand(input_nao, input_nao)
-        test_matrices['random_symmetric'] = rand_matrix + rand_matrix.T
+        test_matrices["random_symmetric"] = rand_matrix + rand_matrix.T
 
         for matrix_type, original_matrix in test_matrices.items():
             with self.subTest(matrix_type=matrix_type):
@@ -179,19 +179,29 @@ class TestBasisLayout(unittest.TestCase):
                 # Since mapping is not one-to-one, we test for stability rather than identity
 
                 # 1. Check shapes are correct
-                self.assertEqual(recovered_matrix.shape, original_matrix.shape,
-                               f"{matrix_type}: Shape should be preserved")
+                self.assertEqual(
+                    recovered_matrix.shape,
+                    original_matrix.shape,
+                    f"{matrix_type}: Shape should be preserved",
+                )
 
                 # 2. Check for numerical stability (no NaN/Inf)
-                self.assertFalse(np.isnan(recovered_matrix.get()).any(),
-                               f"{matrix_type}: Should not contain NaN")
-                self.assertFalse(np.isinf(recovered_matrix.get()).any(),
-                               f"{matrix_type}: Should not contain Inf")
+                self.assertFalse(
+                    np.isnan(recovered_matrix.get()).any(),
+                    f"{matrix_type}: Should not contain NaN",
+                )
+                self.assertFalse(
+                    np.isinf(recovered_matrix.get()).any(),
+                    f"{matrix_type}: Should not contain Inf",
+                )
 
                 # 3. Check values are reasonable
                 max_val = np.max(np.abs(recovered_matrix.get()))
-                self.assertLess(max_val, 1000,
-                               f"{matrix_type}: Max value {max_val} should be reasonable")
+                self.assertLess(
+                    max_val,
+                    1000,
+                    f"{matrix_type}: Max value {max_val} should be reasonable",
+                )
 
     def test_basis_mapping_consistency(self):
         """Test that to_split_map provides correct mapping to decontracted basis"""
@@ -206,16 +216,21 @@ class TestBasisLayout(unittest.TestCase):
         print(f"split molecule nbas: {split_mol_nbas}")
         print(f"ao_loc: {layout.ao_loc}")
 
-        self.assertLessEqual(max_to_split_map, split_mol_nbas - 1,
-                           "to_split_map should contain valid indices for split molecule basis functions")
+        self.assertLessEqual(
+            max_to_split_map,
+            split_mol_nbas - 1,
+            "to_split_map should contain valid indices for split molecule basis functions",
+        )
 
     def test_to_decontracted_map_consistency(self):
         """Test that to_decontracted_map provides correct mapping to decontracted basis"""
         layout = BasisLayout.from_mol(self.mol_h2, alignment=TILE)
 
         # Check that the cache is initially None (lazy evaluation)
-        self.assertIsNone(layout._to_decontracted_map,
-                         "to_decontracted_map cache should be None before first access")
+        self.assertIsNone(
+            layout._to_decontracted_map,
+            "to_decontracted_map cache should be None before first access",
+        )
 
         # Check that to_decontracted_map indices are valid for the decontracted molecule
         non_padded_mask = ~layout.pad_id
@@ -224,33 +239,48 @@ class TestBasisLayout(unittest.TestCase):
         decontracted_mol_nbas = len(layout.ao_loc) - 1
 
         # Check that the cache is now populated (lazy evaluation worked)
-        self.assertIsNotNone(layout._to_decontracted_map,
-                           "to_decontracted_map cache should be populated after first access")
+        self.assertIsNotNone(
+            layout._to_decontracted_map,
+            "to_decontracted_map cache should be populated after first access",
+        )
 
         print(f"to_decontracted_map: {layout.to_decontracted_map}")
         print(f"max decontracted index: {max_decontracted_index}")
         print(f"decontracted molecule nbas: {decontracted_mol_nbas}")
 
-        self.assertLessEqual(max_decontracted_index, decontracted_mol_nbas - 1,
-                           "to_decontracted_map should contain valid indices for decontracted molecule basis functions")
+        self.assertLessEqual(
+            max_decontracted_index,
+            decontracted_mol_nbas - 1,
+            "to_decontracted_map should contain valid indices for decontracted molecule basis functions",
+        )
 
         # Check that padded entries have invalid indices
         padded_indices = layout.to_decontracted_map[layout.pad_id]
-        self.assertTrue(np.all(padded_indices == -1),
-                       "Padded entries should have invalid indices (-1)")
+        self.assertTrue(
+            np.all(padded_indices == -1),
+            "Padded entries should have invalid indices (-1)",
+        )
 
         # Verify composition: to_decontracted_map should equal split_to_decontracted[to_split_map]
         expected_mapping = np.empty_like(layout.to_decontracted_map)
-        expected_mapping[non_padded_mask] = layout._split_to_decontracted[layout.to_split_map[non_padded_mask]]
+        expected_mapping[non_padded_mask] = layout._split_to_decontracted[
+            layout.to_split_map[non_padded_mask]
+        ]
         expected_mapping[layout.pad_id] = -1
 
-        np.testing.assert_array_equal(layout.to_decontracted_map, expected_mapping,
-                                     "to_decontracted_map should be composition of to_split_map and split_to_decontracted")
+        np.testing.assert_array_equal(
+            layout.to_decontracted_map,
+            expected_mapping,
+            "to_decontracted_map should be composition of to_split_map and split_to_decontracted",
+        )
 
         # Verify that multiple accesses return the same cached object
         second_access = layout.to_decontracted_map
-        self.assertIs(layout.to_decontracted_map, second_access,
-                     "Multiple accesses should return the same cached object")
+        self.assertIs(
+            layout.to_decontracted_map,
+            second_access,
+            "Multiple accesses should return the same cached object",
+        )
 
     def test_padding_logic(self):
         """Test padding identification and handling"""
@@ -310,7 +340,9 @@ class TestBasisLayout(unittest.TestCase):
         print(f"Recovered batch shape: {recovered_batch.shape}")
 
         # Check dimensions are correct
-        self.assertEqual(cart_batch.shape, (n_batch, decontracted_nao, decontracted_nao))
+        self.assertEqual(
+            cart_batch.shape, (n_batch, decontracted_nao, decontracted_nao)
+        )
         self.assertEqual(recovered_batch.shape, (n_batch, input_nao, input_nao))
 
         # Check that no NaN or Inf values are produced
@@ -327,8 +359,10 @@ class TestBasisLayout(unittest.TestCase):
         print(f"H2 cc-pVDZ angs: {layout_h2.angs}")
 
         angs_h2 = layout_h2.angs
-        self.assertTrue(self._is_grouped_by_angular_momentum(angs_h2),
-                       f"H2 cc-pVDZ angs not properly grouped: {angs_h2}")
+        self.assertTrue(
+            self._is_grouped_by_angular_momentum(angs_h2),
+            f"H2 cc-pVDZ angs not properly grouped: {angs_h2}",
+        )
 
         # Also test with H2O cc-pVDZ which has s, p, and d functions
         layout_h2o = BasisLayout.from_mol(self.mol_h2o, alignment=TILE)
@@ -337,8 +371,10 @@ class TestBasisLayout(unittest.TestCase):
 
         # H2O cc-pVDZ has s, p, and d functions, should be grouped
         angs_h2o = layout_h2o.angs
-        self.assertTrue(self._is_grouped_by_angular_momentum(angs_h2o),
-                       f"H2O cc-pVDZ angs not properly grouped: {angs_h2o}")
+        self.assertTrue(
+            self._is_grouped_by_angular_momentum(angs_h2o),
+            f"H2O cc-pVDZ angs not properly grouped: {angs_h2o}",
+        )
 
     def _is_grouped_by_angular_momentum(self, angs):
         """Helper function to check if angs array is grouped by angular momentum"""
@@ -354,13 +390,15 @@ class TestBasisLayout(unittest.TestCase):
                 for j in range(i + 1, len(angs)):
                     if angs[j] == current_ang:
                         # Found previous angular momentum later - not grouped
-                        print(f"Angular momentum {current_ang} appears again at position {j} after {new_ang} at position {i}")
+                        print(
+                            f"Angular momentum {current_ang} appears again at position {j} after {new_ang} at position {i}"
+                        )
                         return False
                 current_ang = new_ang
         return True
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("BasisLayout Unit Tests")
     print(f"NPRIM_MAX = {NPRIM_MAX}")
     print(f"TILE = {TILE}")

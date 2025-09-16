@@ -43,7 +43,7 @@ class KnownValues(unittest.TestCase):
         np.random.seed(42)
         A_host = np.random.rand(3, n, n).astype(np.float64)
         A_device = cp.asarray(A_host)
-        expected = A_host + A_host.transpose([0,2,1])
+        expected = A_host + A_host.transpose([0, 2, 1])
         inplace_add_transpose(A_device)
         result_host = cp.asnumpy(A_device)
         self.assertTrue(np.allclose(result_host, expected))
@@ -63,8 +63,8 @@ class KnownValues(unittest.TestCase):
         expected = np.zeros((num_blocks, num_blocks), dtype=np.float64)
         for i in range(num_blocks):
             for j in range(num_blocks):
-                start_row, end_row = offset_host[i], offset_host[i+1]
-                start_col, end_col = offset_host[j], offset_host[j+1]
+                start_row, end_row = offset_host[i], offset_host[i + 1]
+                start_col, end_col = offset_host[j], offset_host[j + 1]
                 block = A_host[start_row:end_row, start_col:end_col]
                 expected[i, j] = np.max(block)
 
@@ -85,8 +85,8 @@ class KnownValues(unittest.TestCase):
         expected = np.zeros((num_blocks, num_blocks), dtype=np.float64)
         for i in range(num_blocks):
             for j in range(num_blocks):
-                start_row, end_row = offset_host[i], offset_host[i+1]
-                start_col, end_col = offset_host[j], offset_host[j+1]
+                start_row, end_row = offset_host[i], offset_host[i + 1]
+                start_col, end_col = offset_host[j], offset_host[j + 1]
                 block = A_host[:, start_row:end_row, start_col:end_col]
                 expected[i, j] = np.max(block)
 
@@ -110,8 +110,8 @@ class KnownValues(unittest.TestCase):
         expected = np.zeros((num_blocks, num_blocks), dtype=np.float32)
         for i in range(num_blocks):
             for j in range(num_blocks):
-                start_row, end_row = offset_host[i], offset_host[i+1]
-                start_col, end_col = offset_host[j], offset_host[j+1]
+                start_row, end_row = offset_host[i], offset_host[i + 1]
+                start_col, end_col = offset_host[j], offset_host[j + 1]
                 block = A_host[start_row:end_row, start_col:end_col]
                 expected[i, j] = np.max(block)
 
@@ -132,8 +132,8 @@ class KnownValues(unittest.TestCase):
         expected_3d = np.zeros((num_blocks, num_blocks), dtype=np.float32)
         for i in range(num_blocks):
             for j in range(num_blocks):
-                start_row, end_row = offset_host[i], offset_host[i+1]
-                start_col, end_col = offset_host[j], offset_host[j+1]
+                start_row, end_row = offset_host[i], offset_host[i + 1]
+                start_col, end_col = offset_host[j], offset_host[j + 1]
                 block = A_host_3d[:, start_row:end_row, start_col:end_col]
                 expected_3d[i, j] = np.max(block)
 
@@ -168,7 +168,9 @@ class KnownValues(unittest.TestCase):
 
         # Verify results are approximately equal (within fp32 precision)
         result_fp64_as_fp32 = result_fp64.astype(cp.float32)
-        self.assertTrue(cp.allclose(result_fp32, result_fp64_as_fp32, rtol=1e-5, atol=1e-5))
+        self.assertTrue(
+            cp.allclose(result_fp32, result_fp64_as_fp32, rtol=1e-5, atol=1e-5)
+        )
 
 
 if __name__ == "__main__":
