@@ -53,8 +53,12 @@ def compare(baseline: Dict[str, Any], jqc: Dict[str, Any]) -> None:
     }
 
     print("Metadata")
-    print(f"  Baseline: basis={b_meta['basis']} xc={b_meta['xc']} grid={b_meta['grid']}")
-    print(f"  jqc     : basis={j_meta['basis']} xc={j_meta['xc']} grid={j_meta['grid']}")
+    print(
+        f"  Baseline: basis={b_meta['basis']} xc={b_meta['xc']} grid={b_meta['grid']}"
+    )
+    print(
+        f"  jqc     : basis={j_meta['basis']} xc={j_meta['xc']} grid={j_meta['grid']}"
+    )
     if b_meta != j_meta:
         print("  WARNING: Metadata differs between runs; comparisons may be invalid.")
 
@@ -112,7 +116,7 @@ def compare(baseline: Dict[str, Any], jqc: Dict[str, Any]) -> None:
                 gpu_speedups.append(speed_gpu)
 
         print(
-            f"{name},{fmt_f(eb)},{fmt_f(ej)},{fmt_f(de)},{fmt_f(wb,3)},{fmt_f(wj,3)},"\
+            f"{name},{fmt_f(eb)},{fmt_f(ej)},{fmt_f(de)},{fmt_f(wb,3)},{fmt_f(wj,3)},"
             f"{fmt_f(speed_wall,3)},{fmt_f(gb,1)},{fmt_f(gj,1)},{fmt_f(speed_gpu,3)}"
         )
 
@@ -163,4 +167,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

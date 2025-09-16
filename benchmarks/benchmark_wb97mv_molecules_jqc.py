@@ -160,22 +160,28 @@ def main():
 
     for i, mol_file in enumerate(MOLECULES):
         print(f"\nProgress: {i + 1}/{len(MOLECULES)}")
-        #try:
+        # try:
         result = benchmark_molecule(mol_file)
         if result:
             results["molecules"].append(result)
         else:
             results["molecules"].append(
-                {"molecule": mol_file, "success": False, "error": "File not found or skipped"}
+                {
+                    "molecule": mol_file,
+                    "success": False,
+                    "error": "File not found or skipped",
+                }
             )
-        #except Exception as e:
+        # except Exception as e:
         #    print(f"Error benchmarking {mol_file}: {str(e)}")
         #    results["molecules"].append(
         #        {"molecule": mol_file, "success": False, "error": str(e)}
         #    )
 
     # Save results to JSON
-    output_file = f"benchmark_wb97mv_{BASIS}_jqc_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    output_file = (
+        f"benchmark_wb97mv_{BASIS}_jqc_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    )
     with open(output_file, "w") as f:
         json.dump(results, f, indent=2)
 

@@ -21,7 +21,8 @@ from jqc.pyscf import jk
 from jqc.pyscf.basis import BasisLayout
 from jqc.constants import TILE
 
-basis = gto.basis.parse('''
+basis = gto.basis.parse(
+    """
 #H   P
 #      0.1553961625E+02      -0.1107775495E+00       0.7087426823E-01
 #      0.3599933586E+01      -0.1480262627E+00       0.3397528391E+00
@@ -69,20 +70,23 @@ O    S
 #      0.2700058226E+00      1
 #      0.2700058226E+00      1
 #      0.2700058226E+00      1
-''')
+"""
+)
 
-#atom = 'molecules/h2o.xyz'
-#atom = 'molecules/0031-irregular-nitrogenous.xyz'
-#atom = 'molecules/0084-elongated-halogenated.xyz'
-atom = 'molecules/0401-globular-nitrogenous.xyz'
-#atom = 'molecules/0753-globular.xyz'
+# atom = 'molecules/h2o.xyz'
+# atom = 'molecules/0031-irregular-nitrogenous.xyz'
+# atom = 'molecules/0084-elongated-halogenated.xyz'
+atom = "molecules/0401-globular-nitrogenous.xyz"
+# atom = 'molecules/0753-globular.xyz'
 n_dm = 1
 n_warmup = 3
-mol = pyscf.M(atom=atom,
-              basis=basis,#'6-31g',#'def2-tzvpp',#'6-31g', 
-              output='pyscf_test.log',
-              verbose=6,
-              spin=None)
+mol = pyscf.M(
+    atom=atom,
+    basis=basis,  #'6-31g',#'def2-tzvpp',#'6-31g',
+    output="pyscf_test.log",
+    verbose=6,
+    spin=None,
+)
 
 mf = scf.RHF(mol)
 
@@ -129,8 +133,8 @@ jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
 print("-------- Benchmark FP64 ---------")
 print(f"Time with JQC / FP64, {jqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
-print('vj diff:', cp.linalg.norm(vj - vj_jit))
-print('vk diff:', cp.linalg.norm(vk - vk_jit))
+print("vj diff:", cp.linalg.norm(vj - vj_jit))
+print("vk diff:", cp.linalg.norm(vk - vk_jit))
 
 ###### JQC / FP32 #######
 # Warm up
@@ -150,8 +154,8 @@ jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
 print("------- Benchmark FP32 -----------")
 print(f"Time with JQC / FP32, {jqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
-print('vj diff:', cp.linalg.norm(vj - vj_jit))
-print('vk diff:', cp.linalg.norm(vk - vk_jit))
+print("vj diff:", cp.linalg.norm(vj - vj_jit))
+print("vk diff:", cp.linalg.norm(vk - vk_jit))
 
 ###### JQC / FP32 + FP64 #######
 # Warm up
@@ -171,8 +175,8 @@ jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
 print("------- Benchmark mixed precision -------- ")
 print(f"Time with JQC / FP32 + FP64, {jqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
-print('vj diff:', cp.linalg.norm(vj - vj_jit))
-print('vk diff:', cp.linalg.norm(vk - vk_jit))
+print("vj diff:", cp.linalg.norm(vj - vj_jit))
+print("vk diff:", cp.linalg.norm(vk - vk_jit))
 
 ###### JQC / FP32 J-only #######
 # Warm up
@@ -192,7 +196,7 @@ jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
 print("------- Benchmark FP32 J-only -----------")
 print(f"Time with JQC / FP32 J-only, {jqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
-print('vj diff:', cp.linalg.norm(vj - vj_jit))
+print("vj diff:", cp.linalg.norm(vj - vj_jit))
 
 ###### JQC / FP32 K-only #######
 # Warm up
@@ -212,4 +216,4 @@ jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
 print("------- Benchmark FP32 K-only -----------")
 print(f"Time with JQC / FP32 K-only, {jqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
-print('vk diff:', cp.linalg.norm(vk - vk_jit))
+print("vk diff:", cp.linalg.norm(vk - vk_jit))

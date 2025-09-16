@@ -62,7 +62,8 @@ constexpr int deriv = {1 if ndim > 1 else 0};
 constexpr int nthreads = {nthreads};
 // Inject constants to match host-side layout
 #define NPRIM_MAX {NPRIM_MAX}
-#define PRIM_STRIDE {PRIM_STRIDE}
+// PRIM_STRIDE in device code counts (c,e) pairs (DataType2), not scalars
+#define PRIM_STRIDE {PRIM_STRIDE // 2}
 #define COORD_STRIDE {COORD_STRIDE}
 """
 
@@ -127,7 +128,8 @@ constexpr int deriv = {1 if ndim > 1 else 0};
 constexpr int nthreads = {nthreads};
 // Inject constants to match host-side layout
 #define NPRIM_MAX {NPRIM_MAX}
-#define PRIM_STRIDE {PRIM_STRIDE}
+// PRIM_STRIDE in device code counts (c,e) pairs (DataType2), not scalars
+#define PRIM_STRIDE {PRIM_STRIDE // 2}
 #define COORD_STRIDE {COORD_STRIDE}
 """
 
@@ -217,7 +219,8 @@ constexpr int ang = {ang};
 constexpr int nprim = {nprim};
 // Inject constants to match host-side layout
 #define NPRIM_MAX {NPRIM_MAX}
-#define PRIM_STRIDE {PRIM_STRIDE}
+// PRIM_STRIDE in device code counts (c,e) pairs (DataType2), not scalars
+#define PRIM_STRIDE {PRIM_STRIDE // 2}
 #define COORD_STRIDE {COORD_STRIDE}
 """
     script = const + estimate_aovalue_script

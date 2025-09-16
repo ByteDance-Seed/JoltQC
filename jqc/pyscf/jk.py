@@ -231,6 +231,26 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 end = cp.cuda.Event()
                 start.record()
 
+            # Pre-generate kernels for this (l_i,l_j,l_k,l_l) once
+            jk_fp32_kernel = gen_jk_kernel(
+                ang,
+                nprim,
+                do_j=with_j,
+                do_k=with_k,
+                dtype=np.float32,
+                n_dm=n_dm,
+                omega=omega_fp32,
+            )
+            jk_fp64_kernel = gen_jk_kernel(
+                ang,
+                nprim,
+                do_j=with_j,
+                do_k=with_k,
+                dtype=np.float64,
+                n_dm=n_dm,
+                omega=omega_fp64,
+            )
+
             PAIR_TILE_SIZE = MAX_PAIR_SIZE // (TILE * TILE)
             for t_ij0, t_ij1 in lib.prange(0, ntile_ij, PAIR_TILE_SIZE):
                 for t_kl0, t_kl1 in lib.prange(0, ntile_kl, PAIR_TILE_SIZE):
@@ -256,15 +276,6 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
                     # Launch FP32 and FP64 kernels asynchronously
                     if n_quartets_fp32 > 0:
-                        jk_fp32_kernel = gen_jk_kernel(
-                            ang,
-                            nprim,
-                            do_j=with_j,
-                            do_k=with_k,
-                            dtype=np.float32,
-                            n_dm=n_dm,
-                            omega=omega_fp32,
-                        )
                         jk_fp32_kernel(
                             nbas,
                             nao,
@@ -282,15 +293,6 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         ntasks_fp32 += n_quartets_fp32
 
                     if n_quartets_fp64 > 0:
-                        jk_fp64_kernel = gen_jk_kernel(
-                            ang,
-                            nprim,
-                            do_j=with_j,
-                            do_k=with_k,
-                            dtype=np.float64,
-                            n_dm=n_dm,
-                            omega=omega_fp64,
-                        )
                         jk_fp64_kernel(
                             nbas,
                             nao,

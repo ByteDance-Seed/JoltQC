@@ -21,27 +21,27 @@ import pyscf
 from gpu4pyscf import dft
 import jqc.pyscf
 
-atom = '''
+atom = """
 O       0.0000000000    -0.0000000000     0.1174000000
 H      -0.7570000000    -0.0000000000    -0.4696000000
 H       0.7570000000     0.0000000000    -0.4696000000
-'''
+"""
 
-mol = pyscf.M(atom=atom, basis='def2-tzvpp', verbose=4)
-mf = dft.RKS(mol, xc='wb97m-v')
+mol = pyscf.M(atom=atom, basis="def2-tzvpp", verbose=4)
+mf = dft.RKS(mol, xc="wb97m-v")
 e_pyscf = mf.kernel()
 
-mol = pyscf.M(atom=atom, basis='def2-tzvpp', verbose=4)
-mf = dft.RKS(mol, xc='wb97m-v')
+mol = pyscf.M(atom=atom, basis="def2-tzvpp", verbose=4)
+mf = dft.RKS(mol, xc="wb97m-v")
 
 # Apply JIT to GPU4PySCF object
 mf = jqc.pyscf.apply(mf)
 e_jqc = mf.kernel()
 
-print('total energy with pyscf:', e_pyscf)
-print('total energy with jqc  :', e_jqc)
+print("total energy with pyscf:", e_pyscf)
+print("total energy with jqc  :", e_jqc)
 
 # Apply JIT to PySCF object directly
-mf = pyscf.dft.RKS(mol, xc='wb97m-v')
+mf = pyscf.dft.RKS(mol, xc="wb97m-v")
 mf = jqc.pyscf.apply(mf)
 mf.kernel()

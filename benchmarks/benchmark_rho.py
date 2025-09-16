@@ -23,7 +23,8 @@ from jqc.pyscf import rks
 from jqc.pyscf.rks import build_grids
 from types import MethodType
 
-basis = gto.basis.parse('''
+basis = gto.basis.parse(
+    """
 #O    S
 #      0.5484671660E+04       0.1831074430E-02
 #      0.8252349460E+03       0.1395017220E-01
@@ -37,24 +38,22 @@ basis = gto.basis.parse('''
 #      0.1013761750E+01       0.1130767015E+01       0.7271585773E+00
 O    D
       0.2700058226E+00       0.1000000000E+01
-''')
-atom = 'molecules/h2o.xyz'
-#atom = 'molecules/0031-irregular-nitrogenous.xyz'
-atom = 'molecules/0029-elongated-halogenated.xyz'
+"""
+)
+atom = "molecules/h2o.xyz"
+# atom = 'molecules/0031-irregular-nitrogenous.xyz'
+atom = "molecules/0029-elongated-halogenated.xyz"
 
 n_warmup = 3
 deriv = 1
-xc = 'b3lyp'
-xctype = 'GGA'
-mol = pyscf.M(atom=atom,
-              basis='def2-tzvpp', 
-              output='pyscf_test.log',
-              verbose=4,
-              spin=None,
-              cart=1)
+xc = "b3lyp"
+xctype = "GGA"
+mol = pyscf.M(
+    atom=atom, basis="def2-tzvpp", output="pyscf_test.log", verbose=4, spin=None, cart=1
+)
 mf = dft.KS(mol, xc=xc)
 mf.grids.level = 1
-#mf.grids.atom_grid = (99, 590)
+# mf.grids.atom_grid = (99, 590)
 
 dm = mf.get_init_guess()
 
@@ -82,11 +81,13 @@ end.record()
 end.synchronize()
 gpu4pyscf_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Time with GPU4PySCF, {gpu4pyscf_time_ms}")
-#gpu4pyscf_time_ms = 0.0
-#rho_pyscf = 0
+# gpu4pyscf_time_ms = 0.0
+# rho_pyscf = 0
 
 ###### JQC / FP64 #######
-_, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13)
+_, rho_kern, vxc_kern = rks.generate_rks_kernel(
+    mol, cutoff_fp64=1e-13, cutoff_fp32=1e-13
+)
 # Warm up
 for i in range(n_warmup):
     rho = rho_kern(mol, grids, xctype, dm)
@@ -104,11 +105,13 @@ print("==========Benchmark with FP64===================")
 print(f"Time with JQC, {jqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
 rho_diff = rho_pyscf - rho_jqc
-print('rho[0] diff:', cp.linalg.norm(rho_diff[0]))
-print('rho[1:4] diff:', cp.linalg.norm(rho_diff[1:]))
+print("rho[0] diff:", cp.linalg.norm(rho_diff[0]))
+print("rho[1:4] diff:", cp.linalg.norm(rho_diff[1:]))
 
 ###### JQC / FP32 #######
-_, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, cutoff_fp64=1e100, cutoff_fp32=1e-13)
+_, rho_kern, vxc_kern = rks.generate_rks_kernel(
+    mol, cutoff_fp64=1e100, cutoff_fp32=1e-13
+)
 # Warm up
 for i in range(n_warmup):
     rho_jqc = rho_kern(mol, grids, xctype, dm)
@@ -126,13 +129,15 @@ print("Benchmark with FP32")
 print(f"Time with JQC, {jqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
 rho_diff = rho_pyscf - rho_jqc
-print('rho[0] diff:', cp.linalg.norm(rho_diff[0]))
-print('rho[1] diff:', cp.linalg.norm(rho_diff[1]))
-print('rho[2] diff:', cp.linalg.norm(rho_diff[2]))
-print('rho[3] diff:', cp.linalg.norm(rho_diff[3]))
+print("rho[0] diff:", cp.linalg.norm(rho_diff[0]))
+print("rho[1] diff:", cp.linalg.norm(rho_diff[1]))
+print("rho[2] diff:", cp.linalg.norm(rho_diff[2]))
+print("rho[3] diff:", cp.linalg.norm(rho_diff[3]))
 
 ###### JQC / FP32 + FP64 #######
-_, rho_kern, vxc_kern = rks.generate_rks_kernel(mol, cutoff_fp64=1e-7, cutoff_fp32=1e-13)
+_, rho_kern, vxc_kern = rks.generate_rks_kernel(
+    mol, cutoff_fp64=1e-7, cutoff_fp32=1e-13
+)
 # Warm up
 for i in range(n_warmup):
     rho_jqc = rho_kern(mol, grids, xctype, dm)
@@ -150,7 +155,7 @@ print("Benchmark with FP32 + FP64")
 print(f"Time with JQC, {jqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
 rho_diff = rho_pyscf - rho_jqc
-print('rho[0] diff:', cp.linalg.norm(rho_diff[0]))
-print('rho[1] diff:', cp.linalg.norm(rho_diff[1]))
-print('rho[2] diff:', cp.linalg.norm(rho_diff[2]))
-print('rho[3] diff:', cp.linalg.norm(rho_diff[3]))
+print("rho[0] diff:", cp.linalg.norm(rho_diff[0]))
+print("rho[1] diff:", cp.linalg.norm(rho_diff[1]))
+print("rho[2] diff:", cp.linalg.norm(rho_diff[2]))
+print("rho[3] diff:", cp.linalg.norm(rho_diff[3]))

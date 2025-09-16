@@ -60,6 +60,7 @@ PTR_BAS_COORD = 7
 
 ArrayLike = np.ndarray
 
+
 @dataclass
 class BasisLayout:
     ce: ArrayLike  # shape (nbasis_total, PRIM_STRIDE), np/cp

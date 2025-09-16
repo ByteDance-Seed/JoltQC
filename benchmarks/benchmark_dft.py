@@ -20,15 +20,15 @@ from pyscf import lib
 from gpu4pyscf import dft
 import jqc.pyscf
 
-#atom = 'molecules/h2o.xyz'
-atom = 'molecules/0031-irregular-nitrogenous.xyz'
-#atom = 'molecules/0051-elongated-halogenated.xyz'
-#atom = 'molecules/0084-elongated-halogenated.xyz'
-basis = 'def2-tzvpd'
-xc = 'wb97m-v'
-#xc = 'b3lyp'
+# atom = 'molecules/h2o.xyz'
+atom = "molecules/0031-irregular-nitrogenous.xyz"
+# atom = 'molecules/0051-elongated-halogenated.xyz'
+# atom = 'molecules/0084-elongated-halogenated.xyz'
+basis = "def2-tzvpd"
+xc = "wb97m-v"
+# xc = 'b3lyp'
 count = 1
-grids = (99,590)
+grids = (99, 590)
 
 lib.num_threads(8)
 
@@ -38,7 +38,7 @@ lib.num_threads(8)
 
 verbose = 0
 
-mol = pyscf.M(atom=atom, basis=basis, output=f'gpu4pyscf-{basis}.log', verbose=verbose)
+mol = pyscf.M(atom=atom, basis=basis, output=f"gpu4pyscf-{basis}.log", verbose=verbose)
 mf = dft.RKS(mol, xc=xc)
 mf.grids.atom_grid = grids
 mf.nlcgrids.atom_grid = (50, 194)
@@ -58,7 +58,7 @@ end.synchronize()
 
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Time with GPU4PySCF, {elapsed_time_ms/count} ms")
-print(f'Total energy by GPU4PySCF, {e_tot}')
+print(f"Total energy by GPU4PySCF, {e_tot}")
 mf = None
 
 cp.get_default_memory_pool().free_all_blocks()
@@ -67,7 +67,7 @@ cp.get_default_memory_pool().free_all_blocks()
 # FP64 precision
 #######################
 print("------- Benchmark FP64 ---------")
-mol = pyscf.M(atom=atom, basis=basis, output=f'jqc-{basis}-fp64.log', verbose=verbose)
+mol = pyscf.M(atom=atom, basis=basis, output=f"jqc-{basis}-fp64.log", verbose=verbose)
 mf = dft.RKS(mol, xc=xc)
 mf_jit = jqc.pyscf.apply(mf)
 mf_jit.grids.atom_grid = grids
@@ -75,7 +75,7 @@ mf_jit.nlcgrids.atom_grid = (50, 194)
 mf_jit.verbose = verbose
 e_tot = mf_jit.kernel()
 dm_fp64 = mf_jit.make_rdm1().get()
-print(f'Total energy by JQC (warmup), {e_tot}')
+print(f"Total energy by JQC (warmup), {e_tot}")
 
 start = cp.cuda.Event()
 end = cp.cuda.Event()
@@ -102,13 +102,13 @@ end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Time with JQC / FP64, {elapsed_time_ms/count} ms")
-print(f'Total energy by JQC, {e_tot}')
+print(f"Total energy by JQC, {e_tot}")
 
 #######################
 # FP32 precision
 #######################
 print("------- Benchmark FP32 -----------")
-mol = pyscf.M(atom=atom, basis=basis, output=f'jqc-{basis}-fp32.log', verbose=verbose)
+mol = pyscf.M(atom=atom, basis=basis, output=f"jqc-{basis}-fp32.log", verbose=verbose)
 mf = dft.RKS(mol, xc=xc)
 mf_jit = jqc.pyscf.apply(mf, cutoff_fp32=1e-13, cutoff_fp64=1e100)
 mf_jit.verbose = verbose
@@ -116,7 +116,7 @@ mf_jit.grids.atom_grid = grids
 mf_jit.nlcgrids.atom_grid = (50, 194)
 e_tot = mf_jit.kernel()
 dm_fp32 = mf_jit.make_rdm1().get()
-print(f'Total energy by JQC (warmup), {e_tot}')
+print(f"Total energy by JQC (warmup), {e_tot}")
 
 start = cp.cuda.Event()
 end = cp.cuda.Event()
@@ -132,14 +132,16 @@ end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Time with JQC / FP32, {elapsed_time_ms/count} ms")
-print(f'Total energy by JQC, {e_tot}')
+print(f"Total energy by JQC, {e_tot}")
 
 ##########################
 # Mixed-precision
 ##########################
 print("------- Benchmark mixed-precision ----------")
 cp.get_default_memory_pool().free_all_blocks()
-mol = pyscf.M(atom=atom, basis=basis, output=f'jqc-{basis}-fp32+fp64.log', verbose=verbose)
+mol = pyscf.M(
+    atom=atom, basis=basis, output=f"jqc-{basis}-fp32+fp64.log", verbose=verbose
+)
 mf = dft.RKS(mol, xc=xc)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
@@ -155,7 +157,7 @@ mf_jit.grids.atom_grid = grids
 mf_jit.nlcgrids.atom_grid = (50, 194)
 e_tot = mf_jit.kernel()
 dm_mixed = mf_jit.make_rdm1().get()
-print(f'Total energy by JQC (warmup), {e_tot}')
+print(f"Total energy by JQC (warmup), {e_tot}")
 
 start = cp.cuda.Event()
 end = cp.cuda.Event()
@@ -171,13 +173,13 @@ end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Time with JQC / (FP32 + FP64), {elapsed_time_ms/count} ms")
-print(f'Total energy by JQC, {e_tot}')
+print(f"Total energy by JQC, {e_tot}")
 
-print('===== Error Summary =====')
-print('|e_pyscf - e_fp32|  = ', abs(e_pyscf - e_fp32))
-print('|e_pyscf - e_fp64|  = ', abs(e_pyscf - e_fp64))
-print('|e_pyscf - e_mixed| = ', abs(e_pyscf - e_mixed))
+print("===== Error Summary =====")
+print("|e_pyscf - e_fp32|  = ", abs(e_pyscf - e_fp32))
+print("|e_pyscf - e_fp64|  = ", abs(e_pyscf - e_fp64))
+print("|e_pyscf - e_mixed| = ", abs(e_pyscf - e_mixed))
 
-print('||dm_pyscf - dm_fp32||  = ', np.linalg.norm(dm_pyscf - dm_fp32))
-print('||dm_pyscf - dm_fp64||  = ', np.linalg.norm(dm_pyscf - dm_fp64))
-print('||dm_pyscf - dm_mixed|| = ', np.linalg.norm(dm_pyscf - dm_mixed))
+print("||dm_pyscf - dm_fp32||  = ", np.linalg.norm(dm_pyscf - dm_fp32))
+print("||dm_pyscf - dm_fp64||  = ", np.linalg.norm(dm_pyscf - dm_fp64))
+print("||dm_pyscf - dm_mixed|| = ", np.linalg.norm(dm_pyscf - dm_mixed))

@@ -25,7 +25,9 @@ NPRIM_MAX = 3
 
 # Memory stride constants for optimal memory layout
 COORD_STRIDE = 4  # Basis coordinate stride for memory optimization
-PRIM_STRIDE = (2*NPRIM_MAX + 3) // 4 * 4  # Coefficient/exponent stride for memory optimization
+PRIM_STRIDE = (
+    (2 * NPRIM_MAX + 3) // 4 * 4
+)  # Coefficient/exponent stride for memory optimization
 
 # Tile size for block-based algorithms
 TILE = 4

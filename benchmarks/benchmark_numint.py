@@ -20,14 +20,16 @@ from gpu4pyscf import dft
 from jqc.pyscf import jk, rks
 from jqc.pyscf.rks import build_grids
 
-#atom = 'molecules/h2o.xyz'
-atom = 'molecules/0031-irregular-nitrogenous.xyz'
-xc = 'wb97m-v'
-xctype = 'mGGA'
-basis = 'def2-tzvpp'
+# atom = 'molecules/h2o.xyz'
+atom = "molecules/0031-irregular-nitrogenous.xyz"
+xc = "wb97m-v"
+xctype = "mGGA"
+basis = "def2-tzvpp"
 count = 1
 
-mol = pyscf.M(atom=atom, basis=basis, output=f'gpu4pyscf-{basis}.log', verbose=5, cart=1)
+mol = pyscf.M(
+    atom=atom, basis=basis, output=f"gpu4pyscf-{basis}.log", verbose=5, cart=1
+)
 mf = dft.RKS(mol, xc=xc).density_fit()
 mf.verbose = 4
 e_tot = mf.kernel()
@@ -44,10 +46,10 @@ end.synchronize()
 
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Time with GPU4PySCF, {elapsed_time_ms/count} ms")
-print(f'Total energy by GPU4PySCF, {e_tot}')
+print(f"Total energy by GPU4PySCF, {e_tot}")
 mf = None
 
-mol = pyscf.M(atom=atom, basis=basis, output=f'jqc-{basis}.log', verbose=4, cart=1)
+mol = pyscf.M(atom=atom, basis=basis, output=f"jqc-{basis}.log", verbose=4, cart=1)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
@@ -78,4 +80,4 @@ end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
 print(f"Time with JQC, {elapsed_time_ms/count} ms")
-print(f'Total energy by JQC, {e_tot}')
+print(f"Total energy by JQC, {e_tot}")
