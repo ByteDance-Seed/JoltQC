@@ -64,8 +64,8 @@ constexpr int do_k = {int(do_k)};
 constexpr int nsq_per_block = {nsq_per_block};
 // Inject constants to match host-side layout
 #define NPRIM_MAX {NPRIM_MAX}
-// PRIM_STRIDE in device code counts (c,e) pairs (DataType2), not scalars
-#define PRIM_STRIDE {PRIM_STRIDE // 2}
+// PRIM_STRIDE here matches host scalar stride; device uses prim_stride = PRIM_STRIDE/2
+#define PRIM_STRIDE {PRIM_STRIDE}
 #define COORD_STRIDE {COORD_STRIDE}
 
 // for rys_roots

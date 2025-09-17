@@ -16,7 +16,7 @@
 */
 
 constexpr DataType max_val = 1e16;
-constexpr int prim_stride = PRIM_STRIDE;
+constexpr int prim_stride = PRIM_STRIDE / 2;
 constexpr DataType exp_cutoff = 36.8; // exp(-36.8) ~ 1e-16
 constexpr DataType rho_cutoff = 1e-16;
 constexpr DataType rho_cutoff2 = rho_cutoff * rho_cutoff;
@@ -25,9 +25,19 @@ constexpr DataType one = 1.0;
 constexpr DataType two = 2.0;
 constexpr DataType half = 0.5;
 
-struct __align__(4*sizeof(DataType)) DataType4 {
-    DataType x, y, z, w;
+// Make coordinate stride configurable via COORD_STRIDE
+static_assert(COORD_STRIDE >= 3, "COORD_STRIDE must be >= 3");
+struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {
+    DataType x, y, z;
+#if COORD_STRIDE >= 4
+    DataType w;
+#endif
+#if COORD_STRIDE > 4
+    DataType pad[COORD_STRIDE - 4];
+#endif
 };
+static_assert(sizeof(DataType4) == COORD_STRIDE*sizeof(DataType),
+              "DataType4 size must equal COORD_STRIDE*sizeof(DataType)");
 
 struct __align__(2*sizeof(DataType)) DataType2 {
     DataType c, e;
@@ -44,11 +54,11 @@ void eval_rho(
     const int* __restrict__ ao_loc,
     const int nao,
     double* __restrict__ rho,
-    const float* log_maxval_i,
+    const float* __restrict__ log_maxval_i,
     const int* __restrict__ nnz_indices_i,
     const int* __restrict__ nnz_i,
     const int nbas_i,
-    const float* log_maxval_j,
+    const float* __restrict__ log_maxval_j,
     const int* __restrict__ nnz_indices_j,
     const int* __restrict__ nnz_j,
     const int nbas_j,

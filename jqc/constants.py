@@ -24,10 +24,14 @@ LMAX = 4
 NPRIM_MAX = 3
 
 # Memory stride constants for optimal memory layout
-COORD_STRIDE = 4  # Basis coordinate stride for memory optimization
-PRIM_STRIDE = (
-    (2 * NPRIM_MAX + 3) // 4 * 4
-)  # Coefficient/exponent stride for memory optimization
+# Choose strides so each shell record is at least 64B aligned for both fp32/fp64
+# - COORD_STRIDE scalars per shell (x,y,z plus padding)
+#   16 floats  -> 64B, 16 doubles -> 128B (>=64B)
+COORD_STRIDE = 16
+# - PRIM_STRIDE counts scalars for (c,e) interleaved storage; device uses pairs
+#   Make scalars a multiple of 16 => pairs multiple of 8
+#   8 pairs: 8*8B=64B (fp32), 8*16B=128B (fp64)
+PRIM_STRIDE = ((2 * NPRIM_MAX + 15) // 16) * 16
 
 # Tile size for block-based algorithms
 TILE = 4

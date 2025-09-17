@@ -16,14 +16,26 @@
 */
 
 constexpr int ng_per_thread = 256;
-constexpr int prim_stride = PRIM_STRIDE;
+constexpr int prim_stride = PRIM_STRIDE / 2;
+
+// Coordinate stride in floats
+static_assert(COORD_STRIDE >= 3, "COORD_STRIDE must be >= 3");
+struct __align__(COORD_STRIDE*sizeof(float)) DataType4 {
+    float x, y, z;
+#if COORD_STRIDE >= 4
+    float w;
+#endif
+#if COORD_STRIDE > 4
+    float pad[COORD_STRIDE - 4];
+#endif
+};
 constexpr float exp_cutoff = 36.8;
 
 extern "C" __global__
 void estimate_log_aovalue(
     const double* __restrict__ grid_coords,
     const int ngrids,
-    const float4* __restrict__ shell_coords,
+    const DataType4* __restrict__ shell_coords,
     const float2* __restrict__ coeff_exp,
     const int nbas,
     float* __restrict__ log_maxval,
@@ -50,7 +62,7 @@ void estimate_log_aovalue(
     
     // Process each shell assigned to this thread
     for (int ish = thread_id; ish < nbas; ish += ng_per_thread){
-        float4 xi = shell_coords[ish];
+        DataType4 xi = shell_coords[ish];
         float bas_x = xi.x;
         float bas_y = xi.y;
         float bas_z = xi.z;
