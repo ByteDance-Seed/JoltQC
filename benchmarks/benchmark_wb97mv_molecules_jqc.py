@@ -29,7 +29,7 @@ USE_MIXED_PRECISION = True
 # Keep cutoff_fp32 tight for accuracy; tune cutoff_fp64 for speed/accuracy tradeoff
 CUTOFF_FP32 = 1e-13
 CUTOFF_FP64 = 1e-6
-VERBOSE = 4
+VERBOSE = 0
 
 # Molecules to benchmark (same as GPU4PySCF benchmark)
 MOLECULES = [
