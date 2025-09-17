@@ -178,7 +178,11 @@ class BasisLayout:
             decontracted_idx = self._split_to_decontracted[split_idx]
             _ao_loc = np.empty(len(split_idx) + 1, dtype=np.int32)
             _ao_loc[:-1] = ao_loc[decontracted_idx]
-            _ao_loc[-1] = ao_loc[-1]
+            # Use the last ao_loc entry corresponding to the last selected basis function
+            if len(decontracted_idx) > 0:
+                _ao_loc[-1] = ao_loc[decontracted_idx[-1] + 1]
+            else:
+                _ao_loc[-1] = 0
             self._mol_ao_loc = cp.asarray(_ao_loc)
         return self._mol_ao_loc
 

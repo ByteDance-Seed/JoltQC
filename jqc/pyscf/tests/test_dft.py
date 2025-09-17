@@ -49,13 +49,13 @@ def tearDownModule():
     del mol_sph, mol_cart
 
 
-def run_dft(xc, mol, disp=None):
+def run_dft(xc, mol, disp=None, cutoff_fp32=None, cutoff_fp64=None):
     mf = dft.RKS(mol, xc=xc)
     mf.disp = disp
     mf.grids.level = grids_level
     mf.nlcgrids.level = nlcgrids_level
     # Use JoltQC apply to wire in JK and RKS paths consistently
-    mf = jqc.pyscf.apply(mf)
+    mf = jqc.pyscf.apply(mf, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)
     e_dft = mf.kernel()
     return e_dft
 
@@ -129,6 +129,56 @@ class KnownValues(unittest.TestCase):
         mol.stdout.close()
         print("| CPU - GPU | with qz:", e_tot - e_ref)
         assert np.abs(e_tot - e_ref) < 1e-8
+
+
+class MixedPrecision(unittest.TestCase):
+    def test_mixed_precision_pbe(self):
+        cutoff_fp32 = 1e-13
+        cutoff_fp64 = 1e-7
+        e_tot = run_dft("PBE", mol_sph, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)
+        e_ref = run_dft("PBE", mol_sph)
+        print(f"| FP64 - Mixed | with PBE:", e_tot - e_ref)
+        assert np.abs(e_tot - e_ref) < 1e-4
+
+    def test_mixed_precision_b3lyp(self):
+        cutoff_fp32 = 1e-13
+        cutoff_fp64 = 1e-7
+        e_tot = run_dft("B3LYP", mol_sph, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)
+        e_ref = run_dft("B3LYP", mol_sph)
+        print(f"| FP64 - Mixed | with B3LYP:", e_tot - e_ref)
+        assert np.abs(e_tot - e_ref) < 1e-4
+
+    def test_mixed_precision_lda(self):
+        cutoff_fp32 = 1e-13
+        cutoff_fp64 = 1e-7
+        e_tot = run_dft("LDA,vwn5", mol_sph, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)
+        e_ref = run_dft("LDA,vwn5", mol_sph)
+        print(f"| FP64 - Mixed | with LDA:", e_tot - e_ref)
+        assert np.abs(e_tot - e_ref) < 1e-4
+
+    def test_mixed_precision_m06(self):
+        cutoff_fp32 = 1e-13
+        cutoff_fp64 = 1e-7
+        e_tot = run_dft("M06", mol_sph, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)
+        e_ref = run_dft("M06", mol_sph)
+        print(f"| FP64 - Mixed | with M06:", e_tot - e_ref)
+        assert np.abs(e_tot - e_ref) < 1e-4
+
+    def test_mixed_precision_wb97(self):
+        cutoff_fp32 = 1e-13
+        cutoff_fp64 = 1e-7
+        e_tot = run_dft("HYB_GGA_XC_WB97", mol_sph, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)
+        e_ref = run_dft("HYB_GGA_XC_WB97", mol_sph)
+        print(f"| FP64 - Mixed | with wB97:", e_tot - e_ref)
+        assert np.abs(e_tot - e_ref) < 1e-4
+
+    def test_mixed_precision_cartesian_basis(self):
+        cutoff_fp32 = 1e-13
+        cutoff_fp64 = 1e-7
+        e_tot = run_dft("b3lyp", mol_cart, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)
+        e_ref = run_dft("b3lyp", mol_cart)
+        print(f"| FP64 - Mixed(cart) | with B3LYP:", e_tot - e_ref)
+        assert np.abs(e_tot - e_ref) < 1e-4
 
 
 if __name__ == "__main__":
