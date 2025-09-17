@@ -304,12 +304,10 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             ce = ce_fp32[ish0:ish1]
             a = angs[ish0].item()
             n = nprims[ish0].item()
-            s = estimate_log_aovalue(
-                grid_coords, x, ce, a, n, log_cutoff=log_aodm_cutoff
+            logidx, nnz = estimate_log_aovalue(
+                grid_coords, x, ce, a, n, log_cutoff=log_aodm_cutoff, shell_base=int(ish0)
             )
-            log_maxval, indices, nnz = s
-            indices += ish0
-            ao_sparsity[i] = (log_maxval, indices, nnz)
+            ao_sparsity[i] = (logidx, nnz)
         return ao_sparsity
 
     _cache = {"dm_prev": 0, "rho_prev": 0, "wv_prev": 0, "vxcmat_prev": 0}
@@ -402,10 +400,10 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 ang = (li, lj)
                 nprim = (ip, jp)
 
-                log_maxval_i, indices_i, nnz_i = ao_sparsity[i]
-                log_maxval_j, indices_j, nnz_j = ao_sparsity[j]
-                nbas_i = indices_i.shape[1]
-                nbas_j = indices_j.shape[1]
+                nz_i, nnz_i = ao_sparsity[i]
+                nz_j, nnz_j = ao_sparsity[j]
+                nbas_i = nz_i.shape[1]
+                nbas_j = nz_j.shape[1]
                 _, _, fun = gen_rho_kernel(ang, nprim, np.float64, ndim)
                 fun(
                     grid_coords,
@@ -417,12 +415,10 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                     ao_loc,
                     nao,
                     rho,
-                    log_maxval_i,
-                    indices_i,
+                    nz_i,
                     nnz_i,
                     nbas_i,
-                    log_maxval_j,
-                    indices_j,
+                    nz_j,
                     nnz_j,
                     nbas_j,
                     log_cutoff_fp64,
@@ -441,12 +437,10 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         ao_loc,
                         nao,
                         rho,
-                        log_maxval_i,
-                        indices_i,
+                        nz_i,
                         nnz_i,
                         nbas_i,
-                        log_maxval_j,
-                        indices_j,
+                        nz_j,
                         nnz_j,
                         nbas_j,
                         log_cutoff_fp32,
@@ -480,10 +474,10 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 ang = (li, lj)
                 nprim = (ip, jp)
 
-                log_maxval_i, indices_i, nnz_i = ao_sparsity[i]
-                log_maxval_j, indices_j, nnz_j = ao_sparsity[j]
-                nbas_i = indices_i.shape[1]
-                nbas_j = indices_j.shape[1]
+                nz_i, nnz_i = ao_sparsity[i]
+                nz_j, nnz_j = ao_sparsity[j]
+                nbas_i = nz_i.shape[1]
+                nbas_j = nz_j.shape[1]
                 _, _, fun = gen_vxc_kernel(ang, nprim, np.float64, ndim)
                 fun(
                     grid_coords,
@@ -494,12 +488,10 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                     ao_loc,
                     nao,
                     wv,
-                    log_maxval_i,
-                    indices_i,
+                    nz_i,
                     nnz_i,
                     nbas_i,
-                    log_maxval_j,
-                    indices_j,
+                    nz_j,
                     nnz_j,
                     nbas_j,
                     log_cutoff_fp64,
@@ -517,12 +509,10 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         ao_loc,
                         nao,
                         wv,
-                        log_maxval_i,
-                        indices_i,
+                        nz_i,
                         nnz_i,
                         nbas_i,
-                        log_maxval_j,
-                        indices_j,
+                        nz_j,
                         nnz_j,
                         nbas_j,
                         log_cutoff_fp32,

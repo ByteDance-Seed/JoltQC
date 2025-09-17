@@ -78,6 +78,9 @@ constexpr int TILE = {tile};
     ):
         nt_ij = tile_ij_mapping.shape[0]
         nt_kl = tile_kl_mapping.shape[0]
+        # Early exit if no tiles to process for either dimension
+        if nt_ij == 0 or nt_kl == 0:
+            return
         block_size_x = (nt_ij + THREADSX - 1) // THREADSX
         block_size_y = (nt_kl + THREADSY - 1) // THREADSY
         threads = (THREADSX, THREADSY)

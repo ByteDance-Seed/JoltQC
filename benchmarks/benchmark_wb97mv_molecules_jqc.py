@@ -23,7 +23,13 @@ import jqc.pyscf as jqc_pyscf
 BASIS = "def2-tzvpd"
 XC_FUNCTIONAL = "wb97m-v"
 GRIDS = (99, 590)
-VERBOSE = 1
+USE_MIXED_PRECISION = True
+# Mixed-precision thresholds for JK and grid kernels
+# Tasks with contribution > cutoff_fp64 run in FP64; between (cutoff_fp32, cutoff_fp64] run in FP32
+# Keep cutoff_fp32 tight for accuracy; tune cutoff_fp64 for speed/accuracy tradeoff
+CUTOFF_FP32 = 1e-13
+CUTOFF_FP64 = 1e-6
+VERBOSE = 4
 
 # Molecules to benchmark (same as GPU4PySCF benchmark)
 MOLECULES = [
@@ -81,7 +87,13 @@ def benchmark_molecule(mol_file, warmup=True):
     mf.grids.atom_grid = GRIDS
     mf.nlcgrids.atom_grid = (50, 194)  # NLC grids for wb97m-v
     mf.verbose = VERBOSE
-    mf = jqc_pyscf.apply(mf)
+    if USE_MIXED_PRECISION:
+        print(
+            f"Applying JQC with mixed precision: cutoff_fp32={CUTOFF_FP32}, cutoff_fp64={CUTOFF_FP64}"
+        )
+        mf = jqc_pyscf.apply(mf, cutoff_fp32=CUTOFF_FP32, cutoff_fp64=CUTOFF_FP64)
+    else:
+        mf = jqc_pyscf.apply(mf)
 
     # Warmup run
     if warmup:
@@ -97,7 +109,10 @@ def benchmark_molecule(mol_file, warmup=True):
         mf.grids.atom_grid = GRIDS
         mf.nlcgrids.atom_grid = (50, 194)
         mf.verbose = VERBOSE
-        mf = jqc_pyscf.apply(mf)
+        if USE_MIXED_PRECISION:
+            mf = jqc_pyscf.apply(mf, cutoff_fp32=CUTOFF_FP32, cutoff_fp64=CUTOFF_FP64)
+        else:
+            mf = jqc_pyscf.apply(mf)
 
     # Timed calculation
     print("Running timed calculation (jqc applied)...")

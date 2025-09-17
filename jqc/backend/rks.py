@@ -168,7 +168,9 @@ with open(f"{code_path}/cuda/estimate_log_aovalue.cu") as f:
     estimate_aovalue_script = f.read()
 
 
-def estimate_log_aovalue(grid_coords, coords, coeff_exp, ang, nprim, log_cutoff=-36.8):
+def estimate_log_aovalue(
+    grid_coords, coords, coeff_exp, ang, nprim, log_cutoff=-36.8, shell_base=0
+):
     """Estimate the maximum log-value of atomic orbitals on grid blocks, 256 grids per block.
 
     This function performs a pre-screening step to identify which atomic
@@ -194,12 +196,11 @@ def estimate_log_aovalue(grid_coords, coords, coeff_exp, ang, nprim, log_cutoff=
 
     Returns
     -------
-    log_aovalue : cp.ndarray
-        A (nblocks, nbas) array containing the maximum log-value of each
-        shell on each grid block.
-    nnz_indices : cp.ndarray
-        A (nblocks, nbas) array. For each block, it contains the indices
-        of shells that are considered significant (non-zero).
+    logidx : cp.ndarray (structured)
+        A (nblocks, nbas) structured array with fields:
+        - 'log' (float32): max log-value per kept shell in a block
+        - 'idx' (int32): shell index corresponding to the log value
+        Only the first nnz_per_block[block] entries in each row are valid.
     nnz_per_block : cp.ndarray
         A (nblocks,) array with the count of significant shells for each
         grid block.
@@ -212,9 +213,10 @@ def estimate_log_aovalue(grid_coords, coords, coeff_exp, ang, nprim, log_cutoff=
 
     nbas = coords.shape[0]
     nblocks = ngrids // 256
-    log_aovalue = cp.empty((nblocks, nbas), dtype=np.float32)
+    # Structured dtype matching `struct LogIdx { float log; int idx; }`
+    logidx_dtype = np.dtype([("log", np.float32), ("idx", np.int32)], align=True)
+    logidx = cp.empty((nblocks, nbas), dtype=logidx_dtype)
 
-    nnz_indices = cp.empty((nblocks, nbas), dtype=np.int32)
     nnz_per_block = cp.empty((nblocks), dtype=np.int32)
     const = f"""
 constexpr int ang = {ang};
@@ -237,13 +239,13 @@ constexpr int nprim = {nprim};
             coords,
             coeff_exp,
             nbas,
-            log_aovalue,
-            nnz_indices,
+            np.int32(shell_base),
+            logidx,
             nnz_per_block,
             np.float32(log_cutoff),
         ),
     )
-    return log_aovalue, nnz_indices, nnz_per_block
+    return logidx, nnz_per_block
 
 
 with open(f"{code_path}/cuda/vv10.cu") as f:

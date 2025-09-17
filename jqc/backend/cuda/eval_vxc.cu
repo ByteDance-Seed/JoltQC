@@ -43,6 +43,12 @@ static_assert(sizeof(DataType4) == COORD_STRIDE*sizeof(DataType),
 struct __align__(2*sizeof(DataType)) DataType2 {
     DataType c, e;
 };
+
+// Compact pair storing (log_maxval, shell_index)
+struct __align__(8) LogIdx {
+    float log;
+    int   idx;
+};
  
 __forceinline__ __device__
 DataType warp_reduce(DataType val) {
@@ -82,12 +88,10 @@ void eval_vxc(
     const int* __restrict__ ao_loc,
     const int nao,
     double* __restrict__ wv_grid,
-    const float* __restrict__ log_maxval_i,
-    const int* __restrict__ nnz_indices_i,
+    const LogIdx* __restrict__ nz_i,
     const int* __restrict__ nnz_i,
     const int nbas_i,
-    const float* __restrict__ log_maxval_j,
-    const int* __restrict__ nnz_indices_j,
+    const LogIdx* __restrict__ nz_j,
     const int* __restrict__ nnz_j,
     const int nbas_j,
     float log_cutoff_a, float log_cutoff_b,
@@ -137,14 +141,14 @@ void eval_vxc(
 
     for (int jsh_nz = 0; jsh_nz < nnzj; jsh_nz++){
         const int offset = jsh_nz + block_id * nbas_j;
-        const float log_aoj = log_maxval_j[offset];
-        const int jsh = nnz_indices_j[offset];
+        const float log_aoj = nz_j[offset].log;
+        const int jsh = nz_j[offset].idx;
         const int j0 = ao_loc[jsh];
         
         for (int ish_nz = 0; ish_nz < nnzi; ish_nz++){
             const int offset = ish_nz + block_id * nbas_i;
-            const float log_aoi = log_maxval_i[offset];
-            const int ish = nnz_indices_i[offset];
+            const float log_aoi = nz_i[offset].log;
+            const int ish = nz_i[offset].idx;
             if (ish > jsh) continue;
             if (log_aoi + log_aoj < log_cutoff_a || log_aoi + log_aoj >= log_cutoff_b) continue;
 
@@ -175,7 +179,7 @@ void eval_vxc(
             const DataType2 coeff_expj = coeff_exp[jp_off];
             const DataType e = coeff_expj.e;
             const DataType e_rr = e * rr_gj;
-            if (e_rr >= exp_cutoff) continue;
+            //if (e_rr >= exp_cutoff) continue;
             const DataType c = coeff_expj.c;
             const DataType ce = c * exp(-e_rr);
             cej += ce;
@@ -298,7 +302,7 @@ void eval_vxc(
                 const DataType2 coeff_expi = coeff_exp[ip_off];
                 const DataType e = coeff_expi.e;
                 const DataType e_rr = e * rr_gi;
-                if (e_rr >= exp_cutoff) continue;
+                //if (e_rr >= exp_cutoff) continue;
                 const DataType c = coeff_expi.c;
                 const DataType ce = c * exp(-e_rr);
                 cei += ce;
@@ -410,7 +414,7 @@ void eval_vxc(
             const DataType fac = (ish == jsh) ? half : one;
             // Block reduction
             const int rank = threadIdx.x % num_warps;
-            const int ntasks = (smem_size + 31) / 32 * 32;
+            constexpr int ntasks = (smem_size + 31) / 32 * 32;
             for (int idx = threadIdx.x; idx < ntasks; idx += nthreads){
                 DataType vxc_ij = idx < smem_size ? vxc_smem[idx] : 0.0;
                 // Warp reduction

@@ -31,6 +31,12 @@ struct __align__(COORD_STRIDE*sizeof(float)) DataType4 {
 };
 constexpr float exp_cutoff = 36.8;
 
+// Pair of (log_maxval, shell_index) for compact storage
+struct __align__(8) LogIdx {
+    float log;
+    int   idx;
+};
+
 extern "C" __global__
 void estimate_log_aovalue(
     const double* __restrict__ grid_coords,
@@ -38,8 +44,8 @@ void estimate_log_aovalue(
     const DataType4* __restrict__ shell_coords,
     const float2* __restrict__ coeff_exp,
     const int nbas,
-    float* __restrict__ log_maxval,
-    int * __restrict__ nnz_idx,
+    const int shell_base,
+    LogIdx* __restrict__ logidx,
     int * __restrict__ nnz_per_block,
     float log_cutoff)
 {
@@ -81,7 +87,7 @@ void estimate_log_aovalue(
             const float rz = gridz_shared[grid_id] - bas_z;
             const float rr = rx * rx + ry * ry + rz * rz + 1e-38f;
             float gto_sup = 0.0f;
-            
+#pragma unroll
             for (int ip = 0; ip < nprim; ++ip) {
                 const float e = exps_reg[ip] * rr;
                 if (e < exp_cutoff){
@@ -100,8 +106,9 @@ void estimate_log_aovalue(
         //}
         if (log_gto_maxval > log_cutoff){
             const int loc = atomicAdd(&nnz, 1);
-            log_maxval[block_id * nbas + loc] = log_gto_maxval;
-            nnz_idx[block_id * nbas + loc] = ish;
+            const int offset = block_id * nbas + loc;
+            logidx[offset].log = log_gto_maxval;
+            logidx[offset].idx = shell_base + ish;
         }
     }
     __syncthreads();

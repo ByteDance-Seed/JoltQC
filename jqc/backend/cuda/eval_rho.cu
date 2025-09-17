@@ -43,6 +43,12 @@ struct __align__(2*sizeof(DataType)) DataType2 {
     DataType c, e;
 };
 
+// Compact pair storing (log_maxval, shell_index)
+struct __align__(8) LogIdx {
+    float log;
+    int   idx;
+};
+
 extern "C" __global__
 void eval_rho(
     const double* __restrict__ grid_coords,
@@ -54,12 +60,10 @@ void eval_rho(
     const int* __restrict__ ao_loc,
     const int nao,
     double* __restrict__ rho,
-    const float* __restrict__ log_maxval_i,
-    const int* __restrict__ nnz_indices_i,
+    const LogIdx* __restrict__ nz_i,
     const int* __restrict__ nnz_i,
     const int nbas_i,
-    const float* __restrict__ log_maxval_j,
-    const int* __restrict__ nnz_indices_j,
+    const LogIdx* __restrict__ nz_j,
     const int* __restrict__ nnz_j,
     const int nbas_j,
     const float log_cutoff_a, const float log_cutoff_b,
@@ -84,13 +88,13 @@ void eval_rho(
     DataType rho_reg[ndim] = {zero};
     for (int jsh_nz = 0; jsh_nz < nnzj; jsh_nz++){
         const int offset = jsh_nz + block_id * nbas_j;
-        const int jsh = nnz_indices_j[offset];
-        const float log_aoj = log_maxval_j[offset];
+        const int jsh = nz_j[offset].idx;
+        const float log_aoj = nz_j[offset].log;
         const int j0 = ao_loc[jsh];
         for (int ish_nz = 0; ish_nz < nnzi; ish_nz++){
             const int offset = ish_nz + block_id * nbas_i;
-            const int ish = nnz_indices_i[offset];
-            const float log_aoi = log_maxval_i[offset];
+            const int ish = nz_i[offset].idx;
+            const float log_aoi = nz_i[offset].log;
             const float log_rho_est = log_aoi + log_aoj + log_dm_shell[ish+jsh*nbas];
             if (ish > jsh) continue;
             if (log_rho_est < log_cutoff_a || log_rho_est >= log_cutoff_b) continue;
@@ -122,7 +126,7 @@ void eval_rho(
             const DataType2 coeff_expj = coeff_exp[jp_off];
             const DataType e = coeff_expj.e;
             const DataType e_rr = e * rr_gj;
-            if (e_rr >= exp_cutoff) continue;
+            //if (e_rr >= exp_cutoff) continue;
             const DataType c = coeff_expj.c;
             const DataType ce = c * exp(-e_rr);
             cej += ce;
@@ -231,13 +235,16 @@ void eval_rho(
             // }
             // Optimized version - early continue to avoid exp() calls:
             const int iprim_base = ish * prim_stride;
+            //const DataType e_rr = coeff_exp[iprim_base + npi - 1].e * rr_gi;
+            //if (e_rr >= exp_cutoff) continue; // skip entire shell if last primitive is negligible
+
             #pragma unroll
             for (int ip = 0; ip < npi; ip++){
                 const int ip_off = iprim_base + ip;
                 const DataType2 coeff_expi = coeff_exp[ip_off];
                 const DataType e = coeff_expi.e;
                 const DataType e_rr = e * rr_gi;
-                if (e_rr >= exp_cutoff) continue;
+                //if (e_rr >= exp_cutoff) continue;
                 const DataType c = coeff_expi.c;
                 const DataType ce = c * exp(-e_rr);
                 cei += ce;
