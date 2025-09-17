@@ -14,6 +14,7 @@
 #
 
 from types import MethodType
+
 from jqc.constants import TILE
 
 
@@ -57,9 +58,9 @@ def apply(obj, cutoff_fp32=None, cutoff_fp64=None):
     mol = obj.mol
 
     # Lazy imports to avoid initializing CUDA at import time
-    from jqc.pyscf.basis import BasisLayout
-    from jqc.pyscf import rks as _rks
     from jqc.pyscf import jk as _jk
+    from jqc.pyscf import rks as _rks
+    from jqc.pyscf.basis import BasisLayout
     from jqc.pyscf.rks import build_grids
 
     # Generate basis layouts once and reuse them

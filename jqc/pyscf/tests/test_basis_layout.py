@@ -14,12 +14,13 @@
 #
 
 import unittest
-import numpy as np
+
 import cupy as cp
+import numpy as np
 import pyscf
-from pyscf import gto
+
+from jqc.constants import NPRIM_MAX, TILE
 from jqc.pyscf.basis import BasisLayout, split_basis
-from jqc.constants import TILE, NPRIM_MAX
 
 
 class TestBasisLayout(unittest.TestCase):

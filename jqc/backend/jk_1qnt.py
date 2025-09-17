@@ -18,16 +18,17 @@
 """
 
 import warnings
+
 import cupy as cp
 import numpy as np
-from jqc.constants import MAX_SMEM
-from jqc.backend.util import generate_lookup_table
+
 from jqc.backend.cuda_scripts import (
+    jk_1qnt_cuda_code,
     rys_roots_data,
     rys_roots_parallel_code,
-    jk_1qnt_cuda_code,
 )
-from jqc.constants import NPRIM_MAX, PRIM_STRIDE, COORD_STRIDE
+from jqc.backend.util import generate_lookup_table
+from jqc.constants import COORD_STRIDE, MAX_SMEM, NPRIM_MAX, PRIM_STRIDE
 
 __all__ = ["gen_jk_kernel"]
 

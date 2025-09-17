@@ -23,23 +23,23 @@ Generate DFT kernels for PySCF
 
 import math
 import time
-import numpy as np
+
 import cupy as cp
+import numpy as np
 from pyscf import lib
-from pyscf.lib import logger
 from pyscf.dft import libxc
 from pyscf.dft.gen_grid import GROUP_BOUNDARY_PENALTY
-from jqc.backend.linalg_helper import max_block_pooling, inplace_add_transpose
-from jqc.pyscf.basis import BasisLayout
+from pyscf.lib import logger
+
+from jqc.backend.linalg_helper import inplace_add_transpose, max_block_pooling
 from jqc.backend.rks import (
+    estimate_log_aovalue,
     gen_rho_kernel,
     gen_vxc_kernel,
-    estimate_log_aovalue,
     vv10nlc,
 )
 
 # dm_to_mol and dm_from_mol are now methods of BasisLayout class
-from jqc.constants import LMAX
 
 __all__ = ["build_grids", "generate_rks_kernel"]
 

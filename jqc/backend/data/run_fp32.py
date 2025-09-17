@@ -19,9 +19,9 @@
 
 
 import os
+import queue
 import subprocess
 import threading
-import queue
 
 script_dir = os.path.dirname(__file__)
 env_cmd = f'export PYTHONPATH="${{PYTHONPATH}}:{script_dir}/../../../"'

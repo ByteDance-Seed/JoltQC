@@ -15,13 +15,14 @@
 
 
 import unittest
+
+import cupy as cp
 import numpy as np
 import pyscf
-import cupy as cp
-from pyscf import lib, gto
-from gpu4pyscf.scf.jk import _VHFOpt
 from gpu4pyscf import dft
 from gpu4pyscf.dft.rks import initialize_grids
+from pyscf import gto
+
 from jqc.pyscf import rks
 
 # from jqc.backend.rks import estimate_log_aovalue  # No longer used
@@ -170,7 +171,7 @@ class KnownValues(unittest.TestCase):
         wv = cp.asarray(np.random.rand(5, ngrids))
         vxc = vxc_kern(mol, grids, xctype, wv)
 
-        from gpu4pyscf.dft.numint import _tau_dot, _scale_ao
+        from gpu4pyscf.dft.numint import _scale_ao, _tau_dot
 
         wv[[0, 4]] *= 0.5
         vxc_pyscf = _tau_dot(ao_gpu, ao_gpu, wv[4])

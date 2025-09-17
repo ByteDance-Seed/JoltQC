@@ -19,20 +19,20 @@ code_path = Path(__file__).resolve().parent
 
 rys_roots_data = {}
 for i in range(1, 10):
-    with open(f"{code_path}/rys/rys_root{i}.cu", "r") as f:
+    with open(f"{code_path}/rys/rys_root{i}.cu") as f:
         rys_roots_data[i] = f.read()
 
-with open(f"{code_path}/rys/rys_roots.cu", "r") as f:
+with open(f"{code_path}/rys/rys_roots.cu") as f:
     rys_roots_code = f.read()
 
-with open(f"{code_path}/cuda/screen_jk_tasks.cu", "r") as f:
+with open(f"{code_path}/cuda/screen_jk_tasks.cu") as f:
     screen_jk_tasks_code = f.read()
 
-with open(f"{code_path}/rys/rys_roots_parallel.cu", "r") as f:
+with open(f"{code_path}/rys/rys_roots_parallel.cu") as f:
     rys_roots_parallel_code = f.read()
 
-with open(f"{code_path}/cuda/1q1t.cu", "r") as f:
+with open(f"{code_path}/cuda/1q1t.cu") as f:
     jk_1q1t_cuda_code = f.read()
 
-with open(f"{code_path}/cuda/1qnt.cu", "r") as f:
+with open(f"{code_path}/cuda/1qnt.cu") as f:
     jk_1qnt_cuda_code = f.read()

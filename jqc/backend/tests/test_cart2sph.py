@@ -14,9 +14,11 @@
 #
 
 import unittest
-import numpy as np
+
 import cupy as cp
+import numpy as np
 from pyscf import gto
+
 from jqc.backend.cart2sph import cart2sph, sph2cart
 
 

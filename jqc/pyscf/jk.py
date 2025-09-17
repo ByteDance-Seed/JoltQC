@@ -21,20 +21,22 @@
 Generate JK kernels for PySCF
 """
 
-import time
 import math
-import numpy as np
-import cupy as cp
+import time
 from collections import Counter
+
+import cupy as cp
+import numpy as np
 from pyscf import lib
-from jqc.backend.linalg_helper import inplace_add_transpose, max_block_pooling
-from jqc.backend.jk_tasks import gen_screen_jk_tasks_kernel, MAX_PAIR_SIZE, QUEUE_DEPTH
+
 from jqc.backend.jk import gen_jk_kernel
-from jqc.constants import LMAX, TILE
+from jqc.backend.jk_tasks import MAX_PAIR_SIZE, QUEUE_DEPTH, gen_screen_jk_tasks_kernel
+from jqc.backend.linalg_helper import inplace_add_transpose, max_block_pooling
+from jqc.constants import TILE
 
 __all__ = [
-    "get_jk",
     "get_j",
+    "get_jk",
 ]
 
 ushort4_dtype = np.dtype(
@@ -198,11 +200,11 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         if with_j:
             vj = cp.zeros(dms.shape)
 
-        logger.debug1(f"Calculate dm_cond and AO pairs")
+        logger.debug1("Calculate dm_cond and AO pairs")
         _, _, gen_tasks_fun = gen_screen_jk_tasks_kernel(
             do_j=with_j, do_k=with_k, tile=TILE
         )
-        logger.debug1(f"Generate tasks kernel")
+        logger.debug1("Generate tasks kernel")
         timing_counter = Counter()
         kern_counts = 0
         quartet_list = cp.empty((QUEUE_DEPTH), dtype=ushort4_dtype)

@@ -13,17 +13,13 @@
 # limitations under the License.
 #
 
-import pyscf
-import numpy as np
 import unittest
-from types import MethodType
-import cupy as cp
-import jqc.pyscf
-import pytest
-from jqc.pyscf import rks, jk
-from jqc.pyscf.basis import BasisLayout
+
+import numpy as np
+import pyscf
 from gpu4pyscf import dft
-from jqc.constants import TILE
+
+import jqc.pyscf
 
 atom = """
 O       0.0000000000    -0.0000000000     0.1174000000

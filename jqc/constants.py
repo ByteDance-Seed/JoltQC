@@ -38,4 +38,4 @@ TILE = 4
 
 MAX_SMEM = 48 * 1024  # Maximum shared memory per block in bytes
 
-__all__ = ["LMAX", "NPRIM_MAX", "COORD_STRIDE", "PRIM_STRIDE", "TILE"]
+__all__ = ["COORD_STRIDE", "LMAX", "NPRIM_MAX", "PRIM_STRIDE", "TILE"]

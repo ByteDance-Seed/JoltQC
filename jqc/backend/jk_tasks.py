@@ -18,10 +18,12 @@ Generate the task queue for JK calculations
 The task is screened with Schwartz inequality and density matrix screening
 """
 
+from functools import lru_cache
+
 import cupy as cp
 import numpy as np
+
 from jqc.backend.cuda_scripts import screen_jk_tasks_code
-from functools import lru_cache
 
 THREADSX = 16
 THREADSY = 16

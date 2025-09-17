@@ -14,8 +14,10 @@
 #
 
 import unittest
+
 import cupy as cp
 import numpy as np
+
 from jqc.backend.linalg_helper import inplace_add_transpose, max_block_pooling
 
 

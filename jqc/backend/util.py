@@ -14,7 +14,7 @@
 #
 
 import numpy as np
-import cupy as cp
+
 from jqc.constants import LMAX
 
 

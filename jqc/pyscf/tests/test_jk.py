@@ -15,14 +15,15 @@
 
 
 import unittest
+
 import numpy as np
-import cupy as cp
 import pyscf
-from pyscf import lib, gto
+from pyscf import gto
 from pyscf.scf.hf import get_jk
+
+from jqc.constants import TILE
 from jqc.pyscf import jk
 from jqc.pyscf.basis import BasisLayout
-from jqc.constants import TILE
 
 
 def setUpModule():

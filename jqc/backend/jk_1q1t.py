@@ -18,11 +18,13 @@
 """
 
 import warnings
+
 import cupy as cp
 import numpy as np
+
+from jqc.backend.cuda_scripts import jk_1q1t_cuda_code, rys_roots_code, rys_roots_data
 from jqc.backend.util import generate_lookup_table
-from jqc.backend.cuda_scripts import rys_roots_data, rys_roots_code, jk_1q1t_cuda_code
-from jqc.constants import NPRIM_MAX, PRIM_STRIDE, COORD_STRIDE
+from jqc.constants import COORD_STRIDE, NPRIM_MAX, PRIM_STRIDE
 
 __all__ = ["gen_jk_kernel"]
 

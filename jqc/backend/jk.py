@@ -17,13 +17,14 @@
 Generate JK kernel, wrap up 1q1t and 1qnt algorithms
 """
 
-import os
-import threading
-import numpy as np
 import json
-import cupy as cp
-from pathlib import Path
+import os
 from functools import lru_cache
+from pathlib import Path
+
+import cupy as cp
+import numpy as np
+
 from jqc.backend.jk_1q1t import gen_kernel as jk_1q1t_kernel
 from jqc.backend.jk_1qnt import gen_kernel as jk_1qnt_kernel
 
@@ -39,7 +40,7 @@ file_path = os.path.join(script_dir, f"data/optimal_scheme_{device_name}_fp32.js
 if not Path(file_path).exists():
     file_path = os.path.join(script_dir, "data/optimal_scheme_NVIDIA A10_fp32.json")
 
-with open(file_path, "r") as f:
+with open(file_path) as f:
     frags_fp32 = json.load(f)
 
 file_path = os.path.join(script_dir, f"data/optimal_scheme_{device_name}_fp64.json")
@@ -48,7 +49,7 @@ if not Path(file_path).exists():
         script_dir, "data/optimal_scheme_NVIDIA A100-SXM4-80GB_fp64.json"
     )
 
-with open(file_path, "r") as f:
+with open(file_path) as f:
     frags_fp64 = json.load(f)
 
 
@@ -116,7 +117,6 @@ def gen_jk_kernel(
 
 if __name__ == "__main__":
     import time
-    from itertools import product
 
     total_time = 0
     # for li, lj, lk, ll in [[2,2,2,2]]:
@@ -141,9 +141,9 @@ if __name__ == "__main__":
     with open("tmp.cu", "w+") as f:
         f.write(code)
 
-    import cupy
     import subprocess
-    from cupy.cuda import compiler
+
+    import cupy
 
     cmd = cupy.cuda.get_nvcc_path().split()
     cmd += ["-arch=sm_80", "-ptx", "tmp.cu", "-o", "tmp.ptx"]

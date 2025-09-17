@@ -14,10 +14,12 @@
 #
 
 import json
-import numpy as np
+
 import cupy as cp
-from pyscf import gto, lib
-from jqc.constants import TILE, MAX_SMEM
+import numpy as np
+from pyscf import gto
+
+from jqc.constants import MAX_SMEM, TILE
 
 """
 Script for greedy search the optimal fragmentation for the kernel.
@@ -76,12 +78,13 @@ def generate_fragments(ang, max_threads=256):
 
 
 def update_frags(i, j, k, l, dtype_str):
-    from jqc.pyscf import jk
-    from jqc.pyscf.basis import sort_group_basis, compute_q_matrix
-    from jqc.backend import jk_1qnt as jk_algo1
-    from jqc.backend import jk_1q1t as jk_algo0
-    from jqc.backend.jk import device_name
     from pathlib import Path
+
+    from jqc.backend import jk_1q1t as jk_algo0
+    from jqc.backend import jk_1qnt as jk_algo1
+    from jqc.backend.jk import device_name
+    from jqc.pyscf import jk
+    from jqc.pyscf.basis import compute_q_matrix, sort_group_basis
 
     if dtype_str == "fp32":
         dtype = np.float32
@@ -287,7 +290,7 @@ def update_frags(i, j, k, l, dtype_str):
             vk_has_nan = cp.any(cp.isnan(vk)) or cp.any(cp.isnan(best_vk_1qnt))
 
             if vj_has_nan or vk_has_nan:
-                print(f"Warning: NaN values detected in results!")
+                print("Warning: NaN values detected in results!")
                 print(f"  vj_1q1t has NaN: {cp.any(cp.isnan(vj))}")
                 print(f"  vj_1qnt has NaN: {cp.any(cp.isnan(best_vj_1qnt))}")
                 print(f"  vk_1q1t has NaN: {cp.any(cp.isnan(vk))}")
@@ -333,7 +336,7 @@ def update_frags(i, j, k, l, dtype_str):
         with open(path, "w") as f:
             json.dump({}, f)  # write empty dict
 
-    with open(filename, "r") as f:
+    with open(filename) as f:
         data = json.load(f)
     ang_num = 1000 * li + 100 * lj + 10 * lk + ll
 

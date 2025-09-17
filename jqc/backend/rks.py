@@ -17,20 +17,22 @@
 Generate kernels for incremental DFT
 """
 
-import numpy as np
-import cupy as cp
-from pathlib import Path
-from jqc.constants import NPRIM_MAX, PRIM_STRIDE, COORD_STRIDE
 from functools import lru_cache
+from pathlib import Path
+
+import cupy as cp
+import numpy as np
+
+from jqc.constants import COORD_STRIDE, NPRIM_MAX, PRIM_STRIDE
 
 code_path = Path(__file__).resolve().parent
 
-__all__ = ["gen_rho_kernel", "gen_vxc_kernel", "gen_vv10_kernel", "vv10nlc"]
+__all__ = ["gen_rho_kernel", "gen_vv10_kernel", "gen_vxc_kernel", "vv10nlc"]
 
 compile_options = ("-std=c++17", "--use_fast_math", "--minimal")
 nthreads = 256
 
-with open(f"{code_path}/cuda/eval_rho.cu", "r") as f:
+with open(f"{code_path}/cuda/eval_rho.cu") as f:
     eval_rho_cuda_code = f.read()
 
 
@@ -96,7 +98,7 @@ local memory: {kernel.local_size_bytes:4d} Bytes"
     return script, mod, fun
 
 
-with open(f"{code_path}/cuda/eval_vxc.cu", "r") as f:
+with open(f"{code_path}/cuda/eval_vxc.cu") as f:
     eval_vxc_cuda_code = f.read()
 
 
@@ -162,7 +164,7 @@ local memory: {kernel.local_size_bytes:4d} Bytes"
     return script, mod, fun
 
 
-with open(f"{code_path}/cuda/estimate_log_aovalue.cu", "r") as f:
+with open(f"{code_path}/cuda/estimate_log_aovalue.cu") as f:
     estimate_aovalue_script = f.read()
 
 
@@ -244,7 +246,7 @@ constexpr int nprim = {nprim};
     return log_aovalue, nnz_indices, nnz_per_block
 
 
-with open(f"{code_path}/cuda/vv10.cu", "r") as f:
+with open(f"{code_path}/cuda/vv10.cu") as f:
     vv10_script = f.read()
 
 

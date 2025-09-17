@@ -13,13 +13,15 @@
 # limitations under the License.
 #
 
-import pyscf
 import unittest
 from types import MethodType
-from jqc.pyscf import rks, jk
-from jqc.pyscf.basis import BasisLayout
+
+import pyscf
 from gpu4pyscf import dft
+
 from jqc.constants import TILE
+from jqc.pyscf import jk, rks
+from jqc.pyscf.basis import BasisLayout
 
 
 class BasisSetDFTTests(unittest.TestCase):

@@ -18,7 +18,7 @@ Generate data for rys quadrature
 """
 
 # Change the path of GPU4PySCF if needed
-with open("gpu4pyscf/gpu4pyscf/lib/gvhf-rys/rys_roots_dat.cu", "r") as f:
+with open("gpu4pyscf/gpu4pyscf/lib/gvhf-rys/rys_roots_dat.cu") as f:
     rys_roots_data = f.read()
 
 import re
@@ -56,4 +56,4 @@ for i in range(1, 10):
             f.write(f"double {var}[] = {{ \n")
             for val in parsed_data[var][i]:
                 f.write(f"{val},\n")
-            f.write(f"}};\n\n")
+            f.write("};\n\n")

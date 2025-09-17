@@ -13,14 +13,13 @@
 # limitations under the License.
 #
 
-import pytest
-import numpy as np
-import tempfile
 import json
 import os
+import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
+import numpy as np
+import pytest
 from generate_fragment import generate_fragments, update_frags
 
 
@@ -129,7 +128,7 @@ class TestUpdateFrags:
                 # Check that the file exists and contains expected data
                 assert json_file.exists()
 
-                with open(json_file, "r") as f:
+                with open(json_file) as f:
                     data = json.load(f)
                 assert data == initial_data
 

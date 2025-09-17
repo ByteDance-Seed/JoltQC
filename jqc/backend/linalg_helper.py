@@ -16,7 +16,7 @@
 import cupy as cp
 import numpy as np
 
-__all__ = ["inplace_add_transpose", "max_block_pooling", "l2_block_pooling"]
+__all__ = ["inplace_add_transpose", "l2_block_pooling", "max_block_pooling"]
 
 compile_options = ("-std=c++17", "--use_fast_math", "--minimal")
 

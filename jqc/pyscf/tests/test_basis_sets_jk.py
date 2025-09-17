@@ -15,12 +15,14 @@
 
 
 import unittest
+
 import numpy as np
 import pyscf
 from pyscf.scf.hf import get_jk
+
+from jqc.constants import TILE
 from jqc.pyscf import jk
 from jqc.pyscf.basis import BasisLayout
-from jqc.constants import TILE
 
 
 class BasisSetJKTests(unittest.TestCase):
