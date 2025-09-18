@@ -27,7 +27,6 @@ output/
 .coverage
 #*
 *.csv
-*.png
 *.db
 CLAUDE.md
 AGENTS.md

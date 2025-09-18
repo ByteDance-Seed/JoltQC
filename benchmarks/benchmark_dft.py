@@ -21,12 +21,13 @@ from gpu4pyscf import dft
 import jqc.pyscf
 
 # atom = 'molecules/h2o.xyz'
-atom = "molecules/0031-irregular-nitrogenous.xyz"
+# atom = "molecules/0031-irregular-nitrogenous.xyz"
 # atom = 'molecules/0051-elongated-halogenated.xyz'
 # atom = 'molecules/0084-elongated-halogenated.xyz'
+atom = 'molecules/0152-elongated-nitrogenous.xyz'
 basis = "def2-tzvpp"
-#xc = "wb97m-v"
-xc = 'b3lyp'
+xc = "wb97m-v"
+#xc = 'b3lyp'
 count = 1
 grids = (99, 590)
 

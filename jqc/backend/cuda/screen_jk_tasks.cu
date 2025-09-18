@@ -132,7 +132,9 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
                 const int lsh = lsh0 + l;
                 const int bas_kl = ksh_base + lsh;
                 const int kl_idx = k * TILE + l;
-                dm_kl[kl_idx] = __ldg(&dm_cond[bas_kl]);
+                if constexpr(do_j){
+                    dm_kl[kl_idx] = __ldg(&dm_cond[bas_kl]);
+                }
                 q_kl[kl_idx] = __ldg(&q_cond[bas_kl]);
             }
         }
@@ -149,7 +151,10 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
                 const int jsh_base = jsh * nbas;
                 const int bas_ij = ish_base + jsh;
                 const float q_ij = __ldg(&q_cond[bas_ij]);
-                const float d_ij = __ldg(&dm_cond[bas_ij]);
+                float d_ij = 0.0f;
+                if constexpr(do_j){
+                    d_ij = __ldg(&dm_cond[bas_ij]);
+                }
 
                 float dm_il[TILE], dm_jl[TILE];
                 for (int l = 0; l < TILE; l++){
@@ -211,6 +216,22 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
                 }
             }
         }
+    }
+
+    // Check if entire block has no work - all threads must participate
+    __shared__ bool has_work;
+    if (threadIdx.x == 0 && threadIdx.y == 0) {
+        has_work = false;
+    }
+    __syncthreads();
+
+    if (count_fp32 > 0 || count_fp64 > 0) {
+        atomicOr((int*)&has_work, 1);
+    }
+    __syncthreads();
+
+    if (!has_work) {
+        return;
     }
 
     int offset_fp32 = global_offset(batch_head+1, count_fp32);

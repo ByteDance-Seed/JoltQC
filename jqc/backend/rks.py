@@ -545,7 +545,7 @@ def _compute_vv10_final_results(
     return exc_density, vxc_density, vxc_gradient
 
 
-def vv10nlc(rho, coords, vvrho, vvweight, vvcoords, nlc_pars, dtype=np.float64):
+def vv10nlc(rho, coords, vvrho, vvweight, vvcoords, nlc_pars, dtype=np.float32):
     """
     VV10 non-local correlation functional using optimized CUDA kernel implementation
 
@@ -671,7 +671,7 @@ def vv10nlc(rho, coords, vvrho, vvweight, vvcoords, nlc_pars, dtype=np.float64):
     kernel_W = cp.empty(ngrids_thresh, dtype=cp.float64)
 
     # Execute VV10 CUDA kernel for double-loop integration
-    _, _, vv10_kernel_fun = gen_vv10_kernel(dtype=cp.float32)
+    _, _, vv10_kernel_fun = gen_vv10_kernel(dtype=dtype)
     vv10_kernel_fun(
         kernel_F,
         kernel_U,

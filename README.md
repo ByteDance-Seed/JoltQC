@@ -87,7 +87,8 @@ See more examples in the examples/ directory.
 - First runs may be slow due to JIT compilation (especially with large basis sets).
 - Only RHF and RKS are currently supported.
 - The performance of small systems is bounded by Python overhead and kernel launch overhead.
-- Support up to 65535 atomic basis
+- Support up to 65535 atomic basis.
+- Multi-GPU is not supported yet.
 
 ## Disclaimer
 

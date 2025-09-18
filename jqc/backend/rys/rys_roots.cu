@@ -32,7 +32,9 @@ static void rys_roots(DataType x, DataType *rw, DataType theta, DataType omega)
     constexpr DataType one = 1.0;
     constexpr DataType two = 2.0;
     constexpr DataType half= .5;
-    
+    constexpr DataType small_x = 3.e-7;
+    constexpr DataType large_x = nroots*5 + 35;
+
     x *= theta;
     
     DataType theta_fac;
@@ -44,7 +46,7 @@ static void rys_roots(DataType x, DataType *rw, DataType theta, DataType omega)
         sqrt_theta_fac = sqrt(theta_fac);
     }
 
-    if (x < 3.e-7){
+    if (x < small_x){
 #pragma unroll
         for (int i = 0; i < nroots; i++)  {
             rw[2*i] = ROOT_SMALLX_R0[i] + ROOT_SMALLX_R1[i] * x;
@@ -57,7 +59,7 @@ static void rys_roots(DataType x, DataType *rw, DataType theta, DataType omega)
         return;
     }
 
-    if (x > 35+nroots*5) {
+    if (x > large_x) {
         const DataType inv_x = one / x; 
         const DataType t = SQRTPIE4 * sqrt(inv_x);
 #pragma unroll

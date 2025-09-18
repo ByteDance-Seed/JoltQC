@@ -98,7 +98,6 @@ def generate_get_veff():
 def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     # Cache frequently accessed properties to reduce overhead
     group_info = basis_layout.group_info
-    q_matrix = basis_layout.q_matrix
     nbas = basis_layout.nbasis
     mol = basis_layout._mol
     ce_fp32 = basis_layout.ce_fp32
@@ -119,8 +118,8 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     n_groups = basis_layout.ngroups
 
     info = cp.empty(4, dtype=np.uint32)
-    cutoff = np.log(PAIR_CUTOFF)  # - log_max_dm / 2
-    tile_pairs = make_tile_pairs(group_offset, q_matrix, cutoff)
+    #cutoff = np.log(PAIR_CUTOFF)  # - log_max_dm / 2
+    #tile_pairs = make_tile_pairs(group_offset, q_matrix, cutoff)
 
     tasks = [
         (i, j, k, l)
@@ -188,6 +187,10 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             # Wrap the triu contribution to tril
             dm_cond = dm_cond + dm_cond.T
         log_dm_cond = cp.log(dm_cond + 1e-300, dtype=np.float32)
+        log_max_dm = log_dm_cond.max().item()
+        cutoff = np.log(PAIR_CUTOFF) - log_max_dm
+        q_matrix = basis_layout.q_matrix(omega=omega)
+        tile_pairs = make_tile_pairs(group_offset, q_matrix, cutoff)
 
         if hermi == 0:
             # Contract the tril and triu parts separately
@@ -218,6 +221,8 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             ang = (li, lj, lk, ll)
             nprim = (ip, jp, kp, lp)
 
+            if (i, j) not in tile_pairs or (k, l) not in tile_pairs:
+                continue
             tile_ij = tile_pairs[i, j]
             tile_kl = tile_pairs[k, l]
             ntile_ij = tile_ij.size
@@ -371,19 +376,39 @@ def make_tile_pairs(l_ctr_bas_loc, q_matrix, cutoff, tile=TILE):
     tile_loc = l_ctr_bas_loc // tile
     tiled_q_matrix = q_matrix.reshape([ntiles, tile, ntiles, tile]).max(axis=(1, 3))
     q_idx = tiled_q_matrix
+
+    # Pre-compute tile indices to avoid repeated allocations
+    tile_i_indices = cp.arange(ntiles, dtype=np.int32)
+    tile_j_indices = cp.arange(ntiles, dtype=np.int32)
+
     for i in range(n_groups):
         i0, i1 = tile_loc[i], tile_loc[i + 1]
+        # Pre-slice i indices
+        i_range = tile_i_indices[i0:i1]
+
         for j in range(i + 1):
             j0, j1 = tile_loc[j], tile_loc[j + 1]
+            # Pre-slice j indices
+            j_range = tile_j_indices[j0:j1]
+
             sub_q_idx = q_idx[i0:i1, j0:j1]
             mask = sub_q_idx > cutoff
             if i == j:
                 mask = cp.tril(mask)
-            t_ij = cp.arange(i0, i1, dtype=np.int32)[:, None] * ntiles + cp.arange(
-                j0, j1, dtype=np.int32
-            )
-            # ij = t_ij[mask]
-            # if ij.size == 0:
-            #    continue
-            tile_pairs[i, j] = t_ij[mask]
+
+            # Skip if no valid pairs
+            if not mask.any():
+                continue
+
+            # Use broadcasting to create index matrix more efficiently
+            t_ij = i_range[:, None] * ntiles + j_range[None, :]
+
+            # Apply mask and get valid indices
+            valid_pairs = t_ij[mask]
+
+            # Sort by q-values for better cache locality
+            if valid_pairs.size > 0:
+                sort_idx = cp.argsort(sub_q_idx[mask])
+                tile_pairs[i, j] = valid_pairs[sort_idx]
+
     return tile_pairs

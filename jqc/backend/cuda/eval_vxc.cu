@@ -416,7 +416,7 @@ void eval_vxc(
             const int rank = threadIdx.x % num_warps;
             constexpr int ntasks = (smem_size + 31) / 32 * 32;
             for (int idx = threadIdx.x; idx < ntasks; idx += nthreads){
-                DataType vxc_ij = idx < smem_size ? vxc_smem[idx] : 0.0;
+                DataType vxc_ij = idx < smem_size ? vxc_smem[idx] : zero;
                 // Warp reduction
                 // Assume nthreads = 256
                 vxc_ij += __shfl_down_sync(0xffffffff, vxc_ij, 4);

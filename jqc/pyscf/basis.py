@@ -89,7 +89,7 @@ class BasisLayout:
     _split_to_decontracted: Optional[np.ndarray] = None
 
     # Cached properties (computed lazily)
-    _q_matrix: Optional[ArrayLike] = None
+    _q_matrix: Optional[dict] = None
     _ce_fp32: Optional[ArrayLike] = None
     _coords_fp32: Optional[ArrayLike] = None
     _ao_loc: Optional[np.ndarray] = None
@@ -211,19 +211,21 @@ class BasisLayout:
             raise ValueError("splitted_mol is not available")
         return self._splitted_mol
 
-    @property
-    def q_matrix(self) -> ArrayLike:
+    def q_matrix(self, omega=0.0) -> ArrayLike:
         """
         Lazy evaluation property for q_matrix.
         Computes and caches the fully processed q_matrix only when accessed.
         Uses the stored split molecule to ensure dimensions match the split basis functions.
         """
         if self._q_matrix is None:
+            self._q_matrix = {}
+
+        if omega not in self._q_matrix:
             # Use stored split molecule for q_matrix computation
             if self._splitted_mol is None:
                 raise ValueError("q_matrix requires _splitted_mol reference to be set")
             # Compute raw q_matrix using split molecule
-            q_matrix_raw = compute_q_matrix(self._splitted_mol)
+            q_matrix_raw = compute_q_matrix(self._splitted_mol, omega)
             # Apply basis mapping to reorder according to sorted basis
             q_matrix_mapped = q_matrix_raw[
                 self.to_split_map[:, None], self.to_split_map
@@ -232,9 +234,9 @@ class BasisLayout:
             q_matrix_mapped[self.pad_id, :] = -100
             q_matrix_mapped[:, self.pad_id] = -100
             # Convert to CuPy array with proper dtype for GPU computation
-            self._q_matrix = cp.asarray(q_matrix_mapped, dtype=np.float32)
+            self._q_matrix[omega] = cp.asarray(q_matrix_mapped, dtype=np.float32)
 
-        return self._q_matrix
+        return self._q_matrix[omega]
 
     @property
     def ce_fp32(self) -> ArrayLike:
@@ -550,9 +552,8 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
 
     # Store info at basis level
     bas_info = (ce, coords, angs, nprims)
-
-    """
-    group_size = 25600
+    '''
+    group_size = 256
     splitted_group_key = []
     splitted_group_offset = []
     for group_id in range(len(group_key)):
@@ -562,7 +563,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     splitted_group_offset.append(group_offset[-1])
     group_key = np.asarray(splitted_group_key)
     group_offset = np.asarray(splitted_group_offset)
-    """
+    '''
     group_key = np.asarray(group_key)
     group_offset = np.asarray(group_offset)
     return bas_info, to_split_map, pad_id, (group_key, group_offset)
@@ -729,7 +730,7 @@ def split_basis(mol):
     return new_mol, np.array(original_bas_map)
 
 
-def compute_q_matrix(mol):
+def compute_q_matrix(mol, omega=0.0):
     """
     Compute the Q matrix in infinite norm for the given molecule.
 
@@ -743,17 +744,18 @@ def compute_q_matrix(mol):
     ao_loc = mol.ao_loc
     q_matrix = np.empty((nbas, nbas))
     intor = mol._add_suffix("int2e")
-    _vhf.libcvhf.CVHFnr_int2e_q_cond(
-        getattr(_vhf.libcvhf, intor),
-        lib.c_null_ptr(),
-        q_matrix.ctypes,
-        ao_loc.ctypes,
-        mol._atm.ctypes,
-        ctypes.c_int(mol.natm),
-        mol._bas.ctypes,
-        ctypes.c_int(mol.nbas),
-        mol._env.ctypes,
-    )
+    with mol.with_range_coulomb(omega):
+        _vhf.libcvhf.CVHFnr_int2e_q_cond(
+            getattr(_vhf.libcvhf, intor),
+            lib.c_null_ptr(),
+            q_matrix.ctypes,
+            ao_loc.ctypes,
+            mol._atm.ctypes,
+            ctypes.c_int(mol.natm),
+            mol._bas.ctypes,
+            ctypes.c_int(mol.nbas),
+            mol._env.ctypes,
+        )
     q_matrix = np.log(q_matrix + 1e-300).astype(np.float32)
     return q_matrix
 

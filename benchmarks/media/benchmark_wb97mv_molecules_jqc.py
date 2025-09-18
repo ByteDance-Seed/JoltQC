@@ -100,10 +100,7 @@ def benchmark_molecule(mol_file, warmup=True):
         print("Running warmup calculation (jqc applied)...")
         e_warmup = mf.kernel()
         print(f"Warmup energy: {e_warmup}")
-
-        # Clear GPU memory
-        cp.get_default_memory_pool().free_all_blocks()
-
+        
         # Recreate for clean timing
         mf = dft.RKS(mol, xc=XC_FUNCTIONAL)
         mf.grids.atom_grid = GRIDS

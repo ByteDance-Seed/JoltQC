@@ -21,7 +21,7 @@ Global constants used throughout the jqc package.
 LMAX = 4
 
 # Maximum number of primitive Gaussians per contracted Gaussian
-NPRIM_MAX = 2
+NPRIM_MAX = 3
 
 # Memory stride constants for optimal memory layout
 # Choose strides so each shell record is at least 64B aligned for both fp32/fp64
