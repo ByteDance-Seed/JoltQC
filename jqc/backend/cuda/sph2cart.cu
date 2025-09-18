@@ -333,9 +333,11 @@ static void _sph2cart_kernel(double *gcart, double *gsph){
 }
 
 extern "C" __global__
-void sph2cart(double *gcart, double* gsph, int nao, int nbas, 
-            int cart_ao_stride, int sph_ao_stride, int shell_stride,
-            int* cart_offset, int* sph_offset){
+void sph2cart(double *gcart, const double* gsph, 
+            const int nao, const int nbas, 
+            const int cart_ao_stride, const int sph_ao_stride, const int shell_stride,
+            const int* __restrict__ cart_offset, 
+            const int* __restrict__ sph_offset){
     constexpr int nf_cart = (ang+1)*(ang+2)/2;
     constexpr int nf_sph = 2*ang+1;
     
@@ -355,6 +357,6 @@ void sph2cart(double *gcart, double* gsph, int nao, int nbas,
     _sph2cart_kernel<ang>(gcart_reg, gsph_reg);
 
     for (int i = 0; i < nf_cart; i++){
-        gcart[i*shell_stride] = gcart_reg[i];
+        atomicAdd(&gcart[i*shell_stride], gcart_reg[i]);
     }
 }

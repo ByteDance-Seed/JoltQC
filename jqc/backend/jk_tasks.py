@@ -13,26 +13,29 @@
 # limitations under the License.
 #
 
-'''
+"""
 Generate the task queue for JK calculations
 The task is screened with Schwartz inequality and density matrix screening
-'''
+"""
+
+from functools import lru_cache
 
 import cupy as cp
 import numpy as np
+
 from jqc.backend.cuda_scripts import screen_jk_tasks_code
-from functools import lru_cache
 
 THREADSX = 16
 THREADSY = 16
 MAX_PAIR_SIZE = 16384
-QUEUE_DEPTH = MAX_PAIR_SIZE * MAX_PAIR_SIZE # 2 GB
+QUEUE_DEPTH = MAX_PAIR_SIZE * MAX_PAIR_SIZE  # 2 GB
 
-compile_options = ('-std=c++17','--use_fast_math', '--minimal')
+compile_options = ("-std=c++17", "--use_fast_math", "--minimal")
 
 buf = cp.cuda.alloc_pinned_memory(4 * np.uint32().nbytes)
 info_init = np.frombuffer(buf, dtype=np.uint32, count=4)
 info_init[:] = (0, 0, QUEUE_DEPTH, QUEUE_DEPTH)
+
 
 @lru_cache(maxsize=None)
 def gen_screen_jk_tasks_kernel(do_j=True, do_k=True, omega=None, tile=2):
@@ -43,9 +46,9 @@ def gen_screen_jk_tasks_kernel(do_j=True, do_k=True, omega=None, tile=2):
     elif omega < 0:
         rys_type = -1
     else:
-        raise RuntimeError('Omega value is not supported yet')
+        raise RuntimeError("Omega value is not supported yet")
 
-    const = f'''
+    const = f"""
 constexpr int do_j = {int(do_j)};
 constexpr int do_k = {int(do_k)};
 constexpr int rys_type = {rys_type};
@@ -53,29 +56,51 @@ constexpr int threadsx = {THREADSX};
 constexpr int threadsy = {THREADSY};
 constexpr int threads = {THREADSX*THREADSY};
 constexpr int TILE = {tile};
-    '''
+    """
     mod = cp.RawModule(code=const + screen_jk_tasks_code, options=compile_options)
-    kernel = mod.get_function('screen_jk_tasks')
+    kernel = mod.get_function("screen_jk_tasks")
     if kernel.local_size_bytes > 256:
-        msg = f'Local memory usage is high in jk_screen: {kernel.local_size_bytes} Bytes'
+        msg = (
+            f"Local memory usage is high in jk_screen: {kernel.local_size_bytes} Bytes"
+        )
         raise RuntimeWarning(msg)
-    def fun(quartet_idx, info, nbas, 
-            tile_ij_mapping, tile_kl_mapping, 
-            q_cond, dm_cond, log_cutoff_a, log_cutoff_b):
+
+    def fun(
+        quartet_idx,
+        info,
+        nbas,
+        tile_ij_mapping,
+        tile_kl_mapping,
+        q_cond,
+        dm_cond,
+        log_cutoff_a,
+        log_cutoff_b,
+    ):
         nt_ij = tile_ij_mapping.shape[0]
         nt_kl = tile_kl_mapping.shape[0]
+        # Early exit if no tiles to process for either dimension
+        if nt_ij == 0 or nt_kl == 0:
+            return
         block_size_x = (nt_ij + THREADSX - 1) // THREADSX
         block_size_y = (nt_kl + THREADSY - 1) // THREADSY
-        threads = (THREADSX,THREADSY)
+        threads = (THREADSX, THREADSY)
         info[:].set(info_init)
         kernel(
             (block_size_x, block_size_y),
             threads,
-            (quartet_idx, info, nbas, 
-            tile_ij_mapping, tile_kl_mapping, 
-            nt_ij, nt_kl,
-            q_cond, dm_cond, 
-            log_cutoff_a, log_cutoff_b)
+            (
+                quartet_idx,
+                info,
+                nbas,
+                tile_ij_mapping,
+                tile_kl_mapping,
+                nt_ij,
+                nt_kl,
+                q_cond,
+                dm_cond,
+                log_cutoff_a,
+                log_cutoff_b,
+            ),
         )
         return
 

@@ -24,26 +24,37 @@ constexpr DataType PI_FAC = 34.98683665524972497;
 constexpr DataType half = .5;
 constexpr DataType one = 1.0;
 constexpr DataType zero = 0.0;
-constexpr int nprim_max = 16;
+constexpr int prim_stride = PRIM_STRIDE / 2;
 
-struct __align__(4*sizeof(DataType)) DataType4 {
-    DataType x, y, z, w;
+// Make coordinate stride configurable via COORD_STRIDE
+static_assert(COORD_STRIDE >= 3, "COORD_STRIDE must be >= 3");
+struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {
+    DataType x, y, z;
+#if COORD_STRIDE >= 4
+    DataType w;
+#endif
+#if COORD_STRIDE > 4
+    DataType pad[COORD_STRIDE - 4];
+#endif
 };
+static_assert(sizeof(DataType4) == COORD_STRIDE*sizeof(DataType),
+              "DataType4 size must equal COORD_STRIDE*sizeof(DataType)");
 
 struct __align__(2*sizeof(DataType)) DataType2 {
     DataType c, e;
 };
 
 extern "C" __global__
-void rys_jk(const int nbas,  
-        const int* __restrict__ ao_loc, 
+void rys_jk(const int nbas,
+        const int nao,
+        const int* __restrict__ ao_loc,
         const DataType4* __restrict__ coords,
         const DataType2* __restrict__ coeff_exp,
-        DataType* dm, 
-        double* vj, 
-        double* vk,
+        DataType* __restrict__ dm,
+        double* __restrict__ vj,
+        double* __restrict__ vk,
         const DataType omega,
-        const ushort4* __restrict__ shl_quartet_idx, 
+        const ushort4* __restrict__ shl_quartet_idx,
         const int ntasks)
 {
     const int tx = threadIdx.x;
@@ -92,7 +103,12 @@ void rys_jk(const int nbas,
     // Dynamic shared memory buffer
     extern __shared__ DataType shared_memory[];
 
-    int kl_idx[fragk*fragl], kl_idy[fragk*fragl], kl_idz[fragk*fragl];
+    // Always cache kl indices for universal performance
+    int kl_idx[fragk*fragl];
+    int kl_idy[fragk*fragl]; 
+    int kl_idz[fragk*fragl];
+    
+    // Pre-compute kl indices for all fragment combinations
     for (int reg_k = 0; reg_k < fragk; reg_k++){
         const int k = t_k * fragk + reg_k;
         for (int reg_l = 0; reg_l < fragl; reg_l++){
@@ -126,10 +142,19 @@ void rys_jk(const int nbas,
     fac_sym *= (ksh == lsh) ? half : one;
     fac_sym *= (ish*nbas+jsh == ksh*nbas+lsh) ? half : one;
 
-    const DataType4 ri = coords[ish];
-    const DataType4 rj = coords[jsh];
-    const DataType4 rk = coords[ksh];
-    const DataType4 rl = coords[lsh];
+    DataType4 ri, rj, rk, rl;
+    ri.x = __ldg(&coords[ish].x);
+    ri.y = __ldg(&coords[ish].y);
+    ri.z = __ldg(&coords[ish].z);
+    rj.x = __ldg(&coords[jsh].x);
+    rj.y = __ldg(&coords[jsh].y);
+    rj.z = __ldg(&coords[jsh].z);
+    rk.x = __ldg(&coords[ksh].x);
+    rk.y = __ldg(&coords[ksh].y);
+    rk.z = __ldg(&coords[ksh].z);
+    rl.x = __ldg(&coords[lsh].x);
+    rl.y = __ldg(&coords[lsh].y);
+    rl.z = __ldg(&coords[lsh].z);
 
     const DataType rjri0 = rj.x - ri.x;
     const DataType rjri1 = rj.y - ri.y;
@@ -140,45 +165,78 @@ void rys_jk(const int nbas,
     const DataType rlrk2 = rl.z - rk.z;
     const DataType rr_kl = rlrk0*rlrk0 + rlrk1*rlrk1 + rlrk2*rlrk2;
 
-    // Cache coefficients and precompute cicj values in shared memory for better performance
-    DataType2 reg_cei[npi], reg_cej[npj];
-    for (int ip = 0; ip < npi; ip++){
-        const int ish_ip = ip + ish*nprim_max;
-        reg_cei[ip] = coeff_exp[ish_ip];
-    }
-    for (int jp = 0; jp < npj; jp++){
-        const int jsh_jp = jp + jsh*nprim_max;
-        reg_cej[jp] = coeff_exp[jsh_jp];
-    }
-    // Cache per-(ip,jp) terms to avoid repeated expensive exp/div computations
-    DataType reg_cicj[npi*npj];
-    DataType reg_inv_aij[npi*npj];
-#pragma unroll
-    for (int ip = 0; ip < npi; ip++){
+    // Estimate register usage for caching cei, cej, cicj and inv_aij
+    // Note: g array is in shared memory, not registers, so only count integral_frag + cache arrays
+    // DataType can be float (1 register) or double (2 registers)
+    constexpr int registers_per_datatype = sizeof(DataType) / 4; // 4 bytes per 32-bit register
+    constexpr int estimated_registers = registers_per_datatype * (frag_size + 2 * (npi + npj) + 2 * npi * npj);
+
+    // Use caching when register usage is reasonable
+    constexpr bool use_cache = (estimated_registers <= 256);
+    constexpr bool use_ceij_cache = use_cache && (npi + npj <= 32); // Additional constraint for cei/cej caching
+
+    // Cache cei and cej if register usage is reasonable
+    DataType2 reg_cei[use_ceij_cache ? npi : 1], reg_cej[use_ceij_cache ? npj : 1];
+    if constexpr (use_ceij_cache) {
+        for (int ip = 0; ip < npi; ip++){
+            const int ish_ip = ip + ish*prim_stride;
+            reg_cei[ip].c = __ldg(&coeff_exp[ish_ip].c);
+            reg_cei[ip].e = __ldg(&coeff_exp[ish_ip].e);
+        }
         for (int jp = 0; jp < npj; jp++){
-            const DataType ai = reg_cei[ip].e;
-            const DataType aj = reg_cej[jp].e;
-            const DataType aij = ai + aj;
-            const DataType inv_aij = one / aij;
-            const DataType aj_aij = aj * inv_aij;
-            const DataType theta_ij = ai * aj_aij;
-            const DataType Kab = exp(-theta_ij * rr_ij);
-            const DataType ci = reg_cei[ip].c;
-            const DataType cj = reg_cej[jp].c;
-            const DataType cicj = fac_sym * ci * cj * Kab;
-            const int idx = ip + jp*npi;
-            reg_cicj[idx] = cicj;
-            reg_inv_aij[idx] = inv_aij;
+            const int jsh_jp = jp + jsh*prim_stride;
+            reg_cej[jp].c = __ldg(&coeff_exp[jsh_jp].c);
+            reg_cej[jp].e = __ldg(&coeff_exp[jsh_jp].e);
+        }
+    }
+    
+    // Cache per-(ip,jp) terms to avoid repeated expensive exp/div computations if register usage is reasonable
+    DataType reg_cicj[use_cache ? npi*npj : 1];
+    DataType reg_inv_aij[use_cache ? npi*npj : 1];
+    
+    if constexpr (use_cache) {
+#pragma unroll
+        for (int ip = 0; ip < npi; ip++){
+            for (int jp = 0; jp < npj; jp++){
+                DataType ai, aj, ci, cj;
+                if constexpr (use_ceij_cache) {
+                    ai = reg_cei[ip].e;
+                    aj = reg_cej[jp].e;
+                    ci = reg_cei[ip].c;
+                    cj = reg_cej[jp].c;
+                } else {
+                    const int ish_ip = ip + ish*prim_stride;
+                    const int jsh_jp = jp + jsh*prim_stride;
+                    const DataType2 cei = coeff_exp[ish_ip];
+                    const DataType2 cej = coeff_exp[jsh_jp];
+                    ai = cei.e;
+                    aj = cej.e;
+                    ci = cei.c;
+                    cj = cej.c;
+                }
+                const DataType aij = ai + aj;
+                const DataType inv_aij = one / aij;
+                const DataType aj_aij = aj * inv_aij;
+                const DataType theta_ij = ai * aj_aij;
+                const DataType Kab = exp(-theta_ij * rr_ij);
+                const DataType cicj = fac_sym * ci * cj * Kab;
+                const int idx = ip + jp*npi;
+                reg_cicj[idx] = cicj;
+                reg_inv_aij[idx] = inv_aij;
+            }
         }
     }
 
     DataType integral_frag[frag_size] = {zero};
     for (int kp = 0; kp < npk; kp++)
     for (int lp = 0; lp < npl; lp++){
-        const int ksh_kp = kp + ksh*nprim_max;
-        const int lsh_lp = lp + lsh*nprim_max;
-        const DataType2 cek = coeff_exp[ksh_kp];
-        const DataType2 cel = coeff_exp[lsh_lp];
+        const int ksh_kp = kp + ksh*prim_stride;
+        const int lsh_lp = lp + lsh*prim_stride;
+        DataType2 cek, cel;
+        cek.c = __ldg(&coeff_exp[ksh_kp].c);
+        cek.e = __ldg(&coeff_exp[ksh_kp].e);
+        cel.c = __ldg(&coeff_exp[lsh_lp].c);
+        cel.e = __ldg(&coeff_exp[lsh_lp].e);
         const DataType ak = cek.e;
         const DataType al = cel.e;
         const DataType akl = ak + al;
@@ -192,13 +250,40 @@ void rys_jk(const int nbas,
 
         for (int ip = 0; ip < npi; ip++)
         for (int jp = 0; jp < npj; jp++){
-            const DataType ai = reg_cei[ip].e;
-            const DataType aj = reg_cej[jp].e;
+            DataType ai, aj, ci, cj;
+            if constexpr (use_ceij_cache) {
+                ai = reg_cei[ip].e;
+                aj = reg_cej[jp].e;
+                ci = reg_cei[ip].c;
+                cj = reg_cej[jp].c;
+            } else {
+                const int ish_ip = ip + ish*prim_stride;
+                const int jsh_jp = jp + jsh*prim_stride;
+                    DataType2 cei, cej;
+                    cei.c = __ldg(&coeff_exp[ish_ip].c);
+                    cei.e = __ldg(&coeff_exp[ish_ip].e);
+                    cej.c = __ldg(&coeff_exp[jsh_jp].c);
+                    cej.e = __ldg(&coeff_exp[jsh_jp].e);
+                ai = cei.e;
+                aj = cej.e;
+                ci = cei.c;
+                cj = cej.c;
+            }
             const DataType aij = ai + aj;
-            const int idx = ip + jp*npi;
-            const DataType inv_aij = reg_inv_aij[idx];
+
+            DataType inv_aij, cicj;
+            if constexpr (use_cache) {
+                const int idx = ip + jp*npi;
+                inv_aij = reg_inv_aij[idx];
+                cicj = reg_cicj[idx];
+            } else {
+                inv_aij = one / aij;
+                const DataType aj_aij = aj * inv_aij;
+                const DataType theta_ij = ai * aj_aij;
+                const DataType Kab = exp(-theta_ij * rr_ij);
+                cicj = fac_sym * ci * cj * Kab;
+            }
             const DataType aj_aij = aj * inv_aij;
-            const DataType cicj = reg_cicj[idx];
             
             const DataType xij = rjri0 * aj_aij + ri.x;
             const DataType yij = rjri1 * aj_aij + ri.y;
@@ -345,7 +430,7 @@ void rys_jk(const int nbas,
                                 s1x = gx[ijkl];
                                 for (ijkl-=stride_i; ijkl >= jkl_off; ijkl-=stride_i) {
                                     s0x = gx[ijkl];
-                                    gx[ijkl + stride_j] = s1x - rjri_x * s0x;  // Reordered for consistency
+                    gx[ijkl + stride_j] = s1x - rjri_x * s0x;  // leave form; compiler fuses to FMA
                                     s1x = s0x;
                                 }
                             }
@@ -368,7 +453,7 @@ void rys_jk(const int nbas,
                                 s1x = gx[ijkl];
                                 for (ijkl-=stride_k; ijkl >= lstride_l; ijkl-=stride_k) {
                                     s0x = gx[ijkl];
-                                    gx[ijkl + stride_l] = s1x - rlrk_x * s0x;
+                    gx[ijkl + stride_l] = s1x - rlrk_x * s0x;
                                     s1x = s0x;
                                 }
                             }
@@ -378,24 +463,32 @@ void rys_jk(const int nbas,
                 __syncthreads();
                 
                 if (ty < nt_active) {
-                const int idx_off = t_k * fragk * nfl + t_l * fragl;
+                // Pre-compute base indices to reduce repeated calculations
+                const int base_i = t_i * fragi;
+                const int base_j = t_j * fragj;
+
 #pragma unroll
                 for (int reg_i = 0; reg_i < fragi; reg_i++){
-                    const int i = t_i * fragi + reg_i;
+                    const int i = base_i + reg_i;
+                    const int base_integral_i = reg_i * tstride_i;
                     for (int reg_j = 0; reg_j < fragj; reg_j++){
-                        const int j = t_j * fragj + reg_j;  
+                        const int j = base_j + reg_j;
                         const uint32_t addr_ij = j_idx[j] + i_idx[i];
                         const uint32_t ij_x    =  addr_ij        & 0x3FF;      // 10 low-order bits
                         const uint32_t ij_y    = (addr_ij >> 10) & 0x3FF;      // next 10 bits
                         const uint32_t ij_z    = (addr_ij >> 20) & 0x3FF;      // next 10 bits
+                        const uint32_t ij_x_stride = ij_x * g_stride;
+                        const uint32_t ij_y_stride = ij_y * g_stride;
+                        const uint32_t ij_z_stride = ij_z * g_stride;
 
-                        int integral_off = reg_i * tstride_i + reg_j * tstride_j;
+                        int integral_off = base_integral_i + reg_j * tstride_j;
                         for (int reg_k = 0; reg_k < fragk; reg_k++){
                             for (int reg_l = 0; reg_l < fragl; reg_l++){
+                                // Use pre-computed cached kl indices
                                 const int kl = reg_l + reg_k * fragl;
-                                const int addrx = ij_x * g_stride + kl_idx[kl];
-                                const int addry = ij_y * g_stride + kl_idy[kl];
-                                const int addrz = ij_z * g_stride + kl_idz[kl];
+                                const int addrx = ij_x_stride + kl_idx[kl];
+                                const int addry = ij_y_stride + kl_idy[kl];
+                                const int addrz = ij_z_stride + kl_idz[kl];
                                 integral_frag[integral_off + reg_l*tstride_l] += g[addrx] * g[addry] * g[addrz];
                             }
                             integral_off += tstride_k;
@@ -406,9 +499,7 @@ void rys_jk(const int nbas,
             }
         }
     }
-    
-    const int nao = ao_loc[nbas];
-    
+
     const int i0 = ao_loc[ish];
     const int j0 = ao_loc[jsh];
     const int k0 = ao_loc[ksh];
@@ -421,14 +512,17 @@ void rys_jk(const int nbas,
         constexpr int ntij = nti*ntj;
         DataType vj_lk[fragk*fragl] = {zero};
         if (do_j && ty_active){
-            const int dm_offset = (i0+t_i*fragi) + (j0+t_j*fragj)*nao;
+            const int base_dm_i = i0 + t_i*fragi;
+            const int base_dm_j = j0 + t_j*fragj;
+            const int dm_offset = base_dm_i + base_dm_j*nao;
             DataType *dm_ptr = dm + dm_offset;
 #pragma unroll
             for (int i = 0; i < fragi; i++){
+                const int base_off_i = i * tstride_i;
                 for (int j = 0; j < fragj; j++){
                     const int offset = i + j*nao;
                     DataType dm_ij = __ldg(dm_ptr + offset);
-                    int off = i * tstride_i + j * tstride_j;
+                    int off = base_off_i + j * tstride_j;
                     for (int k = 0; k < fragk; k++){
                         for (int l = 0; l < fragl; l++){
                             vj_lk[l + k*fragl] += integral_frag[off + l*tstride_l] * dm_ij;
@@ -461,18 +555,20 @@ void rys_jk(const int nbas,
         }
         
         if constexpr(do_j && ntij > 1){
-            __syncthreads();
             const int vj_offset = l0*nao + k0;
             double *vj_ptr = vj + vj_offset;
             constexpr int stride = nfkl * smem_stride;
+            __syncthreads();
             for (int kl = ty; kl < nfkl; kl += nthreads_per_sq){
                 DataType vj_tmp = zero;
                 const int off = kl * smem_stride;
                 for (int m = 0; m < ntij; m++){
                     vj_tmp += smem[off + m*stride];
                 }
+                // Replace division/modulo with bit operations when nfk is power of 2
+                // Otherwise keep original for correctness
                 const int l = kl / nfk;
-                const int k = kl % nfk;
+                const int k = kl - l * nfk;  // Replace modulo with subtraction
                 const int offset = l*nao + k;
                 atomicAdd(vj_ptr + offset, (double)vj_tmp);
             }
@@ -521,10 +617,10 @@ void rys_jk(const int nbas,
         }
         
         if constexpr(do_j && ntkl > 1){
-            __syncthreads();
             const int vj_offset = j0*nao + i0;
             double *vj_ptr = vj + vj_offset;
             constexpr int stride = nfij * smem_stride;
+            __syncthreads();
             for (int ij = ty; ij < nfij; ij += nthreads_per_sq){
                 DataType vj_tmp = zero;
                 const int off = ij * smem_stride;
@@ -532,7 +628,7 @@ void rys_jk(const int nbas,
                     vj_tmp += smem[off + m*stride];
                 }
                 const int j = ij / nfi;
-                const int i = ij % nfi;
+                const int i = ij - j * nfi;  // Replace modulo with subtraction
                 const int offset = j*nao + i;
                 atomicAdd(vj_ptr + offset, (double)vj_tmp);
             }
@@ -592,8 +688,8 @@ void rys_jk(const int nbas,
                 for (int m = 0; m < ntjl; m++){
                     vk_tmp += smem[off + m*stride];
                 }
-                const int k = ik % nfk;
                 const int i = ik / nfk;
+                const int k = ik - i * nfk;  // Replace modulo with subtraction
                 const int offset = i*nao + k;
                 atomicAdd(vk_ptr + offset, (double)vk_tmp);
             }
@@ -626,8 +722,11 @@ void rys_jk(const int nbas,
                     DataType vk_il = zero;
                     int integral_off = i * tstride_i + l * tstride_l;
                     for (int j = 0; j < fragj; j++){
+                        int idx_k = integral_off;
+                        const int cache_j = j * fragk;
                         for (int k = 0; k < fragk; k++){
-                            vk_il += integral_frag[integral_off + k*tstride_k] * dm_jk_cache[k + j*fragk];
+                            vk_il += integral_frag[idx_k] * dm_jk_cache[cache_j + k];
+                            idx_k += tstride_k;
                         }
                         integral_off += tstride_j;
                     }
@@ -643,9 +742,9 @@ void rys_jk(const int nbas,
         }
 
         if constexpr(do_k && ntjk > 1){
-            __syncthreads();
             const int vk_offset = i0*nao + l0;
             double *vk_ptr = vk + vk_offset;
+            __syncthreads();
             for (int il = ty; il < nfil; il += nthreads_per_sq){
                 DataType vk_tmp = zero;
                 constexpr int stride = nfil * smem_stride;
@@ -653,8 +752,8 @@ void rys_jk(const int nbas,
                 for (int m = 0; m < ntjk; m++){
                     vk_tmp += smem[off + m*stride];
                 }
-                const int l = il % nfl;
                 const int i = il / nfl;
+                const int l = il - i * nfl;  // Replace modulo with subtraction
                 const int offset = i*nao + l;
                 atomicAdd(vk_ptr + offset, (double)vk_tmp);
             }
@@ -687,8 +786,11 @@ void rys_jk(const int nbas,
                     DataType vk_jk = zero;
                     int integral_off = j * tstride_j + k * tstride_k;
                     for (int i = 0; i < fragi; i++){
+                        int idx_l = integral_off;
+                        const int cache_i = i * fragl;
                         for (int l = 0; l < fragl; l++){
-                            vk_jk += integral_frag[integral_off + l*tstride_l] * dm_il_cache[l + i*fragl];
+                            vk_jk += integral_frag[idx_l] * dm_il_cache[cache_i + l];
+                            idx_l += tstride_l;
                         }
                         integral_off += tstride_i;
                     }
@@ -703,18 +805,18 @@ void rys_jk(const int nbas,
             }
         }
         if constexpr(do_k && ntil > 1){
-            __syncthreads();
             const int vk_offset = j0*nao + k0;
             double *vk_ptr = vk + vk_offset;
             constexpr int stride = nfjk * smem_stride;
+            __syncthreads();
             for (int jk = ty; jk < nfjk; jk += nthreads_per_sq){
                 DataType vk_tmp = zero;
                 const int off = jk * smem_stride;
                 for (int m = 0; m < ntil; m++){
                     vk_tmp += smem[off + m*stride];
                 }
-                const int k = jk % nfk;
                 const int j = jk / nfk;
+                const int k = jk - j * nfk;  // Replace modulo with subtraction
                 const int offset = j*nao + k;
                 atomicAdd(vk_ptr + offset, (double)vk_tmp);
             }
@@ -733,8 +835,11 @@ void rys_jk(const int nbas,
                     DataType dm_ik = __ldg(dm_ptr + offset);
                     int integral_off = i * tstride_i + k * tstride_k;
                     for (int j = 0; j < fragj; j++){
+                        int idx_l = integral_off;
+                        const int cache_j = j * fragl;
                         for (int l = 0; l < fragl; l++){
-                            vk_jl[l + j*fragl] += integral_frag[integral_off + l*tstride_l] * dm_ik;
+                            vk_jl[cache_j + l] += integral_frag[idx_l] * dm_ik;
+                            idx_l += tstride_l;
                         }
                         integral_off += tstride_j;
                     }
@@ -763,18 +868,18 @@ void rys_jk(const int nbas,
         }
 
         if constexpr(do_k && ntik > 1){
-            __syncthreads();
             const int vk_offset = j0*nao + l0;
             double *vk_ptr = vk + vk_offset;
             constexpr int stride = nfjl * smem_stride;
+            __syncthreads();
             for (int jl = ty; jl < nfjl; jl+=nthreads_per_sq){
                 DataType vk_tmp = zero;
                 const int off = jl * smem_stride;
                 for (int m = 0; m < ntik; m++){
                     vk_tmp += smem[off + m*stride];
                 }
-                const int l = jl % nfl;
                 const int j = jl / nfl;
+                const int l = jl - j * nfl;  // Replace modulo with subtraction
                 const int offset = j*nao + l;
                 atomicAdd(vk_ptr + offset, (double)vk_tmp);
             }

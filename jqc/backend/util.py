@@ -14,8 +14,9 @@
 #
 
 import numpy as np
-import cupy as cp
+
 from jqc.constants import LMAX
+
 
 def iter_cart_xyz(n):
     """Generates Cartesian exponents (lx, ly, lz) for a given angular momentum.
@@ -27,10 +28,13 @@ def iter_cart_xyz(n):
         np.ndarray: An array of shape ((n+1)*(n+2)//2, 3) with all
                     (lx, ly, lz) combinations such that lx + ly + lz = n.
     """
-    xyz = [(x, y, n-x-y)
-            for x in reversed(range(n+1))
-            for y in reversed(range(n+1-x))]
+    xyz = [
+        (x, y, n - x - y)
+        for x in reversed(range(n + 1))
+        for y in reversed(range(n + 1 - x))
+    ]
     return np.array(xyz)
+
 
 def pack3int(idx):
     """Packs three 10-bit integers into a single 32-bit integer.
@@ -47,6 +51,7 @@ def pack3int(idx):
     """
     return (idx[0] & 0x3FF) | ((idx[1] & 0x3FF) << 10) | ((idx[2] & 0x3FF) << 20)
 
+
 def unpack3int(idx):
     """Unpacks a 32-bit integer into three 10-bit integers.
 
@@ -60,12 +65,14 @@ def unpack3int(idx):
     """
     return idx & 0x3FF, (idx >> 10) & 0x3FF, (idx >> 20) & 0x3FF
 
+
 shell_idx = {}
-for li in range(LMAX+1):
+for li in range(LMAX + 1):
     ixyz = iter_cart_xyz(li)
     ixyz = pack3int(ixyz.T)
     shell_idx[li] = ixyz
-    
+
+
 def generate_lookup_table(li, lj, lk, ll):
     """Generates C++ code for basis function index lookup tables.
 
@@ -79,26 +86,26 @@ def generate_lookup_table(li, lj, lk, ll):
     Returns:
         str: A string containing the C++ code for the lookup tables.
     """
-        
-    nfi = (li+1)*(li+2)//2
-    nfj = (lj+1)*(lj+2)//2
-    nfk = (lk+1)*(lk+2)//2
-    nfl = (ll+1)*(ll+2)//2
+
+    nfi = (li + 1) * (li + 2) // 2
+    nfj = (lj + 1) * (lj + 2) // 2
+    nfk = (lk + 1) * (lk + 2) // 2
+    nfl = (ll + 1) * (ll + 2) // 2
 
     i_idx = shell_idx[li]
-    j_idx = shell_idx[lj] * (li+1)
-    k_idx = shell_idx[lk] * (li+1) * (lj+1)
-    l_idx = shell_idx[ll] * (li+1) * (lj+1) * (lk+1)
+    j_idx = shell_idx[lj] * (li + 1)
+    k_idx = shell_idx[lk] * (li + 1) * (lj + 1)
+    l_idx = shell_idx[ll] * (li + 1) * (lj + 1) * (lk + 1)
 
-    i_idx_str = ', '.join(f'{x}' for x in i_idx)
-    j_idx_str = ', '.join(f'{x}' for x in j_idx)
-    k_idx_str = ', '.join(f'{x}' for x in k_idx)
-    l_idx_str = ', '.join(f'{x}' for x in l_idx)
+    i_idx_str = ", ".join(f"{x}" for x in i_idx)
+    j_idx_str = ", ".join(f"{x}" for x in j_idx)
+    k_idx_str = ", ".join(f"{x}" for x in k_idx)
+    l_idx_str = ", ".join(f"{x}" for x in l_idx)
 
-    idx_code = f'''
+    idx_code = f"""
 constexpr __device__ uint32_t i_idx[{nfi}] = {{ {i_idx_str} }};
 constexpr __device__ uint32_t j_idx[{nfj}] = {{ {j_idx_str} }};
 constexpr __device__ uint32_t k_idx[{nfk}] = {{ {k_idx_str} }};
 constexpr __device__ uint32_t l_idx[{nfl}] = {{ {l_idx_str} }};
-    '''
+    """
     return idx_code

@@ -21,11 +21,21 @@ Global constants used throughout the jqc package.
 LMAX = 4
 
 # Maximum number of primitive Gaussians per contracted Gaussian
-NPRIM_MAX = 16
+NPRIM_MAX = 3
+
+# Memory stride constants for optimal memory layout
+# Choose strides so each shell record is at least 64B aligned for both fp32/fp64
+# - COORD_STRIDE scalars per shell (x,y,z plus padding)
+#   16 floats  -> 64B, 16 doubles -> 128B (>=64B)
+COORD_STRIDE = 16
+# - PRIM_STRIDE counts scalars for (c,e) interleaved storage; device uses pairs
+#   Make scalars a multiple of 16 => pairs multiple of 8
+#   8 pairs: 8*8B=64B (fp32), 8*16B=128B (fp64)
+PRIM_STRIDE = ((2 * NPRIM_MAX + 15) // 16) * 16
 
 # Tile size for block-based algorithms
 TILE = 4
 
 MAX_SMEM = 48 * 1024  # Maximum shared memory per block in bytes
 
-__all__ = ["LMAX", "NPRIM_MAX", "TILE"]
+__all__ = ["COORD_STRIDE", "LMAX", "NPRIM_MAX", "PRIM_STRIDE", "TILE"]

@@ -15,5 +15,16 @@
 # limitations under the License.
 #
 
-# Add the current directory (or a specific path) to PYTHONPATH
+# Optionally activate user virtualenv at ~/Documents/venv
+if [ -f "$HOME/Documents/venv/bin/activate" ]; then
+  # shellcheck disable=SC1091
+  . "$HOME/Documents/venv/bin/activate"
+fi
+
+# Add the current repository to PYTHONPATH
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"
+
+# Also add a local gpu4pyscf checkout if present
+if [ -d "$HOME/Documents/gpu4pyscf" ]; then
+  export PYTHONPATH="${PYTHONPATH}:$HOME/Documents/gpu4pyscf"
+fi

@@ -18,9 +18,9 @@
 #######################################################################
 
 import os
+import queue
 import subprocess
 import threading
-import queue
 
 script_dir = os.path.dirname(__file__)
 env_cmd = f'export PYTHONPATH="${{PYTHONPATH}}:{script_dir}/../../../"'
@@ -31,15 +31,16 @@ n_groups = 5
 commands = []
 # 8-fold symmetry is applied to the fragment strategy
 for i in range(n_groups):
-    for j in range(i+1):
-        for k in range(i+1):
-            for l in range(k+1):
+    for j in range(i + 1):
+        for k in range(i + 1):
+            for l in range(k + 1):
                 cmd = f" python3 generate_fragment.py {i} {j} {k} {l} fp64 > logs/{i}{j}{k}{l}_fp64.log"
                 commands.append(env_cmd + " && " + cmd)
 
 max_concurrent_jobs = 1
 q = queue.Queue()
 lock = threading.Lock()
+
 
 # Worker function
 def worker():
@@ -55,6 +56,7 @@ def worker():
         with lock:
             print(f"Finished: {cmd}")
         q.task_done()
+
 
 # Fill the queue
 for cmd in commands:

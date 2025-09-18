@@ -16,8 +16,8 @@
 ####################################################################
 # This example shows how to generate .cubin files for a given molecule
 # The .cubin files are associated with atom type, basis type, and device type
-# Users can design their plans for AOT deployment 
-# For example, they can generate .cubin files for a diverse dataset, 
+# Users can design their plans for AOT deployment
+# For example, they can generate .cubin files for a diverse dataset,
 # common basis sets, and device types
 ####################################################################
 
@@ -27,13 +27,13 @@ import pyscf
 from gpu4pyscf import scf
 import jqc.pyscf
 
-atom = '''
+atom = """
 O       0.0000000000    -0.0000000000     0.1174000000
 H      -0.7570000000    -0.0000000000    -0.4696000000
 H       0.7570000000     0.0000000000    -0.4696000000
-'''
+"""
 
-mol = pyscf.M(atom=atom, basis='def2-tzvpp')
+mol = pyscf.M(atom=atom, basis="def2-tzvpp")
 mf = scf.RHF(mol)
 
 # .cubin files will be stored in ./tmp/
@@ -45,12 +45,13 @@ start = time.process_time()
 # Apply JIT to GPU4PySCF object
 mf = jqc.pyscf.apply(mf)
 e_tot = mf.kernel()
-print('total energy with double precision:', e_tot)
+print("total energy with double precision:", e_tot)
 
 end = time.process_time()
 print("CPU time:", end - start, "seconds")
 
 from pathlib import Path
+
 count = sum(1 for f in Path("./tmp").rglob("*") if f.is_file())
 size = sum(f.stat().st_size for f in Path("./tmp").rglob("*") if f.is_file())
-print(f'{count} binaries, total size: {size/1024/1024} MB')
+print(f"{count} binaries, total size: {size/1024/1024} MB")

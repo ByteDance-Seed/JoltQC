@@ -22,13 +22,13 @@ from gpu4pyscf import scf
 import jqc
 import jqc.pyscf
 
-atom = '''
+atom = """
 O       0.0000000000    -0.0000000000     0.1174000000
 H      -0.7570000000    -0.0000000000    -0.4696000000
 H       0.7570000000     0.0000000000    -0.4696000000
-'''
+"""
 
-mol = pyscf.M(atom=atom, basis='def2-tzvpp')
+mol = pyscf.M(atom=atom, basis="def2-tzvpp")
 mf = scf.RHF(mol)
 
 # Method 1:

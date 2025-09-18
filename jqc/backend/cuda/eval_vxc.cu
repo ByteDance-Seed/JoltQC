@@ -16,7 +16,7 @@
 */
 
 constexpr DataType max_val = 1e16;
-constexpr int nprim_max = 16;
+constexpr int prim_stride = PRIM_STRIDE / 2;
 constexpr int warpsize = 32;
 constexpr DataType exp_cutoff = 36.8; // exp(-36.8) ~ 1e-16
 constexpr DataType vxc_cutoff = 1e-16;
@@ -26,12 +26,28 @@ constexpr DataType one = 1.0;
 constexpr DataType two = 2.0;
 constexpr DataType half = 0.5;
 
-struct __align__(4*sizeof(DataType)) DataType4 {
-    DataType x, y, z, w;
+// Make coordinate stride configurable via COORD_STRIDE
+static_assert(COORD_STRIDE >= 3, "COORD_STRIDE must be >= 3");
+struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {
+    DataType x, y, z;
+#if COORD_STRIDE >= 4
+    DataType w;
+#endif
+#if COORD_STRIDE > 4
+    DataType pad[COORD_STRIDE - 4];
+#endif
 };
+static_assert(sizeof(DataType4) == COORD_STRIDE*sizeof(DataType),
+              "DataType4 size must equal COORD_STRIDE*sizeof(DataType)");
 
 struct __align__(2*sizeof(DataType)) DataType2 {
     DataType c, e;
+};
+
+// Compact pair storing (log_maxval, shell_index)
+struct __align__(8) LogIdx {
+    float log;
+    int   idx;
 };
  
 __forceinline__ __device__
@@ -72,12 +88,10 @@ void eval_vxc(
     const int* __restrict__ ao_loc,
     const int nao,
     double* __restrict__ wv_grid,
-    const float* log_maxval_i,
-    const int* __restrict__ nnz_indices_i,
+    const LogIdx* __restrict__ nz_i,
     const int* __restrict__ nnz_i,
     const int nbas_i,
-    const float* log_maxval_j,
-    const int* __restrict__ nnz_indices_j,
+    const LogIdx* __restrict__ nz_j,
     const int* __restrict__ nnz_j,
     const int nbas_j,
     float log_cutoff_a, float log_cutoff_b,
@@ -122,18 +136,19 @@ void eval_vxc(
     log_cutoff_a -= log_max_wv0;
     log_cutoff_b -= log_max_wv0;
     
-    __shared__ DataType vxc_smem[num_warps * nfij];
+    constexpr int smem_size = num_warps * nfij;
+    __shared__ DataType vxc_smem[smem_size];
 
     for (int jsh_nz = 0; jsh_nz < nnzj; jsh_nz++){
         const int offset = jsh_nz + block_id * nbas_j;
-        const float log_aoj = log_maxval_j[offset];
-        const int jsh = nnz_indices_j[offset];
+        const float log_aoj = nz_j[offset].log;
+        const int jsh = nz_j[offset].idx;
         const int j0 = ao_loc[jsh];
         
         for (int ish_nz = 0; ish_nz < nnzi; ish_nz++){
             const int offset = ish_nz + block_id * nbas_i;
-            const float log_aoi = log_maxval_i[offset];
-            const int ish = nnz_indices_i[offset];
+            const float log_aoi = nz_i[offset].log;
+            const int ish = nz_i[offset].idx;
             if (ish > jsh) continue;
             if (log_aoi + log_aoj < log_cutoff_a || log_aoi + log_aoj >= log_cutoff_b) continue;
 
@@ -147,7 +162,7 @@ void eval_vxc(
         DataType cej_2e = zero;
         // Original code:
         // for (int jp = 0; jp < npj; jp++){
-        //     const int offset = nprim_max * jsh + jp;
+        //     const int offset = prim_stride * jsh + jp;
         //     const DataType2 coeff_expj = coeff_exp[offset];
         //     const DataType e = coeff_expj.e;
         //     const DataType e_rr = e * rr_gj;
@@ -157,14 +172,14 @@ void eval_vxc(
         //     cej_2e += ce * e;
         // }
         // Optimized version - early continue to avoid exp() calls:
-        const int jprim_base = nprim_max * jsh;
+        const int jprim_base = prim_stride * jsh;
         #pragma unroll
         for (int jp = 0; jp < npj; jp++){
             const int jp_off = jprim_base + jp;
             const DataType2 coeff_expj = coeff_exp[jp_off];
             const DataType e = coeff_expj.e;
             const DataType e_rr = e * rr_gj;
-            if (e_rr >= exp_cutoff) continue;
+            //if (e_rr >= exp_cutoff) continue;
             const DataType c = coeff_expj.c;
             const DataType ce = c * exp(-e_rr);
             cej += ce;
@@ -270,7 +285,7 @@ void eval_vxc(
             DataType cei_2e = zero;
             // Original code:
             // for (int ip = 0; ip < npi; ip++){
-            //     const int ip_offset = ip + ish*nprim_max;
+            //     const int ip_offset = ip + ish*prim_stride;
             //     const DataType2 coeff_expi = coeff_exp[ip_offset];
             //     const DataType e = coeff_expi.e;
             //     const DataType e_rr = e * rr_gi;
@@ -280,14 +295,14 @@ void eval_vxc(
             //     cei_2e += ce * e;
             // }
             // Optimized version - early continue to avoid exp() calls:
-            const int iprim_base = ish * nprim_max;
+            const int iprim_base = ish * prim_stride;
             #pragma unroll
             for (int ip = 0; ip < npi; ip++){
                 const int ip_off = iprim_base + ip;
                 const DataType2 coeff_expi = coeff_exp[ip_off];
                 const DataType e = coeff_expi.e;
                 const DataType e_rr = e * rr_gi;
-                if (e_rr >= exp_cutoff) continue;
+                //if (e_rr >= exp_cutoff) continue;
                 const DataType c = coeff_expi.c;
                 const DataType ce = c * exp(-e_rr);
                 cei += ce;
@@ -389,7 +404,7 @@ void eval_vxc(
                         }
                         vxc_ij = warp_reduce(vxc_ij);
                         if (lane == 0){
-                            vxc_smem[(i + j * nfi) + warp_id * nfij] = vxc_ij;
+                            vxc_smem[(i + j * nfi) * num_warps + warp_id] = vxc_ij;
                         }
                     }
                 }
@@ -398,16 +413,24 @@ void eval_vxc(
 
             const DataType fac = (ish == jsh) ? half : one;
             // Block reduction
-            for (int ij = threadIdx.x; ij < nfij; ij+=nthreads){
-                DataType vxc_ij = zero;
-                for (int k = 0; k < num_warps; k++){
-                    vxc_ij += vxc_smem[ij + k * nfij];
+            const int rank = threadIdx.x % num_warps;
+            constexpr int ntasks = (smem_size + 31) / 32 * 32;
+            for (int idx = threadIdx.x; idx < ntasks; idx += nthreads){
+                DataType vxc_ij = idx < smem_size ? vxc_smem[idx] : zero;
+                // Warp reduction
+                // Assume nthreads = 256
+                vxc_ij += __shfl_down_sync(0xffffffff, vxc_ij, 4);
+                vxc_ij += __shfl_down_sync(0xffffffff, vxc_ij, 2);
+                vxc_ij += __shfl_down_sync(0xffffffff, vxc_ij, 1);
+
+                if (rank == 0){
+                    vxc_ij = fac * vxc_ij;
+                    const int ij = idx / num_warps;
+                    const int i = ij % nfi;
+                    const int j = ij / nfi;
+                    const int offset = (i0+i)*nao + j0 + j;
+                    atomicAdd(vxc_mat + offset, (double)vxc_ij);
                 }
-                vxc_ij = fac * vxc_ij;
-                const int i = ij % nfi;
-                const int j = ij / nfi;
-                const int offset = (i0+i)*nao + j0 + j;
-                atomicAdd(vxc_mat + offset, (double)vxc_ij);
             }
         }
     }

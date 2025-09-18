@@ -13,6 +13,4 @@
 # limitations under the License.
 #
 
-from . import backend, pyscf
-
 __all__ = ["backend", "pyscf"]

@@ -271,14 +271,15 @@ __forceinline__ void _cart2sph_kernel(double *gsph, double *gcart){
 }
 
 extern "C" __global__
-void cart2sph(double *gcart, double *gsph, int nao, int nbas, 
-            int cart_ao_stride, int sph_ao_stride, int shell_stride,
-            int* cart_offset, int* sph_offset){
+void cart2sph(const double *gcart, double *gsph, 
+            const int nao, const int nbas, 
+            const int cart_ao_stride, const int sph_ao_stride, const int shell_stride,
+            const int* __restrict__ cart_offset, const int* __restrict__ sph_offset){
     constexpr int nf_cart = (ang+1)*(ang+2)/2;
     constexpr int nf_sph = 2*ang+1;
     
-    int iao = blockIdx.x * blockDim.x + threadIdx.x;
-    int jsh = blockIdx.y * blockDim.y + threadIdx.y;
+    const int iao = blockIdx.x * blockDim.x + threadIdx.x;
+    const int jsh = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (iao >= nao || jsh >= nbas) return;
 
@@ -293,7 +294,7 @@ void cart2sph(double *gcart, double *gsph, int nao, int nbas,
     _cart2sph_kernel<ang>(gsph_reg, gcart_reg);
 
     for (int i = 0; i < nf_sph; i++){
-        gsph[i*shell_stride] = gsph_reg[i];
+        atomicAdd(&gsph[i*shell_stride], gsph_reg[i]);
     }
 }
 
