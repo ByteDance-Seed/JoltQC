@@ -41,6 +41,8 @@ JoltQC is not intended to be a complete quantum chemistry package, but rather a 
 - Support FP64, FP32, and mixed-precision schemes
 - Python interface to [GPU4PySCF](https://github.com/pyscf/gpu4pyscf)
 
+![JoltQC vs GPU4PySCF Speedup](benchmarks/media/jqc_vs_gpu4pyscf_speedup.png)
+
 ## Recommendations
 
 - Use **PySCF/GPU4PySCF** for general-purpose workflows; JoltQC is a JIT backend
