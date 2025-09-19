@@ -111,7 +111,8 @@ print(f"Total energy by JQC, {e_tot}")
 print("------- Benchmark FP32 -----------")
 mol = pyscf.M(atom=atom, basis=basis, output=f"jqc-{basis}-fp32.log", verbose=verbose)
 mf = dft.RKS(mol, xc=xc)
-mf_jit = jqc.pyscf.apply(mf, cutoff_fp32=1e-13, cutoff_fp64=1e100)
+config_fp32 = {"jk": {"cutoff_fp32": 1e-13, "cutoff_fp64": 1e100}, "dft": {"cutoff_fp32": 1e-13, "cutoff_fp64": 1e100}}
+mf_jit = jqc.pyscf.apply(mf, config_fp32)
 mf_jit.verbose = verbose
 mf_jit.grids.atom_grid = grids
 mf_jit.nlcgrids.atom_grid = (50, 194)
@@ -124,7 +125,8 @@ end = cp.cuda.Event()
 start.record()
 for i in range(count):
     mf = dft.RKS(mol, xc=xc)
-    mf_jit = jqc.pyscf.apply(mf, cutoff_fp32=1e-13, cutoff_fp64=1e100)
+    config_fp32 = {"jk": {"cutoff_fp32": 1e-13, "cutoff_fp64": 1e100}, "dft": {"cutoff_fp32": 1e-13, "cutoff_fp64": 1e100}}
+mf_jit = jqc.pyscf.apply(mf, config_fp32)
     mf_jit.verbose = verbose
     mf_jit.grids.atom_grid = grids
     mf_jit.nlcgrids.atom_grid = (50, 194)
@@ -147,7 +149,8 @@ mf = dft.RKS(mol, xc=xc)
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
-mf_jit = jqc.pyscf.apply(mf, cutoff_fp32=1e-13, cutoff_fp64=1e-6)
+config_mixed = {"jk": {"cutoff_fp32": 1e-13, "cutoff_fp64": 1e-6}, "dft": {"cutoff_fp32": 1e-13, "cutoff_fp64": 1e-6}}
+mf_jit = jqc.pyscf.apply(mf, config_mixed)
 end.record()
 end.synchronize()
 elapsed_time_ms = cp.cuda.get_elapsed_time(start, end)
@@ -165,7 +168,8 @@ end = cp.cuda.Event()
 start.record()
 for i in range(count):
     mf = dft.RKS(mol, xc=xc)
-    mf_jit = jqc.pyscf.apply(mf, cutoff_fp32=1e-13, cutoff_fp64=1e-6)
+    config_mixed = {"jk": {"cutoff_fp32": 1e-13, "cutoff_fp64": 1e-6}, "dft": {"cutoff_fp32": 1e-13, "cutoff_fp64": 1e-6}}
+mf_jit = jqc.pyscf.apply(mf, config_mixed)
     mf_jit.verbose = verbose
     mf_jit.grids.atom_grid = grids
     mf_jit.nlcgrids.atom_grid = (50, 194)

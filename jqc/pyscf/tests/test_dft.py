@@ -54,8 +54,17 @@ def run_dft(xc, mol, disp=None, cutoff_fp32=None, cutoff_fp64=None):
     mf.disp = disp
     mf.grids.level = grids_level
     mf.nlcgrids.level = nlcgrids_level
+
     # Use JoltQC apply to wire in JK and RKS paths consistently
-    mf = jqc.pyscf.apply(mf, cutoff_fp32=cutoff_fp32, cutoff_fp64=cutoff_fp64)
+    if cutoff_fp32 is not None or cutoff_fp64 is not None:
+        config = {
+            "jk": {"cutoff_fp32": cutoff_fp32, "cutoff_fp64": cutoff_fp64},
+            "dft": {"cutoff_fp32": cutoff_fp32, "cutoff_fp64": cutoff_fp64}
+        }
+        mf = jqc.pyscf.apply(mf, config)
+    else:
+        mf = jqc.pyscf.apply(mf)
+
     e_dft = mf.kernel()
     return e_dft
 

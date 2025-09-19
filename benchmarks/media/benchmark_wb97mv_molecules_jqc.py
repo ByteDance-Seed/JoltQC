@@ -91,7 +91,8 @@ def benchmark_molecule(mol_file, warmup=True):
         print(
             f"Applying JQC with mixed precision: cutoff_fp32={CUTOFF_FP32}, cutoff_fp64={CUTOFF_FP64}"
         )
-        mf = jqc_pyscf.apply(mf, cutoff_fp32=CUTOFF_FP32, cutoff_fp64=CUTOFF_FP64)
+        config = {"jk": {"cutoff_fp32": CUTOFF_FP32, "cutoff_fp64": CUTOFF_FP64}, "dft": {"cutoff_fp32": CUTOFF_FP32, "cutoff_fp64": CUTOFF_FP64}}
+        mf = jqc_pyscf.apply(mf, config)
     else:
         mf = jqc_pyscf.apply(mf)
 
@@ -107,7 +108,8 @@ def benchmark_molecule(mol_file, warmup=True):
         mf.nlcgrids.atom_grid = (50, 194)
         mf.verbose = VERBOSE
         if USE_MIXED_PRECISION:
-            mf = jqc_pyscf.apply(mf, cutoff_fp32=CUTOFF_FP32, cutoff_fp64=CUTOFF_FP64)
+            config = {"jk": {"cutoff_fp32": CUTOFF_FP32, "cutoff_fp64": CUTOFF_FP64}, "dft": {"cutoff_fp32": CUTOFF_FP32, "cutoff_fp64": CUTOFF_FP64}}
+            mf = jqc_pyscf.apply(mf, config)
         else:
             mf = jqc_pyscf.apply(mf)
 

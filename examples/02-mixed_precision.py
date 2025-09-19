@@ -38,12 +38,14 @@ e_fp64 = mf.kernel()
 
 # Single precision algorithm
 mf = scf.RHF(mol)
-mf = jqc.pyscf.apply(mf, cutoff_fp64=1e100)
+config_fp32 = {"jk": {"cutoff_fp64": 1e100}, "dft": {"cutoff_fp64": 1e100}}
+mf = jqc.pyscf.apply(mf, config_fp32)
 e_fp32 = mf.kernel()
 
 # Mixed precision algorithm
 mf = scf.RHF(mol)
-mf = jqc.pyscf.apply(mf, cutoff_fp64=1e-6)
+config_mixed = {"jk": {"cutoff_fp64": 1e-6}, "dft": {"cutoff_fp64": 1e-6}}
+mf = jqc.pyscf.apply(mf, config_mixed)
 e_mixed = mf.kernel()
 
 print("--------------------------------")
@@ -67,7 +69,8 @@ e_tot = mf.kernel()
 print(f"Total energy by double-precision DFT, {e_tot:.12f}")
 
 mf = dft.RKS(mol, xc="b3lyp")
-mf_jit = jqc.pyscf.apply(mf, cutoff_fp64=1e-6)
+config_mixed_dft = {"jk": {"cutoff_fp64": 1e-6}, "dft": {"cutoff_fp64": 1e-6}}
+mf_jit = jqc.pyscf.apply(mf, config_mixed_dft)
 e_mixed = mf_jit.kernel()
 print(f"Total energy by mixed-precision DFT, {e_mixed:.12f}")
 print(f"|e_tot - e_mixed| = {np.abs(e_tot - e_mixed):.12f}")
