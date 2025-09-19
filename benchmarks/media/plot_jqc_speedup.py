@@ -90,8 +90,10 @@ def create_speedup_plot():
         if mol_data.get('success', False):
             gpu4pyscf_energies.append(mol_data['energy'])
 
-    # Calculate energy differences (in millihartree for better readability)
-    energy_diff_mh = np.array([(jqc - gpu4pyscf) * 1000 for jqc, gpu4pyscf in zip(jqc_energies, gpu4pyscf_energies)])
+    # Calculate energy differences (in kcal/mol for better readability)
+    # Conversion factor: 1 Hartree = 627.509 kcal/mol
+    hartree_to_kcal_mol = 627.509
+    energy_diff_kcal = np.array([(jqc - gpu4pyscf) * hartree_to_kcal_mol for jqc, gpu4pyscf in zip(jqc_energies, gpu4pyscf_energies)])
 
     # Calculate speedups
     wall_speedup = np.array(gpu4pyscf_wall) / np.array(jqc_wall)
@@ -116,8 +118,8 @@ def create_speedup_plot():
 
     # Customize left y-axis (timing)
     ax1.set_ylabel('Wall Time (seconds)', fontsize=18, fontweight='bold', color='black')
-    ax1.set_xlabel('Molecular Formula', fontsize=18, fontweight='bold')
-    ax1.set_title('JoltQC vs GPU4PySCF Performance & Accuracy Comparison\nwb97m-v/def2-tzvpd on RTX 5090',
+    ax1.set_xlabel('Molecules', fontsize=18, fontweight='bold')
+    ax1.set_title('JoltQC (Mixed Precision) vs GPU4PySCF Performance & Accuracy Comparison\nwb97m-v/def2-tzvpd on RTX 5090',
                  fontsize=20, fontweight='bold', pad=25)
     ax1.set_xticks(x_pos)
     ax1.set_xticklabels(jqc_formulas, fontsize=16, rotation=0, ha='center')
@@ -140,30 +142,30 @@ def create_speedup_plot():
     ax2 = ax1.twinx()
 
     # Calculate absolute energy differences (add small value to avoid log(0))
-    abs_energy_diff_mh = np.abs(energy_diff_mh)
+    abs_energy_diff_kcal = np.abs(energy_diff_kcal)
     # Add a small value to prevent log(0) issues
-    abs_energy_diff_mh_log = np.maximum(abs_energy_diff_mh, 1e-6)
+    abs_energy_diff_kcal_log = np.maximum(abs_energy_diff_kcal, 1e-6)
 
     # Plot absolute energy differences as dots and dashed line (shifted to middle)
-    ax2.plot(x_pos, abs_energy_diff_mh_log, 'o--', color='purple', linewidth=2, markersize=10,
+    ax2.plot(x_pos, abs_energy_diff_kcal_log, 'o--', color='purple', linewidth=2, markersize=10,
              alpha=0.8, label='|ΔE| (JoltQC - GPU4PySCF)', markerfacecolor='purple', markeredgecolor='black')
 
     # Customize right y-axis (energy difference) with log scale
-    ax2.set_ylabel('Absolute Energy Difference |ΔE| [mHa]', fontsize=16, fontweight='bold', color='purple')
+    ax2.set_ylabel('Absolute Energy Difference |ΔE| [kcal/mol]', fontsize=16, fontweight='bold', color='purple')
     ax2.tick_params(axis='y', labelcolor='purple', labelsize=14)
     ax2.set_yscale('log')
 
     # Set reasonable limits for log scale energy difference axis
-    min_val = max(abs_energy_diff_mh_log.min(), 1e-6)
-    max_val = max(abs_energy_diff_mh_log.max(), 1e-3)
+    min_val = max(abs_energy_diff_kcal_log.min(), 1e-6)
+    max_val = max(abs_energy_diff_kcal_log.max(), 1e-1)  # Adjusted for kcal/mol scale
     ax2.set_ylim(min_val * 0.1, max_val * 10)
 
     # Add energy difference value labels (shifted to middle, between timing bars)
-    for i, abs_diff in enumerate(abs_energy_diff_mh):
+    for i, abs_diff in enumerate(abs_energy_diff_kcal):
         # Position at the middle of the x-axis position (between timing bars)
         x_middle = i
         # For log scale, position labels above the points
-        log_height = abs_energy_diff_mh_log[i] * 2
+        log_height = abs_energy_diff_kcal_log[i] * 2
 
         # Show actual value in scientific notation
         display_value = abs_diff if abs_diff > 1e-6 else abs_diff
@@ -200,31 +202,31 @@ def create_speedup_plot():
     print("\n" + "="*80)
     print("PERFORMANCE & ACCURACY ANALYSIS - JoltQC vs GPU4PySCF")
     print("="*80)
-    print(f"{'Chemical Formula':<25} {'GPU4PySCF (s)':<12} {'JoltQC (s)':<10} {'Speedup':<10} {'ΔE (mHa)':<10}")
-    print("-"*80)
+    print(f"{'Chemical Formula':<25} {'GPU4PySCF (s)':<12} {'JoltQC (s)':<10} {'Speedup':<10} {'ΔE (kcal/mol)':<15}")
+    print("-"*85)
 
     for i, formula in enumerate(jqc_formulas):
-        print(f"{formula:<25} {gpu4pyscf_wall[i]:<12.1f} {jqc_wall[i]:<10.1f} {wall_speedup[i]:<10.1f}× {energy_diff_mh[i]:<10.2f}")
+        print(f"{formula:<25} {gpu4pyscf_wall[i]:<12.1f} {jqc_wall[i]:<10.1f} {wall_speedup[i]:<10.1f}× {energy_diff_kcal[i]:<15.3f}")
 
-    print("-"*80)
-    print(f"{'AVERAGE':<25} {np.mean(gpu4pyscf_wall):<12.1f} {np.mean(jqc_wall):<10.1f} {avg_speedup:<10.1f}× {np.mean(np.abs(energy_diff_mh)):<10.2f}")
-    print(f"{'TOTAL':<25} {total_gpu4pyscf_time:<12.1f} {total_jqc_time:<10.1f} {total_speedup:<10.1f}× {np.max(np.abs(energy_diff_mh)):<10.2f}")
+    print("-"*85)
+    print(f"{'AVERAGE':<25} {np.mean(gpu4pyscf_wall):<12.1f} {np.mean(jqc_wall):<10.1f} {avg_speedup:<10.1f}× {np.mean(np.abs(energy_diff_kcal)):<15.3f}")
+    print(f"{'TOTAL':<25} {total_gpu4pyscf_time:<12.1f} {total_jqc_time:<10.1f} {total_speedup:<10.1f}× {np.max(np.abs(energy_diff_kcal)):<15.3f}")
 
     print(f"\n{'='*80}")
     print("INDIVIDUAL SPEEDUP & ENERGY DIFFERENCE BREAKDOWN:")
-    for i, (formula, speedup, energy_diff) in enumerate(zip(jqc_formulas, wall_speedup, energy_diff_mh)):
-        print(f"  {formula}: {speedup:.1f}× faster, ΔE = {energy_diff:.2f} mHa")
+    for i, (formula, speedup, energy_diff) in enumerate(zip(jqc_formulas, wall_speedup, energy_diff_kcal)):
+        print(f"  {formula}: {speedup:.1f}× faster, ΔE = {energy_diff:.3f} kcal/mol")
 
     print(f"\n{'='*80}")
     print("ENERGY ACCURACY SUMMARY:")
-    print(f"  Mean absolute energy difference: {np.mean(np.abs(energy_diff_mh)):.2f} mHa")
-    print(f"  Max absolute energy difference:  {np.max(np.abs(energy_diff_mh)):.2f} mHa")
-    print(f"  RMS energy difference:           {np.sqrt(np.mean(energy_diff_mh**2)):.2f} mHa")
+    print(f"  Mean absolute energy difference: {np.mean(np.abs(energy_diff_kcal)):.3f} kcal/mol")
+    print(f"  Max absolute energy difference:  {np.max(np.abs(energy_diff_kcal)):.3f} kcal/mol")
+    print(f"  RMS energy difference:           {np.sqrt(np.mean(energy_diff_kcal**2)):.3f} kcal/mol")
 
     # Show plot (will be ignored in headless mode)
     plt.show()
 
-    return wall_speedup, avg_speedup, jqc_formulas, energy_diff_mh
+    return wall_speedup, avg_speedup, jqc_formulas, energy_diff_kcal
 
 
 if __name__ == "__main__":
@@ -232,7 +234,7 @@ if __name__ == "__main__":
         speedups, avg_speedup, formulas, energy_diffs = create_speedup_plot()
         print(f"\n✓ Successfully generated performance & accuracy comparison plot")
         print(f"✓ Average speedup: {avg_speedup:.1f}× improvement")
-        print(f"✓ Average energy difference: {np.mean(np.abs(energy_diffs)):.2f} mHa")
+        print(f"✓ Average energy difference: {np.mean(np.abs(energy_diffs)):.3f} kcal/mol")
         print(f"✓ Analyzed {len(formulas)} molecules with chemical formulas")
     except Exception as e:
         print(f"Error generating plot: {e}")
