@@ -85,10 +85,10 @@ void rys_jk(const int nbas,
     constexpr int tstride_i = fragl * fragk * fragj;
     constexpr int frag_size = fragi*fragj*fragk*fragl;
 
-    const int t_i = (ty % nti);
-    const int t_j = (ty / nti % ntj);
-    const int t_k = (ty / (nti*ntj) % ntk);
-    const int t_l = (ty / (nti*ntj*ntk));
+    const int t_i = (nti > 0) ? (ty % nti) : 0;
+    const int t_j = (ntj > 0) ? (ty / nti % ntj) : 0;
+    const int t_k = (ntk > 0) ? (ty / (nti*ntj) % ntk) : 0;
+    const int t_l = (ntl > 0) ? (ty / (nti*ntj*ntk)) : 0;
 
     const int tid = threadIdx.y * blockDim.x + threadIdx.x;
     constexpr int gx_stride = smem_stride;
@@ -168,26 +168,25 @@ void rys_jk(const int nbas,
     // Estimate register usage for caching cei, cej, cicj and inv_aij
     // Note: g array is in shared memory, not registers, so only count integral_frag + cache arrays
     // DataType can be float (1 register) or double (2 registers)
-    constexpr int registers_per_datatype = sizeof(DataType) / 4; // 4 bytes per 32-bit register
-    constexpr int estimated_registers = registers_per_datatype * (frag_size + 2 * (npi + npj) + 2 * npi * npj);
-
-    // Use caching when register usage is reasonable
+    constexpr int reg_per_datatype = sizeof(DataType) / 4; // 4 bytes per 32-bit register
+    constexpr int reg_g = reg_per_datatype * 3 * frag_size;
+    constexpr int reg_aij_ceij = reg_per_datatype * 2 * npi * npj;
+    constexpr int reg_cei_cej = reg_per_datatype * 2 * (npi + npj);
+    constexpr int reg_integral = reg_per_datatype * integral_size;
+    constexpr int estimated_registers = reg_g + reg_aij_ceij + reg_cei_cej + reg_integral;
     constexpr bool use_cache = (estimated_registers <= 256);
-    constexpr bool use_ceij_cache = use_cache && (npi + npj <= 32); // Additional constraint for cei/cej caching
 
     // Cache cei and cej if register usage is reasonable
-    DataType2 reg_cei[use_ceij_cache ? npi : 1], reg_cej[use_ceij_cache ? npj : 1];
-    if constexpr (use_ceij_cache) {
-        for (int ip = 0; ip < npi; ip++){
-            const int ish_ip = ip + ish*prim_stride;
-            reg_cei[ip].c = __ldg(&coeff_exp[ish_ip].c);
-            reg_cei[ip].e = __ldg(&coeff_exp[ish_ip].e);
-        }
-        for (int jp = 0; jp < npj; jp++){
-            const int jsh_jp = jp + jsh*prim_stride;
-            reg_cej[jp].c = __ldg(&coeff_exp[jsh_jp].c);
-            reg_cej[jp].e = __ldg(&coeff_exp[jsh_jp].e);
-        }
+    DataType2 reg_cei[npi], reg_cej[npj];
+    for (int ip = 0; ip < npi; ip++){
+        const int ish_ip = ip + ish*prim_stride;
+        reg_cei[ip].c = __ldg(&coeff_exp[ish_ip].c);
+        reg_cei[ip].e = __ldg(&coeff_exp[ish_ip].e);
+    }
+    for (int jp = 0; jp < npj; jp++){
+        const int jsh_jp = jp + jsh*prim_stride;
+        reg_cej[jp].c = __ldg(&coeff_exp[jsh_jp].c);
+        reg_cej[jp].e = __ldg(&coeff_exp[jsh_jp].e);
     }
     
     // Cache per-(ip,jp) terms to avoid repeated expensive exp/div computations if register usage is reasonable
@@ -199,21 +198,11 @@ void rys_jk(const int nbas,
         for (int ip = 0; ip < npi; ip++){
             for (int jp = 0; jp < npj; jp++){
                 DataType ai, aj, ci, cj;
-                if constexpr (use_ceij_cache) {
-                    ai = reg_cei[ip].e;
-                    aj = reg_cej[jp].e;
-                    ci = reg_cei[ip].c;
-                    cj = reg_cej[jp].c;
-                } else {
-                    const int ish_ip = ip + ish*prim_stride;
-                    const int jsh_jp = jp + jsh*prim_stride;
-                    const DataType2 cei = coeff_exp[ish_ip];
-                    const DataType2 cej = coeff_exp[jsh_jp];
-                    ai = cei.e;
-                    aj = cej.e;
-                    ci = cei.c;
-                    cj = cej.c;
-                }
+                ai = reg_cei[ip].e;
+                aj = reg_cej[jp].e;
+                ci = reg_cei[ip].c;
+                cj = reg_cej[jp].c;
+
                 const DataType aij = ai + aj;
                 const DataType inv_aij = one / aij;
                 const DataType aj_aij = aj * inv_aij;
@@ -251,7 +240,7 @@ void rys_jk(const int nbas,
         for (int ip = 0; ip < npi; ip++)
         for (int jp = 0; jp < npj; jp++){
             DataType ai, aj, ci, cj;
-            if constexpr (use_ceij_cache) {
+            if constexpr (use_cache) {
                 ai = reg_cei[ip].e;
                 aj = reg_cej[jp].e;
                 ci = reg_cei[ip].c;
@@ -259,11 +248,11 @@ void rys_jk(const int nbas,
             } else {
                 const int ish_ip = ip + ish*prim_stride;
                 const int jsh_jp = jp + jsh*prim_stride;
-                    DataType2 cei, cej;
-                    cei.c = __ldg(&coeff_exp[ish_ip].c);
-                    cei.e = __ldg(&coeff_exp[ish_ip].e);
-                    cej.c = __ldg(&coeff_exp[jsh_jp].c);
-                    cej.e = __ldg(&coeff_exp[jsh_jp].e);
+                DataType2 cei, cej;
+                cei.c = __ldg(&coeff_exp[ish_ip].c);
+                cei.e = __ldg(&coeff_exp[ish_ip].e);
+                cej.c = __ldg(&coeff_exp[jsh_jp].c);
+                cej.e = __ldg(&coeff_exp[jsh_jp].e);
                 ai = cei.e;
                 aj = cej.e;
                 ci = cei.c;
@@ -430,7 +419,7 @@ void rys_jk(const int nbas,
                                 s1x = gx[ijkl];
                                 for (ijkl-=stride_i; ijkl >= jkl_off; ijkl-=stride_i) {
                                     s0x = gx[ijkl];
-                    gx[ijkl + stride_j] = s1x - rjri_x * s0x;  // leave form; compiler fuses to FMA
+                                    gx[ijkl + stride_j] = s1x - rjri_x * s0x;  // leave form; compiler fuses to FMA
                                     s1x = s0x;
                                 }
                             }
@@ -453,7 +442,7 @@ void rys_jk(const int nbas,
                                 s1x = gx[ijkl];
                                 for (ijkl-=stride_k; ijkl >= lstride_l; ijkl-=stride_k) {
                                     s0x = gx[ijkl];
-                    gx[ijkl + stride_l] = s1x - rlrk_x * s0x;
+                                    gx[ijkl + stride_l] = s1x - rlrk_x * s0x;
                                     s1x = s0x;
                                 }
                             }

@@ -21,13 +21,13 @@ from gpu4pyscf import dft
 import jqc.pyscf
 
 # atom = 'molecules/h2o.xyz'
-# atom = "molecules/0031-irregular-nitrogenous.xyz"
+atom = "molecules/0031-irregular-nitrogenous.xyz"
 # atom = 'molecules/0051-elongated-halogenated.xyz'
 # atom = 'molecules/0084-elongated-halogenated.xyz'
-atom = 'molecules/0152-elongated-nitrogenous.xyz'
+# atom = 'molecules/0152-elongated-nitrogenous.xyz'
 basis = "def2-tzvpp"
-xc = "wb97m-v"
-#xc = 'b3lyp'
+#xc = "wb97m-v"
+xc = 'b3lyp'
 count = 1
 grids = (99, 590)
 
@@ -126,7 +126,7 @@ start.record()
 for i in range(count):
     mf = dft.RKS(mol, xc=xc)
     config_fp32 = {"jk": {"cutoff_fp32": 1e-13, "cutoff_fp64": 1e100}, "dft": {"cutoff_fp32": 1e-13, "cutoff_fp64": 1e100}}
-mf_jit = jqc.pyscf.apply(mf, config_fp32)
+    mf_jit = jqc.pyscf.apply(mf, config_fp32)
     mf_jit.verbose = verbose
     mf_jit.grids.atom_grid = grids
     mf_jit.nlcgrids.atom_grid = (50, 194)
@@ -169,7 +169,7 @@ start.record()
 for i in range(count):
     mf = dft.RKS(mol, xc=xc)
     config_mixed = {"jk": {"cutoff_fp32": 1e-13, "cutoff_fp64": 1e-6}, "dft": {"cutoff_fp32": 1e-13, "cutoff_fp64": 1e-6}}
-mf_jit = jqc.pyscf.apply(mf, config_mixed)
+    mf_jit = jqc.pyscf.apply(mf, config_mixed)
     mf_jit.verbose = verbose
     mf_jit.grids.atom_grid = grids
     mf_jit.nlcgrids.atom_grid = (50, 194)
