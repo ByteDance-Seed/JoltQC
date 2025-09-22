@@ -172,7 +172,7 @@ void rys_jk(const int nbas,
     constexpr int reg_g = reg_per_datatype * 3 * frag_size;
     constexpr int reg_aij_ceij = reg_per_datatype * 2 * npi * npj;
     constexpr int reg_cei_cej = reg_per_datatype * 2 * (npi + npj);
-    constexpr int reg_integral = reg_per_datatype * integral_size;
+    constexpr int reg_integral = reg_per_datatype * frag_size;
     constexpr int estimated_registers = reg_g + reg_aij_ceij + reg_cei_cej + reg_integral;
     constexpr bool use_cache = (estimated_registers <= 256);
 
