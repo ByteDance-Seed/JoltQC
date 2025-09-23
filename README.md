@@ -41,8 +41,6 @@ JoltQC is not intended to be a complete quantum chemistry package, but rather a 
 - Support FP64, FP32, and mixed-precision schemes
 - Python interface to [GPU4PySCF](https://github.com/pyscf/gpu4pyscf)
 
-![JoltQC vs GPU4PySCF Speedup](benchmarks/media/jqc_vs_gpu4pyscf_speedup.png)
-
 ## Recommendations
 
 - Use **PySCF/GPU4PySCF** for general-purpose workflows; JoltQC is a JIT backend
@@ -63,7 +61,7 @@ This example shows how to use JoltQC as a JIT backend with GPU4PySCF:
 import numpy as np
 import pyscf
 from gpu4pyscf import scf
-from jqc.pyscf import jk
+import jqc.pyscf
 
 atom = '''
 O       0.0000000000    -0.0000000000     0.1174000000
@@ -77,17 +75,29 @@ mf.verbose = 1
 mf.conv_tol = 1e-10
 mf.max_cycle = 50
 
-# In-place overwrite PySCF kernels
-mf_jit = jqc.pyscf.apply(mf)
-e_tot = mf_jit.kernel()
+# In-place overwrite PySCF kernels with JIT-compiled versions
+mf = jqc.pyscf.apply(mf)
+e_tot = mf.kernel()
 print('Total energy with double precision:', e_tot)
 ```
 See more examples in the examples/ directory.
 
+## Supported JIT-Compiled Kernels
+
+| Kernel Type | Description | Precision Support |
+|-------------|-------------|-------------------|
+| **J/K Potentials** | Coulomb/exchange matrix construction | FP64 (default), FP32, Mixed |
+| **DFT Density** | Electron density evaluation on grids | FP64, FP32, Mixed (default) |
+| **XC Potentials** | Exchange-correlation evaluation | FP64, FP32, Mixed (default) |
+
+
+![JoltQC vs GPU4PySCF Speedup](benchmarks/media/jqc_vs_gpu4pyscf_speedup.png)
+
+
 ## Limitations
 - No support for density-fitting (DF); DF does not benefit significantly from JIT at this stage.
-- First runs may be slow due to JIT compilation (especially with large basis sets).
-- Only RHF and RKS are currently supported.
+- First run may be slow due to JIT compilation (especially with large basis sets), the compiled kernels will be cached in disk for following runs.
+- Only RHF and RKS methods are currently supported.
 - The performance of small systems is bounded by Python overhead and kernel launch overhead.
 - Support up to 65535 atomic basis.
 - Multi-GPU is not supported yet.
