@@ -333,7 +333,7 @@ class BasisLayout:
             transform_func = cart2cart if is_cart else sph2cart
             for i in range(mat_cp.shape[0]):
                 mat_2d = transform_func(
-                    mat_cp[i], self.angs_no_pad, mol_ao_loc, src_offsets, nao
+                    mat_cp[i], self.angs_no_pad, src_offsets, mol_ao_loc, nao
                 )
                 if mat_2d.ndim == 3 and mat_2d.shape[0] == 1:
                     mat_2d = mat_2d[0]
@@ -342,7 +342,7 @@ class BasisLayout:
         else:
             transform_func = cart2cart if is_cart else sph2cart
             result = transform_func(
-                mat_cp, self.angs_no_pad, mol_ao_loc, src_offsets, nao
+                mat_cp, self.angs_no_pad, src_offsets, mol_ao_loc, nao
             )
             return result[0] if result.ndim == 3 and result.shape[0] == 1 else result
 
@@ -455,7 +455,8 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         coords_by_pattern[pattern] = np.empty(
             (padded_count, COORD_STRIDE), dtype=np.float64
         )
-        ce_by_pattern[pattern] = np.empty((padded_count, PRIM_STRIDE), dtype=dtype)
+        # Initialize CE buffer to zeros so padded primitive slots are well-defined
+        ce_by_pattern[pattern] = np.zeros((padded_count, PRIM_STRIDE), dtype=dtype)
         to_split_map_by_pattern[pattern] = np.empty(padded_count, dtype=np.int32)
         pad_id_by_pattern[pattern] = np.empty(padded_count, dtype=bool)
 
