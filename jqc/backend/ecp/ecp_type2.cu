@@ -26,7 +26,7 @@ static double rnorm3d(double x, double y, double z) {
 }
 
 template <int order, int LIC, int np> __device__
-void type2_facs_rad(double* facs, const double rca, const DataType2 *ce){
+void type2_facs_rad(double* __restrict__ facs, const double rca, const DataType2* __restrict__ ce){
     double root = 0.0;
     if (threadIdx.x < NGAUSS){
         root = r128[threadIdx.x];
@@ -61,13 +61,14 @@ void type2_facs_rad(double* facs, const double rca, const DataType2 *ce){
 }
 
 template <int L> __device__
-void type2_facs_omega(double* __restrict__ omega, double *r){
+void type2_facs_omega(double* __restrict__ omega, const double* __restrict__ r){
     double unitr[3];
     if (r[0]*r[0] + r[1]*r[1] + r[2]*r[2] < 1e-16){
         unitr[0] = 0;
         unitr[1] = 0;
         unitr[2] = 0;
     } else {
+        // Follow GPU4PySCF convention for unit vector direction
         double norm_r = -rnorm3d(r[0], r[1], r[2]);
         unitr[0] = r[0] * norm_r;
         unitr[1] = r[1] * norm_r;
@@ -123,7 +124,7 @@ void type2_facs_omega(double* __restrict__ omega, double *r){
 }
 
 template <int L> __device__
-void type2_ang(double * __restrict__ facs, double *rca, double *omega){
+void type2_ang(double* __restrict__ facs, const double* __restrict__ rca, const double* __restrict__ omega){
     constexpr int L1 = L+1;
     constexpr int nfi = L1*(L1+1)/2;
     constexpr int LCC1 = (2*LC+1);
@@ -146,8 +147,8 @@ void type2_ang(double * __restrict__ facs, double *rca, double *omega){
         double *fy = fi + (iy+1)*iy/2 + nfi;
         double *fz = fi + (iz+1)*iz/2 + nfi*2;
 
-        double ang_pmn[AO_LMAX_IP+1];
-        for (int i = 0; i < AO_LMAX_IP+1; i++){
+        double ang_pmn[L+1];
+        for (int i = 0; i < L+1; i++){
             ang_pmn[i] = 0.0;
         }
         
@@ -159,7 +160,7 @@ void type2_ang(double * __restrict__ facs, double *rca, double *omega){
             const int L_i = L-i;
             const int ioff = (L_i)*(L_i+1)*(L_i+2)/6;
             const int joff = (L_i-j)*(L_i-j+1)/2;
-            double *pomega = omega + (ioff+joff+k)*BLK;
+            const double *pomega = omega + (ioff+joff+k)*BLK;
 
             if ((LC+ijk)%2 == m%2){
                 ang_pmn[ijk] += fac * pomega[m/2*LCC1];
@@ -174,13 +175,13 @@ void type2_ang(double * __restrict__ facs, double *rca, double *omega){
 
 // placeholder for LI, LJ, LC
 extern "C" __global__
-void type2_cart(double * __restrict__ gctr,
-                const int *ao_loc, const int nao,
-                const int *tasks, const int ntasks,
-                const int *ecpbas, const int *ecploc,
+void type2_cart(double* __restrict__ gctr,
+                const int* __restrict__ ao_loc, const int nao,
+                const int* __restrict__ tasks, const int ntasks,
+                const int* __restrict__ ecpbas, const int* __restrict__ ecploc,
                 const DataType4* __restrict__ coords,
                 const DataType2* __restrict__ coeff_exp,
-                const int *atm, const double *env)
+                const int* __restrict__ atm, const double* __restrict__ env)
 {
     const int task_id = blockIdx.x;
     if (task_id >= ntasks){
@@ -285,17 +286,16 @@ void type2_cart(double * __restrict__ gctr,
             double s = 0.0;
             for (int k = 0; k <= LI; k++){
             for (int l = 0; l <= LJ; l++){
-                double *pangi = angi + k*nfi*LIC1 + i*LIC1;
-                double *pangj = angj + l*nfj*LJC1 + j*LJC1;
-                double *prad  = rad_all + (k+l)*LIC1*LJC1;
-                double reg_angi[LIC1];
-                double reg_angj[LJC1];
-                for (int p = 0; p < LIC1; p++){ reg_angi[p] = pangi[p]; }
-                for (int q = 0; q < LJC1; q++){ reg_angj[q] = pangj[q]; }
+                const double* __restrict__ pangi = angi + k*nfi*LIC1 + i*LIC1;
+                const double* __restrict__ pangj = angj + l*nfj*LJC1 + j*LJC1;
+                const double* __restrict__ prad  = rad_all + (k+l)*LIC1*LJC1;
                 for (int p = 0; p < LIC1; p++){
-                for (int q = 0; q < LJC1; q++){
-                    s += prad[p*LJC1 + q] * reg_angi[p] * reg_angj[q];
-                }}
+                    const double ap = pangi[p];
+                    const double* __restrict__ prad_row = prad + p*LJC1;
+                    for (int q = 0; q < LJC1; q++){
+                        s += prad_row[q] * ap * pangj[q];
+                    }
+                }
             }}
             reg_gctr[ij/THREADS] += fac * s;
         }

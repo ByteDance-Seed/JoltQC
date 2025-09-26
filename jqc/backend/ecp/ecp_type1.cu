@@ -55,7 +55,10 @@ void type1_rad_part(double* __restrict__ rad_all, double k, double aij, double u
 
 
 template <int LIJ> __device__
-void type1_rad_ang(double *rad_ang, double *r, double *rad_all, const double fac)
+void type1_rad_ang(double* __restrict__ rad_ang,
+                   const double* __restrict__ r,
+                   const double* __restrict__ rad_all,
+                   const double fac)
 {
     double unitr[3];
     if (r[0]*r[0] + r[1]*r[1] + r[2]*r[2] < 1e-16){
@@ -80,7 +83,7 @@ void type1_rad_ang(double *rad_ang, double *r, double *rad_all, const double fac
         }
         // need_even to ensure (i+j+k+lmb) is even
         double s = 0.0;
-        double *prad = rad_all + (i+j+k)*(LIJ+1);
+        const double *prad = rad_all + (i+j+k)*(LIJ+1);
         if constexpr(LIJ >= 0) s += prad[0] * type1_ang_nuc_l<0>(i, j, k, unitr);
         if constexpr(LIJ >= 2) s += prad[2] * type1_ang_nuc_l<2>(i, j, k, unitr);
         if constexpr(LIJ >= 4) s += prad[4] * type1_ang_nuc_l<4>(i, j, k, unitr);
@@ -100,7 +103,7 @@ void type1_rad_ang(double *rad_ang, double *r, double *rad_all, const double fac
         }
         // need_even to ensure (i+j+k+lmb) is even
         double s = 0.0;
-        double *prad = rad_all + (i+j+k)*(LIJ+1);
+        const double *prad = rad_all + (i+j+k)*(LIJ+1);
         if constexpr(LIJ >= 1) s += prad[1] * type1_ang_nuc_l<1>(i, j, k, unitr);
         if constexpr(LIJ >= 3) s += prad[3] * type1_ang_nuc_l<3>(i, j, k, unitr);
         if constexpr(LIJ >= 5) s += prad[5] * type1_ang_nuc_l<5>(i, j, k, unitr);
@@ -114,13 +117,13 @@ void type1_rad_ang(double *rad_ang, double *r, double *rad_all, const double fac
 
 // placeholder for LI, LJ, npi, npj
 extern "C" __global__
-void type1_cart(double *gctr,
-                const int *ao_loc, const int nao,
-                const int *tasks, const int ntasks,
-                const int *ecpbas, const int *ecploc,
+void type1_cart(double* __restrict__ gctr,
+                const int* __restrict__ ao_loc, const int nao,
+                const int* __restrict__ tasks, const int ntasks,
+                const int* __restrict__ ecpbas, const int* __restrict__ ecploc,
                 const DataType4* __restrict__ coords,
                 const DataType2* __restrict__ coeff_exp,
-                const int *atm, const double *env)
+                const int* __restrict__ atm, const double* __restrict__ env)
 {
     const int task_id = blockIdx.x;
     if (task_id >= ntasks){

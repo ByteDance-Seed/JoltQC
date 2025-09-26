@@ -20,12 +20,12 @@
 #define PTR_COORD       1
 #define ATM_SLOTS       6
 
-#define ECP_LMAX        4
-#define AO_LMAX         4    // Up to G
-#define AO_LMAX_IP      6    // Up to G, and its second derivative
-#define NF_MAX          15
-#define AO_LIJMAX       10
-#define NF_MAX_LIJ      66    // Up to l=10
+// #define ECP_LMAX        4
+// #define AO_LMAX         4    // Up to G
+// #define AO_LMAX_IP      6    // Up to G, and its second derivative
+// #define NF_MAX          15
+// #define AO_LIJMAX       10
+// #define NF_MAX_LIJ      66    // Up to l=10
 
 // Thread number has to be the same as qudrature points
 #define THREADS        128
@@ -120,15 +120,4 @@ static int _z_addr[] = {
 };
 
 
-__constant__
-static double _ecp_fac[] = {
-    0.5773502691896258,
-    0.488602511902919921,
-    1.0,
-    1.0,
-    1.0,
-    1.0,
-    1.0,
-    1.0,
-    1.0,
-};
+// Removed _ecp_fac: normalization is baked into basis coefficients

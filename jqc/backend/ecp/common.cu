@@ -43,7 +43,7 @@ Cartesian<(l+1)*(l+2)/2> ang_nuc_l(double rx, double ry, double rz){
 */
 
 __device__
-double rad_part(const int ish, const int *ecpbas, const double *env){
+double rad_part(const int ish, const int* __restrict__ ecpbas, const double* __restrict__ env){
     const int npk = ecpbas[ish*BAS_SLOTS+NPRIM_OF];
     const int r_order = ecpbas[ish*BAS_SLOTS+RADI_POWER];
     const int exp_ptr = ecpbas[ish*BAS_SLOTS+PTR_EXP];
@@ -67,7 +67,7 @@ double rad_part(const int ish, const int *ecpbas, const double *env){
 }
 
 template <int L> __device__
-void cache_fac(double fx[(L+1)*(L+2)/2*3], double ri[3]){
+void cache_fac(double* __restrict__ fx, const double* __restrict__ ri){
     const int LI1 = L + 1;
     double xx[LI1], yy[LI1], zz[LI1];
     xx[0] = 1; yy[0] = 1; zz[0] = 1;
@@ -81,18 +81,17 @@ void cache_fac(double fx[(L+1)*(L+2)/2*3], double ri[3]){
     for (int i = 0; i <= L; i++){
         const int xoffset = i*(i+1)/2;
         const int yoffset = xoffset + nfi;
-        const int zoffset = yoffset + nfi;
         for (int j = 0; j <= i; j++){
             const double bfac = _binom[xoffset+j]; // binom(i,j)
             fx[xoffset+j        ] = bfac * xx[i-j];
-            fx[xoffset+j +   nfi] = bfac * yy[i-j];
-            fx[xoffset+j + 2*nfi] = bfac * zz[i-j];
+            fx[yoffset+j        ] = bfac * yy[i-j];
+            fx[yoffset+j +   nfi] = bfac * zz[i-j];
         }
     }
 }
 
 __device__
-void block_reduce(double val, double *d_out) {
+void block_reduce(double val, double* __restrict__ d_out) {
     __shared__ double warp_sums[THREADS / 32];
     unsigned int tid = threadIdx.x;
     unsigned int warp_id = tid / 32;
@@ -132,21 +131,20 @@ void set_shared_memory(double *smem, const int size) {
     __syncthreads();
 }
 
-__device__
-void _li_up(double *out, double *buf, const int li, const int lj){
-    const int nfj = (lj+1) * (lj+2) / 2;
-    const int nfi = (li+1) * (li+2) / 2;
-    const int nfi0 = li * (li+1) / 2;
+template <int LI_PARAM, int LJ_PARAM> __device__
+void _li_up(double* __restrict__ out, double* __restrict__ buf){
+    constexpr int nfj = (LJ_PARAM+1) * (LJ_PARAM+2) / 2;
+    constexpr int nfi = (LI_PARAM+1) * (LI_PARAM+2) / 2;
+    constexpr int nfi0 = LI_PARAM * (LI_PARAM+1) / 2;
     double *outx = out;
     double *outy = outx + nfi*nfj;
     double *outz = outy + nfi*nfj;
-    const double fac = 1.0 / _ecp_fac[li-1];
     for (int ij = threadIdx.x; ij < nfi0*nfj; ij+=blockDim.x){
         const int i = ij % nfi0;
         const int j = ij / nfi0;
-        const double yfac = fac * (_cart_pow_y[i] + 1);
-        const double zfac = fac * (_cart_pow_z[i] + 1);
-        const double xfac = fac * (li-1 - _cart_pow_y[i] - _cart_pow_z[i] + 1);
+        const double yfac = (_cart_pow_y[i] + 1);
+        const double zfac = (_cart_pow_z[i] + 1);
+        const double xfac = (LI_PARAM-1 - _cart_pow_y[i] - _cart_pow_z[i] + 1);
 
         atomicAdd(outx + j*nfi +          i, xfac * buf[j*nfi0 + i]);
         atomicAdd(outy + j*nfi + _y_addr[i], yfac * buf[j*nfi0 + i]);
@@ -155,10 +153,10 @@ void _li_up(double *out, double *buf, const int li, const int lj){
     __syncthreads();
 }
 
-__device__
-void _li_up_and_write(double *out, double *buf, const int li, const int lj, const int nao){
-    const int nfi0 = li * (li+1) / 2;
-    const int nfj = (lj+1) * (lj+2) / 2;
+template <int LI_PARAM, int LJ_PARAM> __device__
+void _li_up_and_write(double* __restrict__ out, double* __restrict__ buf, const int nao){
+    constexpr int nfi0 = LI_PARAM * (LI_PARAM+1) / 2;
+    constexpr int nfj = (LJ_PARAM+1) * (LJ_PARAM+2) / 2;
     double *outxx = out ;
     double *outxy = out + nao*nao;
     double *outxz = out + 2*nao*nao;
@@ -168,13 +166,13 @@ void _li_up_and_write(double *out, double *buf, const int li, const int lj, cons
     double *outzx = out + 6*nao*nao;
     double *outzy = out + 7*nao*nao;
     double *outzz = out + 8*nao*nao;
-    const double fac = 1.0 / _ecp_fac[li-1];
+
     for (int ij = threadIdx.x; ij < nfi0*nfj; ij+=blockDim.x){
         const int i = ij % nfi0;
         const int j = ij / nfi0;
-        const double yfac = fac * (_cart_pow_y[i] + 1);
-        const double zfac = fac * (_cart_pow_z[i] + 1);
-        const double xfac = fac * (li-1 - _cart_pow_y[i] - _cart_pow_z[i] + 1);
+        const double yfac = (_cart_pow_y[i] + 1);
+        const double zfac = (_cart_pow_z[i] + 1);
+        const double xfac = (LI_PARAM-1 - _cart_pow_y[i] - _cart_pow_z[i] + 1);
 
         const int i_addr[3] = {i, _y_addr[i], _z_addr[i]};
         atomicAdd(outxx + j + i_addr[0]*nao, xfac * buf[j*nfi0 + i]);
@@ -193,31 +191,51 @@ void _li_up_and_write(double *out, double *buf, const int li, const int lj, cons
 }
 
 
-__device__
-void _li_down(double *out, double *buf, const int li, const int lj){
-    const int nfi = (li+1) * (li+2) / 2;
-    const int nfj = (lj+1) * (lj+2) / 2;
-    const int nfi1= (li+2) * (li+3) / 2;
+template <int LI_PARAM, int LJ_PARAM> __device__
+void _li_down(double* __restrict__ out, double* __restrict__ buf){
+    constexpr int nfi = (LI_PARAM+1) * (LI_PARAM+2) / 2;
+    constexpr int nfj = (LJ_PARAM+1) * (LJ_PARAM+2) / 2;
+    constexpr int nfi1= (LI_PARAM+2) * (LI_PARAM+3) / 2;
     double *outx = out;
     double *outy = outx + nfi*nfj;
     double *outz = outy + nfi*nfj;
-    const double fac = _ecp_fac[li];
 
     for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){
         const int i = ij % nfi;
         const int j = ij / nfi;
-        atomicAdd(outx + j*nfi+i, fac * buf[j*nfi1+i]);
-        atomicAdd(outy + j*nfi+i, fac * buf[j*nfi1+_y_addr[i]]);
-        atomicAdd(outz + j*nfi+i, fac * buf[j*nfi1+_z_addr[i]]);
+        atomicAdd(outx + j*nfi+i, buf[j*nfi1+i]);
+        atomicAdd(outy + j*nfi+i, buf[j*nfi1+_y_addr[i]]);
+        atomicAdd(outz + j*nfi+i, buf[j*nfi1+_z_addr[i]]);
     }
     __syncthreads();
 }
 
-__device__
-void _li_down_and_write(double *out, double *buf, const int li, const int lj, const int nao){
-    const int nfi = (li+1) * (li+2) / 2;
-    const int nfj = (lj+1) * (lj+2) / 2;
-    const int nfi1= (li+2) * (li+3) / 2;
+template <int LI_PARAM, int LJ_PARAM> __device__
+void _lj_down(double* __restrict__ out, double* __restrict__ buf){
+    constexpr int nfi = (LI_PARAM+1) * (LI_PARAM+2) / 2;
+    constexpr int nfj = (LJ_PARAM+1) * (LJ_PARAM+2) / 2;
+    constexpr int nfj1= (LJ_PARAM+2) * (LJ_PARAM+3) / 2;
+    double *outx = out;
+    double *outy = outx + nfi*nfj;
+    double *outz = outy + nfi*nfj;
+
+    for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){
+        const int i = ij % nfi;
+        const int j = ij / nfi;
+        const int j_addr[3] = {j, _y_addr[j], _z_addr[j]};
+        atomicAdd(outx + j*nfi + i, buf[j_addr[0]*nfi + i]);
+        atomicAdd(outy + j*nfi + i, buf[j_addr[1]*nfi + i]);
+        atomicAdd(outz + j*nfi + i, buf[j_addr[2]*nfi + i]);
+    }
+    __syncthreads();
+}
+
+
+template <int LI_PARAM, int LJ_PARAM> __device__
+void _li_down_and_write(double* __restrict__ out, double* __restrict__ buf, const int nao){
+    constexpr int nfi = (LI_PARAM+1) * (LI_PARAM+2) / 2;
+    constexpr int nfj = (LJ_PARAM+1) * (LJ_PARAM+2) / 2;
+    constexpr int nfi1= (LI_PARAM+2) * (LI_PARAM+3) / 2;
     double *outxx = out ;
     double *outxy = out + nao*nao;
     double *outxz = out + 2*nao*nao;
@@ -227,33 +245,32 @@ void _li_down_and_write(double *out, double *buf, const int li, const int lj, co
     double *outzx = out + 6*nao*nao;
     double *outzy = out + 7*nao*nao;
     double *outzz = out + 8*nao*nao;
-    const double fac = _ecp_fac[li];
 
     for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){
         const int i = ij % nfi;
         const int j = ij / nfi;
         const int i_addr[3] = {i, _y_addr[i], _z_addr[i]};
 
-        atomicAdd(outxx + j + i*nao, fac * buf[j*nfi1 + i_addr[0]]);
-        atomicAdd(outxy + j + i*nao, fac * buf[j*nfi1 + i_addr[1]]);
-        atomicAdd(outxz + j + i*nao, fac * buf[j*nfi1 + i_addr[2]]);
+        atomicAdd(outxx + j + i*nao, buf[j*nfi1 + i_addr[0]]);
+        atomicAdd(outxy + j + i*nao, buf[j*nfi1 + i_addr[1]]);
+        atomicAdd(outxz + j + i*nao, buf[j*nfi1 + i_addr[2]]);
 
-        atomicAdd(outyx + j + i*nao, fac * buf[j*nfi1 + i_addr[0] + nfi1*nfj]);
-        atomicAdd(outyy + j + i*nao, fac * buf[j*nfi1 + i_addr[1] + nfi1*nfj]);
-        atomicAdd(outyz + j + i*nao, fac * buf[j*nfi1 + i_addr[2] + nfi1*nfj]);
+        atomicAdd(outyx + j + i*nao, buf[j*nfi1 + i_addr[0] + nfi1*nfj]);
+        atomicAdd(outyy + j + i*nao, buf[j*nfi1 + i_addr[1] + nfi1*nfj]);
+        atomicAdd(outyz + j + i*nao, buf[j*nfi1 + i_addr[2] + nfi1*nfj]);
 
-        atomicAdd(outzx + j + i*nao, fac * buf[j*nfi1 + i_addr[0] + 2*nfi1*nfj]);
-        atomicAdd(outzy + j + i*nao, fac * buf[j*nfi1 + i_addr[1] + 2*nfi1*nfj]);
-        atomicAdd(outzz + j + i*nao, fac * buf[j*nfi1 + i_addr[2] + 2*nfi1*nfj]);
+        atomicAdd(outzx + j + i*nao, buf[j*nfi1 + i_addr[0] + 2*nfi1*nfj]);
+        atomicAdd(outzy + j + i*nao, buf[j*nfi1 + i_addr[1] + 2*nfi1*nfj]);
+        atomicAdd(outzz + j + i*nao, buf[j*nfi1 + i_addr[2] + 2*nfi1*nfj]);
     }
     __syncthreads();
 }
 
 
-__device__
-void _lj_up_and_write(double *out, double *buf, const int li, const int lj, const int nao){
-    const int nfi = (li+1)*(li+2)/2;
-    const int nfj0 = lj * (lj+1) / 2;
+template <int LI_PARAM, int LJ_PARAM> __device__
+void _lj_up_and_write(double* __restrict__ out, double* __restrict__ buf, const int nao){
+    constexpr int nfi = (LI_PARAM+1)*(LI_PARAM+2)/2;
+    constexpr int nfj0 = LJ_PARAM * (LJ_PARAM+1) / 2;
     double *outxx = out;
     double *outxy = out + nao*nao;
     double *outxz = out + 2*nao*nao;
@@ -263,13 +280,12 @@ void _lj_up_and_write(double *out, double *buf, const int li, const int lj, cons
     double *outzx = out + 6*nao*nao;
     double *outzy = out + 7*nao*nao;
     double *outzz = out + 8*nao*nao;
-    const double fac = 1.0 / _ecp_fac[lj-1];
     for (int ij = threadIdx.x; ij < nfi*nfj0; ij+=blockDim.x){
         const int i = ij % nfi;
         const int j = ij / nfi;
-        const double yfac = fac * (_cart_pow_y[j] + 1);
-        const double zfac = fac * (_cart_pow_z[j] + 1);
-        const double xfac = fac * (lj-1 - _cart_pow_y[j] - _cart_pow_z[j] + 1);
+        const double yfac = (_cart_pow_y[j] + 1);
+        const double zfac = (_cart_pow_z[j] + 1);
+        const double xfac = (LJ_PARAM-1 - _cart_pow_y[j] - _cart_pow_z[j] + 1);
         const int j_addr[3] = {j, _y_addr[j], _z_addr[j]};
 
         atomicAdd(outxx + j_addr[0] + nao*i, xfac * buf[j*nfi + i]);
@@ -287,11 +303,11 @@ void _lj_up_and_write(double *out, double *buf, const int li, const int lj, cons
     __syncthreads();
 }
 
-__device__
-void _lj_down_and_write(double *out, double *buf, const int li, const int lj, const int nao){
-    const int nfi = (li+1) * (li+2) / 2;
-    const int nfj = (lj+1) * (lj+2) / 2;
-    const int nfj1 = (lj+2) * (lj+3) / 2;
+template <int LI_PARAM, int LJ_PARAM> __device__
+void _lj_down_and_write(double* __restrict__ out, double* __restrict__ buf, const int nao){
+    constexpr int nfi = (LI_PARAM+1) * (LI_PARAM+2) / 2;
+    constexpr int nfj = (LJ_PARAM+1) * (LJ_PARAM+2) / 2;
+    constexpr int nfj1 = (LJ_PARAM+2) * (LJ_PARAM+3) / 2;
     double *outxx = out ;
     double *outxy = out + nao*nao;
     double *outxz = out + 2*nao*nao;
@@ -301,23 +317,22 @@ void _lj_down_and_write(double *out, double *buf, const int li, const int lj, co
     double *outzx = out + 6*nao*nao;
     double *outzy = out + 7*nao*nao;
     double *outzz = out + 8*nao*nao;
-    const double fac = _ecp_fac[lj];
     for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){
         const int i = ij % nfi;
         const int j = ij / nfi;
         const int j_addr[3] = {j, _y_addr[j], _z_addr[j]};
 
-        atomicAdd(outxx + j + i*nao, fac * buf[j_addr[0]*nfi + i]);
-        atomicAdd(outxy + j + i*nao, fac * buf[j_addr[1]*nfi + i]);
-        atomicAdd(outxz + j + i*nao, fac * buf[j_addr[2]*nfi + i]);
+        atomicAdd(outxx + j + i*nao, buf[j_addr[0]*nfi + i]);
+        atomicAdd(outxy + j + i*nao, buf[j_addr[1]*nfi + i]);
+        atomicAdd(outxz + j + i*nao, buf[j_addr[2]*nfi + i]);
 
-        atomicAdd(outyx + j + i*nao, fac * buf[j_addr[0]*nfi + i + nfi*nfj1]);
-        atomicAdd(outyy + j + i*nao, fac * buf[j_addr[1]*nfi + i + nfi*nfj1]);
-        atomicAdd(outyz + j + i*nao, fac * buf[j_addr[2]*nfi + i + nfi*nfj1]);
+        atomicAdd(outyx + j + i*nao, buf[j_addr[0]*nfi + i + nfi*nfj1]);
+        atomicAdd(outyy + j + i*nao, buf[j_addr[1]*nfi + i + nfi*nfj1]);
+        atomicAdd(outyz + j + i*nao, buf[j_addr[2]*nfi + i + nfi*nfj1]);
 
-        atomicAdd(outzx + j + i*nao, fac * buf[j_addr[0]*nfi + i + 2*nfi*nfj1]);
-        atomicAdd(outzy + j + i*nao, fac * buf[j_addr[1]*nfi + i + 2*nfi*nfj1]);
-        atomicAdd(outzz + j + i*nao, fac * buf[j_addr[2]*nfi + i + 2*nfi*nfj1]);
+        atomicAdd(outzx + j + i*nao, buf[j_addr[0]*nfi + i + 2*nfi*nfj1]);
+        atomicAdd(outzy + j + i*nao, buf[j_addr[1]*nfi + i + 2*nfi*nfj1]);
+        atomicAdd(outzz + j + i*nao, buf[j_addr[2]*nfi + i + 2*nfi*nfj1]);
     }
     __syncthreads();
 }

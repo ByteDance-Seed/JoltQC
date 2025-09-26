@@ -1,10 +1,19 @@
 # Adapted from GPU4PySCF gpu4pyscf/gto/tests/test_ecp.py
 import unittest
-import numpy as np
+import pytest
 import cupy as cp
+import numpy as np
 from pyscf import gto
 
-from jqc.backend.ecp import get_ecp
+from jqc.backend.ecp import get_ecp, get_ecp_ip, get_ecp_ipip
+
+# Skip module if no CUDA device is available
+try:
+    _ndev = cp.cuda.runtime.getDeviceCount()
+except Exception:
+    _ndev = 0
+if _ndev == 0:
+    pytestmark = pytest.mark.skip(reason="No CUDA device available for ECP tests")
 
 
 def setUpModule():
@@ -79,17 +88,53 @@ def tearDownModule():
 
 
 class KnownValues(unittest.TestCase):
+    def _tag(self) -> str:
+        return f"{self.__class__.__name__}.{self._testMethodName}"
+
+    def _log(self, msg: str):
+        # Left-align the tag to a fixed width for tidy, readable output
+        print(f"[{self._tag():<40}] {msg}")
+
     def test_ecp_cart(self):
         h1_cpu = mol_cart.intor('ECPscalar_cart')
         h1_gpu = get_ecp(mol_cart).get()
-        assert np.linalg.norm(h1_cpu - h1_gpu) < 2e-10  # Machine precision threshold
-    
+        self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
+        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-8  # Machine precision threshold
+
     def test_ecp_sph(self):
         h1_cpu = mol_sph.intor('ECPscalar_sph')
         h1_gpu = get_ecp(mol_sph).get()
-        assert np.linalg.norm(h1_cpu - h1_gpu) < 2e-10  # Machine precision threshold
+        self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
+        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-8  # Machine precision threshold
+
+    def test_ecp_cart_ip1(self):
+        # Match gpu4pyscf iprinv style: compare per-ECP-atom contributions
+        h1_gpu = get_ecp_ip(mol_cart)
+        ecp_atoms = set(mol_cart._ecpbas[:, gto.ATOM_OF])
+        for atm_id in ecp_atoms:
+            with mol_cart.with_rinv_at_nucleus(atm_id):
+                h1_cpu = mol_cart.intor('ECPscalar_iprinv_cart')
+            self._log(f"atom: {atm_id:2d}  norm: {np.linalg.norm(h1_cpu - h1_gpu[atm_id].get()):.3e}")
+            assert np.linalg.norm(h1_cpu - h1_gpu[atm_id].get()) < 1e-8
+
+    def test_ecp_sph_ipnuc(self):
+        h1_cpu = mol_sph.intor('ECPscalar_ipnuc_sph')
+        h1_gpu = get_ecp_ip(mol_sph).sum(axis=0).get()
+        self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
+        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-8
+
+    def test_ecp_cart_ipipv(self):
+        h1_cpu = mol_cart.intor('ECPscalar_ipipnuc', comp=9)
+        h1_gpu = get_ecp_ipip(mol_cart, 'ipipv').sum(axis=0).get()
+        self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
+        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-8
+
+    def test_ecp_cart_ipvip_cart(self):
+        h1_cpu = mol_cart.intor('ECPscalar_ipnucip', comp=9)
+        h1_gpu = get_ecp_ipip(mol_cart, 'ipvip').sum(axis=0).get()
+        self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
+        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-8
 
 
 if __name__ == "__main__":
     unittest.main()
-

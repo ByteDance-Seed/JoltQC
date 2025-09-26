@@ -320,29 +320,34 @@ class BasisLayout:
 
     def dm_from_mol(self, mat):
         """
-        Transform matrix from decontracted molecular AO to decontracted cartesian AO.
+        Transform matrix from decontracted molecular AO order into the
+        internal decontracted cartesian AO order used by kernels.
+
+        For spherical input, applies sph->cart transform; for cart input,
+        performs a pure reordering.
         """
         mat_cp = cp.asarray(mat) if not isinstance(mat, cp.ndarray) else mat
-        src_offsets = self.ao_loc_no_pad
-        mol_ao_loc = self.mol_ao_loc
-        nao = int(src_offsets[-1])
-        is_cart = self.splitted_mol.cart
+        # Source = decontracted molecular order, Destination = internal order (no pad)
+        src_offsets = self.mol_ao_loc
+        dst_offsets = self.ao_loc_no_pad
+        nao_dst = int(dst_offsets[-1])
+        is_cart_src = self._mol.cart  # original molecule basis type
 
         if mat_cp.ndim == 3:
             results = []
-            transform_func = cart2cart if is_cart else sph2cart
+            transform_func = cart2cart if is_cart_src else sph2cart
             for i in range(mat_cp.shape[0]):
                 mat_2d = transform_func(
-                    mat_cp[i], self.angs_no_pad, src_offsets, mol_ao_loc, nao
+                    mat_cp[i], self.angs_no_pad, src_offsets, dst_offsets, nao_dst
                 )
                 if mat_2d.ndim == 3 and mat_2d.shape[0] == 1:
                     mat_2d = mat_2d[0]
                 results.append(mat_2d)
             return cp.stack(results, axis=0)
         else:
-            transform_func = cart2cart if is_cart else sph2cart
+            transform_func = cart2cart if is_cart_src else sph2cart
             result = transform_func(
-                mat_cp, self.angs_no_pad, src_offsets, mol_ao_loc, nao
+                mat_cp, self.angs_no_pad, src_offsets, dst_offsets, nao_dst
             )
             return result[0] if result.ndim == 3 and result.shape[0] == 1 else result
 

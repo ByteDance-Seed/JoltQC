@@ -9,7 +9,12 @@ import cupy as cp
 from typing import Dict, Any, Optional
 from jqc.backend.ecp import ecp_generator, get_ecp
 
-def apply_ecp(mol, cutoff_fp32: float = 1e-8, cutoff_fp64: float = 1e-12) -> Dict[str, Any]:
+def apply_ecp(
+    mol,
+    precision: str = 'fp64',
+    cutoff_fp32: float = 1e-8,
+    cutoff_fp64: float = 1e-12,
+) -> Dict[str, Any]:
     """
     Apply JoltQC ECP kernels to PySCF molecule
 
@@ -187,3 +192,31 @@ def benchmark_ecp(mol, n_trials: int = 5) -> Dict[str, float]:
             results[precision] = {'error': str(e)}
 
     return results
+
+
+# Provide gpu4pyscf-compatible API wrappers
+def get_ecp_ip_gpu4pyscf_compat(mol, ip_type='ip', ecp_atoms=None):
+    """
+    GPU4PySCF-compatible wrapper for get_ecp_ip
+
+    This provides the same API as gpu4pyscf.gto.ecp.get_ecp_ip
+    """
+    return get_ecp_ip(mol, ip_type=ip_type, ecp_atoms=ecp_atoms, precision='fp64')
+
+
+def get_ecp_ipip_gpu4pyscf_compat(mol, ip_type='ipipv', ecp_atoms=None):
+    """
+    GPU4PySCF-compatible wrapper for get_ecp_ipip
+
+    This provides the same API as gpu4pyscf.gto.ecp.get_ecp_ipip
+    """
+    return get_ecp_ipip(mol, ip_type=ip_type, ecp_atoms=ecp_atoms, precision='fp64')
+
+
+def get_ecp_gpu4pyscf_compat(mol):
+    """
+    GPU4PySCF-compatible wrapper for get_ecp
+
+    This provides the same API as gpu4pyscf.gto.ecp.get_ecp
+    """
+    return get_ecp(mol, precision='fp64')
