@@ -63,21 +63,45 @@ double rad_part(const int ish, const int* __restrict__ ecpbas, const double* __r
     if (threadIdx.x < NGAUSS){
         w = w128[threadIdx.x];
     }
-    return u1 * pow(r, r_order) * w;
+    // Avoid pow for small integer r_order (common cases: 0,1,2,3)
+    double rr;
+    if (r_order == 0) {
+        rr = 1.0;
+    } else if (r_order == 1) {
+        rr = r;
+    } else if (r_order == 2) {
+        rr = r * r;
+    } else if (r_order == 3) {
+        rr = r * r * r;
+    } else {
+        rr = pow(r, r_order);
+    }
+    return u1 * rr * w;
 }
 
 template <int L> __device__
 void cache_fac(double *fx, const double ri[3]){
-    const int LI1 = L + 1;
-    const int nfi = (LI1+1)*LI1/2;
+    constexpr int LI1 = L + 1;
+    constexpr int nfi = (LI1+1)*LI1/2;
+    // Precompute powers iteratively to avoid pow() in inner loop
+    double px[LI1], py[LI1], pz[LI1];
+    px[0] = 1.0; py[0] = 1.0; pz[0] = 1.0;
+    #pragma unroll
+    for (int t = 1; t <= L; ++t){
+        px[t] = px[t-1] * ri[0];
+        py[t] = py[t-1] * ri[1];
+        pz[t] = pz[t-1] * ri[2];
+    }
     for (int i = threadIdx.x; i <= L; i+=blockDim.x){
         const int xoffset = i*(i+1)/2;
         const int yoffset = xoffset + nfi;
+        #pragma unroll
         for (int j = 0; j <= i; j++){
             const double bfac = _binom[xoffset+j]; // binom(i,j)
-            fx[xoffset+j        ] = bfac * pow(ri[0], i-j);
-            fx[yoffset+j        ] = bfac * pow(ri[1], i-j);
-            fx[yoffset+j +   nfi] = bfac * pow(ri[2], i-j);
+            const int p = i - j;
+            fx[xoffset+j        ] = bfac * px[p];
+            fx[yoffset+j        ] = bfac * py[p];
+            fx[yoffset+j +   nfi] = bfac * pz[p];
         }
     }
 }
@@ -90,7 +114,7 @@ void block_reduce(double val, double* __restrict__ d_out) {
     unsigned int lane_id = tid % 32;
 
     // Step 1: Reduce within each warp using shuffle
-    for (int offset = warpSize/2; offset > 0; offset /= 2) {
+    for (unsigned int offset = warpSize/2; offset > 0; offset /= 2) {
         val += __shfl_down_sync(0xffffffff, val, offset);
     }
 
@@ -103,7 +127,7 @@ void block_reduce(double val, double* __restrict__ d_out) {
     // Step 3: Reduce across warps (only first warp participates)
     if (warp_id == 0) {
         val = (tid < (THREADS / 32)) ? warp_sums[tid] : 0.0;
-        for (int offset = warpSize/2; offset > 0; offset /= 2) {
+        for (unsigned int offset = warpSize/2; offset > 0; offset /= 2) {
             val += __shfl_down_sync(0xffffffff, val, offset);
         }
     }

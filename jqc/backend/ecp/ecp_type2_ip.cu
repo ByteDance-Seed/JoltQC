@@ -110,24 +110,43 @@ void type2_cart_kernel(double* __restrict__ gctr,
         type2_ang<LIT>(angi, rca, omegai+m);
         type2_ang<LJT>(angj, rcb, omegaj+m);
         __syncthreads();
+        const int PT = 4;  // tile size in p
+        const int QT = 4;  // tile size in q
         for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){
             const int i = ij%nfi;
             const int j = ij/nfi;
-            double s = 0;
+            double s = 0.0;
             for (int k = 0; k <= LIT; k++){
             for (int l = 0; l <= LJT; l++){
                 double *pangi = angi + k*nfi*LIC1 + i*LIC1;
                 double *pangj = angj + l*nfj*LJC1 + j*LJC1;
-                double *prad = rad_all + (k+l)*LIC1*LJC1;
-
-                double reg_angi[LIC1];
-                double reg_angj[LJC1];
-                for (int p = 0; p < LIC1; p++){reg_angi[p] = pangi[p];}
-                for (int q = 0; q < LJC1; q++){reg_angj[q] = pangj[q];}
-                for (int p = 0; p < LIC1; p++){
-                for (int q = 0; q < LJC1; q++){
-                    s += prad[p*LJC1+q] * reg_angi[p] * reg_angj[q];
-                }}
+                double *prad  = rad_all + (k+l)*LIC1*LJC1;
+                for (int p0 = 0; p0 < LIC1; p0 += PT){
+                    const int pmax = min(PT, LIC1 - p0);
+                    double ap[PT];
+                    #pragma unroll
+                    for (int tp = 0; tp < PT; ++tp){
+                        ap[tp] = (tp < pmax) ? pangi[p0 + tp] : 0.0;
+                    }
+                    for (int q0 = 0; q0 < LJC1; q0 += QT){
+                        const int qmax = min(QT, LJC1 - q0);
+                        double bq[QT];
+                        #pragma unroll
+                        for (int tq = 0; tq < QT; ++tq){
+                            bq[tq] = (tq < qmax) ? pangj[q0 + tq] : 0.0;
+                        }
+                        #pragma unroll
+                        for (int tp = 0; tp < PT; ++tp){
+                            if (tp >= pmax) break;
+                            const double * __restrict__ prad_row = prad + (p0 + tp) * LJC1 + q0;
+                            #pragma unroll
+                            for (int tq = 0; tq < QT; ++tq){
+                                if (tq >= qmax) break;
+                                s += prad_row[tq] * ap[tp] * bq[tq];
+                            }
+                        }
+                    }
+                }
             }}
             gctr[ij] += fac*s;
         }

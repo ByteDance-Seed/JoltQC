@@ -77,7 +77,29 @@ void type1_cart_kernel(double* __restrict__ gctr,
             type1_rad_part<LIT+LJT>(rad_all, k, aij, ur);
 
             const double eij = exp(-ai_prim*r2ca - aj_prim*r2cb);
-            const double eaij = eij * pow(-2.0*ai_prim, orderi) * pow(-2.0*aj_prim, orderj);
+            // Avoid pow in hot loop; orderi/orderj are template args (0,1,2)
+            double io, jo;
+            if constexpr (orderi == 0) {
+                io = 1.0;
+            } else if constexpr (orderi == 1) {
+                io = -2.0 * ai_prim;
+            } else if constexpr (orderi == 2) {
+                const double t = -2.0 * ai_prim;
+                io = t * t;
+            } else {
+                io = pow(-2.0*ai_prim, orderi);
+            }
+            if constexpr (orderj == 0) {
+                jo = 1.0;
+            } else if constexpr (orderj == 1) {
+                jo = -2.0 * aj_prim;
+            } else if constexpr (orderj == 2) {
+                const double t = -2.0 * aj_prim;
+                jo = t * t;
+            } else {
+                jo = pow(-2.0*aj_prim, orderj);
+            }
+            const double eaij = eij * io * jo;
             const double ceij = eaij * cei[ip].c * cej[jp].c;
             type1_rad_ang<LIT+LJT>(rad_ang, rij, rad_all, fac*ceij);
             __syncthreads();

@@ -53,7 +53,18 @@ void type2_facs_rad(double facs[LIC+1], const double rca, const DataType2* __res
                 buf[j] *= t1;
             }
         }
-        const double c = pow(-2.0*ce[ip].e, order) * ce[ip].c;
+        // Avoid pow in hot loop: order is a template arg (0,1,2 in practice)
+        double c;
+        if constexpr (order == 0) {
+            c = ce[ip].c;
+        } else if constexpr (order == 1) {
+            c = (-2.0 * ce[ip].e) * ce[ip].c;
+        } else if constexpr (order == 2) {
+            const double twoe = -2.0 * ce[ip].e;
+            c = (twoe * twoe) * ce[ip].c;
+        } else {
+            c = pow(-2.0*ce[ip].e, order) * ce[ip].c; // Fallback for unexpected order
+        }
         for (int j = 0; j <= LIC; j++){
             facs[j] += c * buf[j];
         }
@@ -270,7 +281,7 @@ void type2_cart(double* __restrict__ gctr,
     __shared__ double angj[LJ1*nfj*LJC1];
 
     // ECP Type2 normalization factor - basis layout already includes normalization
-    const double fac = 16.0 * M_PI * M_PI;
+    constexpr double fac = 16.0 * M_PI * M_PI;
 
     constexpr int nreg = (nfi*nfj + THREADS - 1)/THREADS;
     double reg_gctr[nreg];
@@ -284,7 +295,8 @@ void type2_cart(double* __restrict__ gctr,
         type2_ang<LJ>(angj, rcb, omegaj+m);
         __syncthreads();
         // Accumulate per-thread block partial sums into reg_gctr buckets
-        //for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){
+        const int PT = 4;  // tile size in p
+        const int QT = 4;  // tile size in q
         for (int b = 0; b < nreg; b++){
             const int ij = b * THREADS + threadIdx.x;
             if (ij >= nfi*nfj){
@@ -298,17 +310,34 @@ void type2_cart(double* __restrict__ gctr,
                 double *pangi = angi + k*nfi*LIC1 + i*LIC1;
                 double *pangj = angj + l*nfj*LJC1 + j*LJC1;
                 double *prad  = rad_all + (k+l)*LIC1*LJC1;
-                double reg_angi[LIC1];
-                double reg_angj[LJC1];
-                for (int p = 0; p < LIC1; p++){ reg_angi[p] = pangi[p]; }
-                for (int q = 0; q < LJC1; q++){ reg_angj[q] = pangj[q]; }
-#pragma unroll
-                for (int p = 0; p < LIC1; p++){
-                for (int q = 0; q < LJC1; q++){
-                    s += prad[p*LJC1 + q] * reg_angi[p] * reg_angj[q];
-                }}
+                for (int p0 = 0; p0 < LIC1; p0 += PT){
+                    const int pmax = min(PT, LIC1 - p0);
+                    double ap[PT];
+                    #pragma unroll
+                    for (int tp = 0; tp < PT; ++tp){
+                        ap[tp] = (tp < pmax) ? pangi[p0 + tp] : 0.0;
+                    }
+                    for (int q0 = 0; q0 < LJC1; q0 += QT){
+                        const int qmax = min(QT, LJC1 - q0);
+                        double bq[QT];
+                        #pragma unroll
+                        for (int tq = 0; tq < QT; ++tq){
+                            bq[tq] = (tq < qmax) ? pangj[q0 + tq] : 0.0;
+                        }
+                        #pragma unroll
+                        for (int tp = 0; tp < PT; ++tp){
+                            if (tp >= pmax) break;
+                            const double * __restrict__ prad_row = prad + (p0 + tp) * LJC1 + q0;
+                            #pragma unroll
+                            for (int tq = 0; tq < QT; ++tq){
+                                if (tq >= qmax) break;
+                                s += prad_row[tq] * ap[tp] * bq[tq];
+                            }
+                        }
+                    }
+                }
             }}
-            reg_gctr[ij/THREADS] += fac * s;
+            reg_gctr[b] += fac * s;
         }
         __syncthreads();
     }
