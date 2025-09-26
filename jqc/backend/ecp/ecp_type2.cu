@@ -86,6 +86,8 @@ void type2_facs_omega(double* __restrict__ omega, const double r[3]){
         unitr[2] = r[2] * norm_r;
     }
 
+    double buf[(LC+1)*(LC+2)/2];
+
     // LC + (i+j+k) + (L + LC) needs to be even
     // When i+j+k + LC is even
     for (int n = threadIdx.x; n < (L+1)*(L+1)*(L+1); n+=blockDim.x){
@@ -103,12 +105,36 @@ void type2_facs_omega(double* __restrict__ omega, const double r[3]){
         double *pomega = omega + (ioff+joff+k)*blk;
 
         //for (int lmb = need_even; lmb <= L+LC; lmb+=2){
-        if constexpr(L+LC >= 0)  {type2_ang_nuc_l<0>(pomega, i, j, k, unitr);  pomega+=(2*LC+1);}
-        if constexpr(L+LC >= 2)  {type2_ang_nuc_l<2>(pomega, i, j, k, unitr);  pomega+=(2*LC+1);}
-        if constexpr(L+LC >= 4)  {type2_ang_nuc_l<4>(pomega, i, j, k, unitr);  pomega+=(2*LC+1);}
-        if constexpr(L+LC >= 6)  {type2_ang_nuc_l<6>(pomega, i, j, k, unitr);  pomega+=(2*LC+1);}
-        if constexpr(L+LC >= 8)  {type2_ang_nuc_l<8>(pomega, i, j, k, unitr);  pomega+=(2*LC+1);}
-        if constexpr(L+LC >= 10) {type2_ang_nuc_l<10>(pomega, i, j, k, unitr); pomega+=(2*LC+1);}
+        if constexpr(L+LC >= 0)  {
+            type2_ang_nuc_l<0>(buf, i, j, k, unitr);  
+            cart2sph<LC>(pomega, buf);
+            pomega += (2*LC+1);
+        }
+        if constexpr(L+LC >= 2)  {
+            type2_ang_nuc_l<2>(buf, i, j, k, unitr);  
+            cart2sph<LC>(pomega, buf);
+            pomega += (2*LC+1);
+        }
+        if constexpr(L+LC >= 4)  {
+            type2_ang_nuc_l<4>(buf, i, j, k, unitr);  
+            cart2sph<LC>(pomega, buf);
+            pomega+=(2*LC+1);
+        }
+        if constexpr(L+LC >= 6)  {
+            type2_ang_nuc_l<6>(buf, i, j, k, unitr);  
+            cart2sph<LC>(pomega, buf);
+            pomega+=(2*LC+1);
+        }
+        if constexpr(L+LC >= 8)  {
+            type2_ang_nuc_l<8>(buf, i, j, k, unitr);  
+            cart2sph<LC>(pomega, buf);
+            pomega+=(2*LC+1);
+        }
+        if constexpr(L+LC >= 10) {
+            type2_ang_nuc_l<10>(buf, i, j, k, unitr); 
+            cart2sph<LC>(pomega, buf);
+            pomega+=(2*LC+1);
+        }
     }
 
     // When i+j+k + LC is odd
@@ -126,44 +152,60 @@ void type2_facs_omega(double* __restrict__ omega, const double r[3]){
         double *pomega = omega + (ioff+joff+k)*blk;
 
         //for (int lmb = need_even; lmb <= L+LC; lmb+=2){
-        if constexpr(L+LC >= 1)  {type2_ang_nuc_l<1>(pomega, i, j, k, unitr);  pomega+=(2*LC+1);}
-        if constexpr(L+LC >= 3)  {type2_ang_nuc_l<3>(pomega, i, j, k, unitr);  pomega+=(2*LC+1);}
-        if constexpr(L+LC >= 5)  {type2_ang_nuc_l<5>(pomega, i, j, k, unitr);  pomega+=(2*LC+1);}
-        if constexpr(L+LC >= 7)  {type2_ang_nuc_l<7>(pomega, i, j, k, unitr);  pomega+=(2*LC+1);}
-        if constexpr(L+LC >= 9)  {type2_ang_nuc_l<9>(pomega, i, j, k, unitr);  pomega+=(2*LC+1);}
+        if constexpr(L+LC >= 1)  {
+            type2_ang_nuc_l<1>(buf, i, j, k, unitr);  
+            cart2sph<LC>(pomega, buf);
+            pomega += (2*LC+1);
+        }
+        if constexpr(L+LC >= 3)  {
+            type2_ang_nuc_l<3>(buf, i, j, k, unitr);
+            cart2sph<LC>(pomega, buf);
+            pomega += (2*LC+1);
+        }
+        if constexpr(L+LC >= 5)  {
+            type2_ang_nuc_l<5>(buf, i, j, k, unitr);
+            cart2sph<LC>(pomega, buf);
+            pomega += (2*LC+1);
+        }
+        if constexpr(L+LC >= 7)  {
+            type2_ang_nuc_l<7>(buf, i, j, k, unitr);
+            cart2sph<LC>(pomega, buf);
+            pomega += (2*LC+1);
+        }
+        if constexpr(L+LC >= 9)  {
+            type2_ang_nuc_l<9>(buf, i, j, k, unitr);
+            cart2sph<LC>(pomega, buf); 
+            pomega += (2*LC+1);
+        }
     }
 }
 
 template <int L> __device__
 void type2_ang(double* __restrict__ facs, const double rca[3], const double* __restrict__ omega){
     constexpr int L1 = L+1;
-    constexpr int nfi = L1*(L1+1)/2;
+    constexpr int NF = L1*(L1+1)/2;
     constexpr int LCC1 = (2*LC+1);
     constexpr int LC1 = L+LC+1;
     constexpr int BLK = (LC1+1)/2 * LCC1;
 
-    __shared__ double fi[nfi*3];
+    // reset shared memory buffer
+    for (int i = threadIdx.x; i < L1*LC1*NF; i+=THREADS){
+        facs[i] = 0.0;
+    }
+
+    __shared__ double fi[NF*3];
     cache_fac<L>(fi, rca);
     __syncthreads();
 
     // i,j,k,ijkmn->(i+j+k)pmn
-    for (int pmn = threadIdx.x; pmn < nfi*LC1; pmn+=blockDim.x){
-        const int m = pmn/nfi;
-        const int p = pmn%nfi;
-
+    for (int p = 0; p < NF; p++){
         const int iy = _cart_pow_y[p];
         const int iz = _cart_pow_z[p];
         const int ix = L - iy - iz;
 
         double *fx = fi + (ix+1)*ix/2;
-        double *fy = fi + (iy+1)*iy/2 + nfi;
-        double *fz = fi + (iz+1)*iz/2 + nfi*2;
-
-        //double ang_pmn[L+1];
-        for (int i = 0; i < L+1; i++){
-            //ang_pmn[i] = 0.0;
-            facs[i*nfi*LC1 + p*LC1 + m] = 0.0;
-        }
+        double *fy = fi + (iy+1)*iy/2 + NF;
+        double *fz = fi + (iz+1)*iz/2 + NF*2;
         
         for (int i = 0; i <= ix; i++){
         for (int j = 0; j <= iy; j++){
@@ -174,16 +216,34 @@ void type2_ang(double* __restrict__ facs, const double rca[3], const double* __r
             const int ioff = (L_i)*(L_i+1)*(L_i+2)/6;
             const int joff = (L_i-j)*(L_i-j+1)/2;
             const double *pomega = omega + (ioff+joff+k)*BLK;
+            
+            /*
+            for (int m = threadIdx.x; m < LC1; m+=THREADS){
+                if ((LC+ijk)%2 == m%2){
+                    facs[ijk*NF*LC1 + p*LC1 + m] += fac * pomega[m/2*LCC1];
+                }
+            }
+            */
+            const int parity  = (LC + ijk) & 1;  // required parity (0 = even, 1 = odd)
+            // Precompute base pointer for facs
+            double* facs_base = &facs[(size_t)ijk * NF * LC1 + (size_t)p * LC1];
 
-            if ((LC+ijk)%2 == m%2){
-                //ang_pmn[ijk] += fac * pomega[m/2*LCC1];
-                facs[ijk*nfi*LC1 + p*LC1 + m] += fac * pomega[m/2*LCC1];
+            // Find this thread’s first valid m that matches parity
+            int m = threadIdx.x;
+            if ( (m & 1) != parity ) {
+                m += 1;  // shift to next parity
+            }
+            // Stride by 2*threads so we only visit values with the correct parity
+            //for (; m < LC1; m += THREADS * 2) {
+            //    int half_index = m >> 1;  // equivalent to m/2 since parity ensures divisibility
+            //    facs_base[m] += fac * pomega[(size_t)half_index * LCC1];
+            //}
+            // Assume L + LC + 1 < 128 or 256
+            if (m < LC1){
+                const int half_index = m >> 1;  // equivalent to m/2 since parity ensures divisibility
+                facs_base[m] += fac * pomega[half_index * LCC1];
             }
         }}}
-
-        //for (int i = 0; i <= L; i++){
-        //    facs[i*nfi*LC1 + p*LC1 + m] = ang_pmn[i];
-        //}
     }
 }
 
@@ -295,8 +355,8 @@ void type2_cart(double* __restrict__ gctr,
         type2_ang<LJ>(angj, rcb, omegaj+m);
         __syncthreads();
         // Accumulate per-thread block partial sums into reg_gctr buckets
-        const int PT = 4;  // tile size in p
-        const int QT = 4;  // tile size in q
+        constexpr int PT = 4;  // tile size in p
+        constexpr int QT = 4;  // tile size in q
         for (int b = 0; b < nreg; b++){
             const int ij = b * THREADS + threadIdx.x;
             if (ij >= nfi*nfj){

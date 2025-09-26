@@ -83,25 +83,14 @@ template <int L> __device__
 void cache_fac(double *fx, const double ri[3]){
     constexpr int LI1 = L + 1;
     constexpr int nfi = (LI1+1)*LI1/2;
-    // Precompute powers iteratively to avoid pow() in inner loop
-    double px[LI1], py[LI1], pz[LI1];
-    px[0] = 1.0; py[0] = 1.0; pz[0] = 1.0;
-    #pragma unroll
-    for (int t = 1; t <= L; ++t){
-        px[t] = px[t-1] * ri[0];
-        py[t] = py[t-1] * ri[1];
-        pz[t] = pz[t-1] * ri[2];
-    }
     for (int i = threadIdx.x; i <= L; i+=blockDim.x){
         const int xoffset = i*(i+1)/2;
         const int yoffset = xoffset + nfi;
-        #pragma unroll
         for (int j = 0; j <= i; j++){
             const double bfac = _binom[xoffset+j]; // binom(i,j)
-            const int p = i - j;
-            fx[xoffset+j        ] = bfac * px[p];
-            fx[yoffset+j        ] = bfac * py[p];
-            fx[yoffset+j +   nfi] = bfac * pz[p];
+            fx[xoffset+j        ] = bfac * pow(ri[0], i-j);
+            fx[yoffset+j        ] = bfac * pow(ri[1], i-j);
+            fx[yoffset+j +   nfi] = bfac * pow(ri[2], i-j);
         }
     }
 }

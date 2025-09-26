@@ -15,14 +15,14 @@
  */
 
 template <int l> __device__
-void type2_ang_nuc_l(double * __restrict__ omega,
+void type2_ang_nuc_l(double buf[(LC+1)*(LC+2)/2],
                     const int i, const int j, const int k,
                     double unitr[3]){
 return;
 }
 
 template <> __device__
-void type2_ang_nuc_l<0>(double * __restrict__ omega,
+void type2_ang_nuc_l<0>(double buf[(LC+1)*(LC+2)/2],
                     const int i, const int j, const int k,
                     double unitr[3]){
     constexpr int l = 0;
@@ -34,11 +34,9 @@ void type2_ang_nuc_l<0>(double * __restrict__ omega,
         rz[li] = rz[li - 1] * unitr[2];
     }
 
-    double c[2*l+1];
-    for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
+    double c[2*l+1] = {0.0};
     c[0] += 0.28209479177387814*(rx[0]*ry[0]*rz[0]);;
 
-    double buf[(LC+1)*(LC+2)/2];
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] = 0.0;
     double nuc;
 
@@ -54,10 +52,10 @@ void type2_ang_nuc_l<0>(double * __restrict__ omega,
     }
 
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
-    cart2sph<LC>(omega, buf);
 }
+
 template <> __device__
-void type2_ang_nuc_l<1>(double * __restrict__ omega,
+void type2_ang_nuc_l<1>(double buf[(LC+1)*(LC+2)/2],
                     const int i, const int j, const int k,
                     double unitr[3]){
     constexpr int l = 1;
@@ -69,13 +67,11 @@ void type2_ang_nuc_l<1>(double * __restrict__ omega,
         rz[li] = rz[li - 1] * unitr[2];
     }
 
-    double c[2*l+1];
-    for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
+    double c[2*l+1] = {0.0};
     c[0] += 0.4886025119029199*(rx[1]*ry[0]*rz[0]);
     c[1] += 0.4886025119029199*(rx[0]*ry[1]*rz[0]);
     c[2] += 0.4886025119029199*(rx[0]*ry[0]*rz[1]);;
 
-    double buf[(LC+1)*(LC+2)/2];
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] = 0.0;
     double nuc;
 
@@ -111,10 +107,10 @@ void type2_ang_nuc_l<1>(double * __restrict__ omega,
     }
 
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
-    cart2sph<LC>(omega, buf);
 }
+
 template <> __device__
-void type2_ang_nuc_l<2>(double * __restrict__ omega,
+void type2_ang_nuc_l<2>(double buf[(LC+1)*(LC+2)/2],
                     const int i, const int j, const int k,
                     double unitr[3]){
     constexpr int l = 2;
@@ -126,8 +122,7 @@ void type2_ang_nuc_l<2>(double * __restrict__ omega,
         rz[li] = rz[li - 1] * unitr[2];
     }
 
-    double c[2*l+1];
-    for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
+    double c[2*l+1] = {0.0};
     c[0] += 1.0925484305920792*(rx[1]*ry[1]*rz[0]);
     c[1] += 1.0925484305920792*(rx[0]*ry[1]*rz[1]);
     c[2] += -0.31539156525252*(rx[2]*ry[0]*rz[0]);
@@ -137,7 +132,6 @@ void type2_ang_nuc_l<2>(double * __restrict__ omega,
     c[4] += 0.5462742152960396*(rx[2]*ry[0]*rz[0]);
     c[4] += -0.5462742152960396*(rx[0]*ry[2]*rz[0]);;
 
-    double buf[(LC+1)*(LC+2)/2];
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] = 0.0;
     double nuc;
 
@@ -205,10 +199,10 @@ void type2_ang_nuc_l<2>(double * __restrict__ omega,
     }
 
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
-    cart2sph<LC>(omega, buf);
 }
+
 template <> __device__
-void type2_ang_nuc_l<3>(double * __restrict__ omega,
+void type2_ang_nuc_l<3>(double buf[(LC+1)*(LC+2)/2],
                     const int i, const int j, const int k,
                     double unitr[3]){
     constexpr int l = 3;
@@ -220,8 +214,7 @@ void type2_ang_nuc_l<3>(double * __restrict__ omega,
         rz[li] = rz[li - 1] * unitr[2];
     }
 
-    double c[2*l+1];
-    for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
+    double c[2*l+1] = {0.0};
     c[0] += 1.7701307697799304*(rx[2]*ry[1]*rz[0]);
     c[0] += -0.5900435899266435*(rx[0]*ry[3]*rz[0]);
     c[1] += 2.8906114426405543*(rx[1]*ry[1]*rz[1]);
@@ -239,7 +232,6 @@ void type2_ang_nuc_l<3>(double * __restrict__ omega,
     c[6] += 0.5900435899266435*(rx[3]*ry[0]*rz[0]);
     c[6] += -1.7701307697799304*(rx[1]*ry[2]*rz[0]);;
 
-    double buf[(LC+1)*(LC+2)/2];
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] = 0.0;
     double nuc;
 
@@ -351,10 +343,10 @@ void type2_ang_nuc_l<3>(double * __restrict__ omega,
     }
 
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
-    cart2sph<LC>(omega, buf);
 }
+
 template <> __device__
-void type2_ang_nuc_l<4>(double * __restrict__ omega,
+void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2],
                     const int i, const int j, const int k,
                     double unitr[3]){
     constexpr int l = 4;
@@ -366,8 +358,7 @@ void type2_ang_nuc_l<4>(double * __restrict__ omega,
         rz[li] = rz[li - 1] * unitr[2];
     }
 
-    double c[2*l+1];
-    for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
+    double c[2*l+1] = {0.0};
     c[0] += 2.5033429417967046*(rx[3]*ry[1]*rz[0]);
     c[0] += -2.5033429417967046*(rx[1]*ry[3]*rz[0]);
     c[1] += 5.310392309339791*(rx[2]*ry[1]*rz[1]);
@@ -397,7 +388,6 @@ void type2_ang_nuc_l<4>(double * __restrict__ omega,
     c[8] += -3.755014412695057*(rx[2]*ry[2]*rz[0]);
     c[8] += 0.6258357354491761*(rx[0]*ry[4]*rz[0]);;
 
-    double buf[(LC+1)*(LC+2)/2];
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] = 0.0;
     double nuc;
 
@@ -566,10 +556,10 @@ void type2_ang_nuc_l<4>(double * __restrict__ omega,
     }
 
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
-    cart2sph<LC>(omega, buf);
 }
+
 template <> __device__
-void type2_ang_nuc_l<5>(double * __restrict__ omega,
+void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2],
                     const int i, const int j, const int k,
                     double unitr[3]){
     constexpr int l = 5;
@@ -581,8 +571,7 @@ void type2_ang_nuc_l<5>(double * __restrict__ omega,
         rz[li] = rz[li - 1] * unitr[2];
     }
 
-    double c[2*l+1];
-    for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
+    double c[2*l+1] = {0.0};
     c[0] += 3.2819102842008507*(rx[4]*ry[1]*rz[0]);
     c[0] += -6.563820568401701*(rx[2]*ry[3]*rz[0]);
     c[0] += 0.6563820568401701*(rx[0]*ry[5]*rz[0]);
@@ -630,7 +619,6 @@ void type2_ang_nuc_l<5>(double * __restrict__ omega,
     c[10] += -6.563820568401701*(rx[3]*ry[2]*rz[0]);
     c[10] += 3.2819102842008507*(rx[1]*ry[4]*rz[0]);;
 
-    double buf[(LC+1)*(LC+2)/2];
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] = 0.0;
     double nuc;
 
@@ -871,10 +859,10 @@ void type2_ang_nuc_l<5>(double * __restrict__ omega,
     }
 
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
-    cart2sph<LC>(omega, buf);
 }
+
 template <> __device__
-void type2_ang_nuc_l<6>(double * __restrict__ omega,
+void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2],
                     const int i, const int j, const int k,
                     double unitr[3]){
     constexpr int l = 6;
@@ -886,8 +874,7 @@ void type2_ang_nuc_l<6>(double * __restrict__ omega,
         rz[li] = rz[li - 1] * unitr[2];
     }
 
-    double c[2*l+1];
-    for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
+    double c[2*l+1] = {0.0};
     c[0] += 4.099104631151486*(rx[5]*ry[1]*rz[0]);
     c[0] += -13.663682103838289*(rx[3]*ry[3]*rz[0]);
     c[0] += 4.099104631151486*(rx[1]*ry[5]*rz[0]);
@@ -959,7 +946,6 @@ void type2_ang_nuc_l<6>(double * __restrict__ omega,
     c[12] += 10.247761577878716*(rx[2]*ry[4]*rz[0]);
     c[12] += -0.6831841051919144*(rx[0]*ry[6]*rz[0]);;
 
-    double buf[(LC+1)*(LC+2)/2];
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] = 0.0;
     double nuc;
 
@@ -1287,10 +1273,10 @@ void type2_ang_nuc_l<6>(double * __restrict__ omega,
     }
 
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
-    cart2sph<LC>(omega, buf);
 }
+
 template <> __device__
-void type2_ang_nuc_l<7>(double * __restrict__ omega,
+void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2],
                     const int i, const int j, const int k,
                     double unitr[3]){
     constexpr int l = 7;
@@ -1302,8 +1288,7 @@ void type2_ang_nuc_l<7>(double * __restrict__ omega,
         rz[li] = rz[li - 1] * unitr[2];
     }
 
-    double c[2*l+1];
-    for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
+    double c[2*l+1] = {0.0};
     c[0] += 4.950139127672174*(rx[6]*ry[1]*rz[0]);
     c[0] += -24.75069563836087*(rx[4]*ry[3]*rz[0]);
     c[0] += 14.850417383016522*(rx[2]*ry[5]*rz[0]);
@@ -1407,7 +1392,6 @@ void type2_ang_nuc_l<7>(double * __restrict__ omega,
     c[14] += 24.75069563836087*(rx[3]*ry[4]*rz[0]);
     c[14] += -4.950139127672174*(rx[1]*ry[6]*rz[0]);;
 
-    double buf[(LC+1)*(LC+2)/2];
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] = 0.0;
     double nuc;
 
@@ -1839,10 +1823,10 @@ void type2_ang_nuc_l<7>(double * __restrict__ omega,
     }
 
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
-    cart2sph<LC>(omega, buf);
 }
+
 template <> __device__
-void type2_ang_nuc_l<8>(double * __restrict__ omega,
+void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2],
                     const int i, const int j, const int k,
                     double unitr[3]){
     constexpr int l = 8;
@@ -1998,7 +1982,6 @@ void type2_ang_nuc_l<8>(double * __restrict__ omega,
     c[16] += -20.40994648489524*(rx[2]*ry[6]*rz[0]);
     c[16] += 0.72892666017483*(rx[0]*ry[8]*rz[0]);;
 
-    double buf[(LC+1)*(LC+2)/2];
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] = 0.0;
     double nuc;
 
@@ -2550,10 +2533,10 @@ void type2_ang_nuc_l<8>(double * __restrict__ omega,
     }
 
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
-    cart2sph<LC>(omega, buf);
 }
+
 template <> __device__
-void type2_ang_nuc_l<9>(double * __restrict__ omega,
+void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2],
                     const int i, const int j, const int k,
                     double unitr[3]){
     constexpr int l = 9;
@@ -2755,7 +2738,6 @@ void type2_ang_nuc_l<9>(double * __restrict__ omega,
     c[18] += -62.9076799556678*(rx[3]*ry[6]*rz[0]);
     c[18] += 6.740108566678694*(rx[1]*ry[8]*rz[0]);;
 
-    double buf[(LC+1)*(LC+2)/2];
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] = 0.0;
     double nuc;
 
@@ -3443,10 +3425,10 @@ void type2_ang_nuc_l<9>(double * __restrict__ omega,
     }
 
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
-    cart2sph<LC>(omega, buf);
 }
+
 template <> __device__
-void type2_ang_nuc_l<10>(double * __restrict__ omega,
+void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2],
                     const int i, const int j, const int k,
                     double unitr[3]){
     constexpr int l = 10;
@@ -3458,8 +3440,7 @@ void type2_ang_nuc_l<10>(double * __restrict__ omega,
         rz[li] = rz[li - 1] * unitr[2];
     }
 
-    double c[2*l+1];
-    for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
+    double c[2*l+1] = {0.0};
     c[0] += 7.673951182219901*(rx[9]*ry[1]*rz[0]);
     c[0] += -92.08741418663881*(rx[7]*ry[3]*rz[0]);
     c[0] += 193.3835697919415*(rx[5]*ry[5]*rz[0]);
@@ -3707,7 +3688,6 @@ void type2_ang_nuc_l<10>(double * __restrict__ omega,
     c[20] += 34.53278031998956*(rx[2]*ry[8]*rz[0]);
     c[20] += -0.7673951182219901*(rx[0]*ry[10]*rz[0]);;
 
-    double buf[(LC+1)*(LC+2)/2];
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] = 0.0;
     double nuc;
 
@@ -4553,5 +4533,4 @@ void type2_ang_nuc_l<10>(double * __restrict__ omega,
     }
 
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
-    cart2sph<LC>(omega, buf);
 }
