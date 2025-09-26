@@ -16,13 +16,13 @@
 
 template <int l> __device__
 double type1_ang_nuc_l(const int i, const int j, const int k,
-                    double * __restrict__ unitr){
+                    double unitr[3]){
 return 0.0;
 }
 
 template <> __device__
 double type1_ang_nuc_l<0>(const int i, const int j, const int k,
-                            double * __restrict__ unitr){
+                            double unitr[3]){
     constexpr int l = 0;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -50,7 +50,7 @@ double type1_ang_nuc_l<0>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<1>(const int i, const int j, const int k,
-                            double * __restrict__ unitr){
+                            double unitr[3]){
     constexpr int l = 1;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -94,7 +94,7 @@ double type1_ang_nuc_l<1>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<2>(const int i, const int j, const int k,
-                            double * __restrict__ unitr){
+                            double unitr[3]){
     constexpr int l = 2;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -166,7 +166,7 @@ double type1_ang_nuc_l<2>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<3>(const int i, const int j, const int k,
-                            double * __restrict__ unitr){
+                            double unitr[3]){
     constexpr int l = 3;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -278,7 +278,7 @@ double type1_ang_nuc_l<3>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<4>(const int i, const int j, const int k,
-                            double * __restrict__ unitr){
+                            double unitr[3]){
     constexpr int l = 4;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -444,7 +444,7 @@ double type1_ang_nuc_l<4>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<5>(const int i, const int j, const int k,
-                            double * __restrict__ unitr){
+                            double unitr[3]){
     constexpr int l = 5;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -682,7 +682,7 @@ double type1_ang_nuc_l<5>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<6>(const int i, const int j, const int k,
-                            double * __restrict__ unitr){
+                            double unitr[3]){
     constexpr int l = 6;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -1010,7 +1010,7 @@ double type1_ang_nuc_l<6>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<7>(const int i, const int j, const int k,
-                            double * __restrict__ unitr){
+                            double unitr[3]){
     constexpr int l = 7;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -1450,7 +1450,7 @@ double type1_ang_nuc_l<7>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<8>(const int i, const int j, const int k,
-                            double * __restrict__ unitr){
+                            double unitr[3]){
     constexpr int l = 8;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -2022,7 +2022,7 @@ double type1_ang_nuc_l<8>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<9>(const int i, const int j, const int k,
-                            double * __restrict__ unitr){
+                            double unitr[3]){
     constexpr int l = 9;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -2746,7 +2746,7 @@ double type1_ang_nuc_l<9>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<10>(const int i, const int j, const int k,
-                            double * __restrict__ unitr){
+                            double unitr[3]){
     constexpr int l = 10;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;

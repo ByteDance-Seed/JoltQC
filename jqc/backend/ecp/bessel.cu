@@ -94,18 +94,24 @@ static void _ine(double *out, const double z)
         for (int i = 0; i <= order; i++) {
             double ti = t0;
             double s = ti;
-            for (int k = 1;; k++) {
+            // Guard the inner series with a max-iteration cap and a robust
+            // convergence criterion to avoid extremely long runtimes at
+            // high angular momentum or adversarial z.
+            for (int k = 1; k < 4096; k++) {
                 ti *= z2 / (k * (k*2+i*2+1));
                 double next = s + ti;
-                if (next == s) {
-                    break;
-                } else {
+                // Converged when the increment no longer changes the sum,
+                // or when the increment is tiny relative to the sum.
+                if (next == s || fabs(ti) < 1e-16 * fabs(s)) {
                     s = next;
+                    break;
                 }
+                s = next;
+                // Absolute safety for very small terms
+                if (fabs(ti) < 1e-300) break;
             }
             t0 *= z/(i*2+3);  // k = 0
             out[i] = s;
         }
     }
 }
-

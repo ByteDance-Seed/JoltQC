@@ -113,19 +113,21 @@ void type2_cart_kernel(double* __restrict__ gctr,
         for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){
             const int i = ij%nfi;
             const int j = ij/nfi;
-            double s = 0.0;
+            double s = 0;
             for (int k = 0; k <= LIT; k++){
             for (int l = 0; l <= LJT; l++){
-                const double* __restrict__ pangi = angi + k*nfi*LIC1 + i*LIC1;
-                const double* __restrict__ pangj = angj + l*nfj*LJC1 + j*LJC1;
-                const double* __restrict__ prad  = rad_all + (k+l)*LIC1*LJC1;
+                double *pangi = angi + k*nfi*LIC1 + i*LIC1;
+                double *pangj = angj + l*nfj*LJC1 + j*LJC1;
+                double *prad = rad_all + (k+l)*LIC1*LJC1;
+
+                double reg_angi[LIC1];
+                double reg_angj[LJC1];
+                for (int p = 0; p < LIC1; p++){reg_angi[p] = pangi[p];}
+                for (int q = 0; q < LJC1; q++){reg_angj[q] = pangj[q];}
                 for (int p = 0; p < LIC1; p++){
-                    const double ap = pangi[p];
-                    const double* __restrict__ prad_row = prad + p*LJC1;
-                    for (int q = 0; q < LJC1; q++){
-                        s += prad_row[q] * ap * pangj[q];
-                    }
-                }
+                for (int q = 0; q < LJC1; q++){
+                    s += prad[p*LJC1+q] * reg_angi[p] * reg_angj[q];
+                }}
             }}
             gctr[ij] += fac*s;
         }

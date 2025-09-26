@@ -88,11 +88,12 @@ void type1_cart_kernel(double* __restrict__ gctr,
     //constexpr int NFJ_MAX = (LJT+orderj+1)*(LJT+orderj+2)/2;
     constexpr int nfi = (LIT+1) * (LIT+2) / 2;
     constexpr int nfj = (LJT+1) * (LJT+2) / 2;
-    double fi[3*nfi];
-    double fj[3*nfj];
+    __shared__ double fi[3*nfi];
+    __shared__ double fj[3*nfj];
     cache_fac<LIT>(fi, rca);
     cache_fac<LJT>(fj, rcb);
-
+    __syncthreads();
+    
     for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){
         const int mi = ij%nfi;
         const int mj = ij/nfi;

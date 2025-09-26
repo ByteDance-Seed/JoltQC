@@ -26,7 +26,7 @@ static double rnorm3d(double x, double y, double z) {
 }
 
 template <int order, int LIC, int np> __device__
-void type2_facs_rad(double* __restrict__ facs, const double rca, const DataType2* __restrict__ ce){
+void type2_facs_rad(double facs[LIC+1], const double rca, const DataType2* __restrict__ ce){
     double root = 0.0;
     if (threadIdx.x < NGAUSS){
         root = r128[threadIdx.x];
@@ -61,7 +61,7 @@ void type2_facs_rad(double* __restrict__ facs, const double rca, const DataType2
 }
 
 template <int L> __device__
-void type2_facs_omega(double* __restrict__ omega, const double* __restrict__ r){
+void type2_facs_omega(double* __restrict__ omega, const double r[3]){
     double unitr[3];
     if (r[0]*r[0] + r[1]*r[1] + r[2]*r[2] < 1e-16){
         unitr[0] = 0;
@@ -124,15 +124,16 @@ void type2_facs_omega(double* __restrict__ omega, const double* __restrict__ r){
 }
 
 template <int L> __device__
-void type2_ang(double* __restrict__ facs, const double* __restrict__ rca, const double* __restrict__ omega){
+void type2_ang(double* __restrict__ facs, const double rca[3], const double* __restrict__ omega){
     constexpr int L1 = L+1;
     constexpr int nfi = L1*(L1+1)/2;
     constexpr int LCC1 = (2*LC+1);
     constexpr int LC1 = L+LC+1;
     constexpr int BLK = (LC1+1)/2 * LCC1;
 
-    double fi[nfi*3];
+    __shared__ double fi[nfi*3];
     cache_fac<L>(fi, rca);
+    __syncthreads();
 
     // i,j,k,ijkmn->(i+j+k)pmn
     for (int pmn = threadIdx.x; pmn < nfi*LC1; pmn+=blockDim.x){
@@ -147,9 +148,10 @@ void type2_ang(double* __restrict__ facs, const double* __restrict__ rca, const 
         double *fy = fi + (iy+1)*iy/2 + nfi;
         double *fz = fi + (iz+1)*iz/2 + nfi*2;
 
-        double ang_pmn[L+1];
+        //double ang_pmn[L+1];
         for (int i = 0; i < L+1; i++){
-            ang_pmn[i] = 0.0;
+            //ang_pmn[i] = 0.0;
+            facs[i*nfi*LC1 + p*LC1 + m] = 0.0;
         }
         
         for (int i = 0; i <= ix; i++){
@@ -163,13 +165,14 @@ void type2_ang(double* __restrict__ facs, const double* __restrict__ rca, const 
             const double *pomega = omega + (ioff+joff+k)*BLK;
 
             if ((LC+ijk)%2 == m%2){
-                ang_pmn[ijk] += fac * pomega[m/2*LCC1];
+                //ang_pmn[ijk] += fac * pomega[m/2*LCC1];
+                facs[ijk*nfi*LC1 + p*LC1 + m] += fac * pomega[m/2*LCC1];
             }
         }}}
 
-        for (int i = 0; i <= L; i++){
-            facs[i*nfi*LC1 + p*LC1 + m] = ang_pmn[i];
-        }
+        //for (int i = 0; i <= L; i++){
+        //    facs[i*nfi*LC1 + p*LC1 + m] = ang_pmn[i];
+        //}
     }
 }
 
@@ -251,6 +254,7 @@ void type2_cart(double* __restrict__ gctr,
     }
     for (int p = 0; p <= LI+LJ; p++){
         double *prad = rad_all + p*LIC1*LJC1;
+#pragma unroll
         for (int i = 0; i <= LI+LC; i++){
         for (int j = 0; j <= LJ+LC; j++){
             block_reduce(radi[i]*radj[j]*ur, prad+i*LJC1+j);
@@ -273,35 +277,42 @@ void type2_cart(double* __restrict__ gctr,
     for (int i = 0; i < nreg; i++){
         reg_gctr[i] = 0.0;
     }
-
+    
     // (k+l)pq,kimp,ljmq->ij
     for (int m = 0; m < LCC1; m++){
         type2_ang<LI>(angi, rca, omegai+m);
         type2_ang<LJ>(angj, rcb, omegaj+m);
         __syncthreads();
         // Accumulate per-thread block partial sums into reg_gctr buckets
-        for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){
+        //for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){
+        for (int b = 0; b < nreg; b++){
+            const int ij = b * THREADS + threadIdx.x;
+            if (ij >= nfi*nfj){
+                continue;
+            }
             const int i = ij % nfi;
             const int j = ij / nfi;
             double s = 0.0;
             for (int k = 0; k <= LI; k++){
             for (int l = 0; l <= LJ; l++){
-                const double* __restrict__ pangi = angi + k*nfi*LIC1 + i*LIC1;
-                const double* __restrict__ pangj = angj + l*nfj*LJC1 + j*LJC1;
-                const double* __restrict__ prad  = rad_all + (k+l)*LIC1*LJC1;
+                double *pangi = angi + k*nfi*LIC1 + i*LIC1;
+                double *pangj = angj + l*nfj*LJC1 + j*LJC1;
+                double *prad  = rad_all + (k+l)*LIC1*LJC1;
+                double reg_angi[LIC1];
+                double reg_angj[LJC1];
+                for (int p = 0; p < LIC1; p++){ reg_angi[p] = pangi[p]; }
+                for (int q = 0; q < LJC1; q++){ reg_angj[q] = pangj[q]; }
+#pragma unroll
                 for (int p = 0; p < LIC1; p++){
-                    const double ap = pangi[p];
-                    const double* __restrict__ prad_row = prad + p*LJC1;
-                    for (int q = 0; q < LJC1; q++){
-                        s += prad_row[q] * ap * pangj[q];
-                    }
-                }
+                for (int q = 0; q < LJC1; q++){
+                    s += prad[p*LJC1 + q] * reg_angi[p] * reg_angj[q];
+                }}
             }}
             reg_gctr[ij/THREADS] += fac * s;
         }
         __syncthreads();
     }
-
+    
     // Write back: each thread writes only its bucket entry to the
     // corresponding (i,j) index it owns to avoid duplicating sums.
     const int ioff = ao_loc[ish];

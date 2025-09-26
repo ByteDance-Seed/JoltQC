@@ -199,11 +199,12 @@ void type1_cart(double* __restrict__ gctr,
 
     constexpr int nfi = (LI+1) * (LI+2) / 2;
     constexpr int nfj = (LJ+1) * (LJ+2) / 2;
-    double fi[3*nfi];
-    double fj[3*nfj];
+    __shared__ double fi[3*nfi];
+    __shared__ double fj[3*nfj];
     cache_fac<LI>(fi, rca);
     cache_fac<LJ>(fj, rcb);
-
+    __syncthreads();
+    
     for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){
         const int mi = ij%nfi;
         const int mj = ij/nfi;

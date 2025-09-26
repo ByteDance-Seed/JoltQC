@@ -67,25 +67,17 @@ double rad_part(const int ish, const int* __restrict__ ecpbas, const double* __r
 }
 
 template <int L> __device__
-void cache_fac(double* __restrict__ fx, const double* __restrict__ ri){
+void cache_fac(double *fx, const double ri[3]){
     const int LI1 = L + 1;
-    double xx[LI1], yy[LI1], zz[LI1];
-    xx[0] = 1; yy[0] = 1; zz[0] = 1;
-    for (int i = 1; i <= L; i++){
-        xx[i] = xx[i-1] * ri[0];
-        yy[i] = yy[i-1] * ri[1];
-        zz[i] = zz[i-1] * ri[2];
-    }
-
     const int nfi = (LI1+1)*LI1/2;
-    for (int i = 0; i <= L; i++){
+    for (int i = threadIdx.x; i <= L; i+=blockDim.x){
         const int xoffset = i*(i+1)/2;
         const int yoffset = xoffset + nfi;
         for (int j = 0; j <= i; j++){
             const double bfac = _binom[xoffset+j]; // binom(i,j)
-            fx[xoffset+j        ] = bfac * xx[i-j];
-            fx[yoffset+j        ] = bfac * yy[i-j];
-            fx[yoffset+j +   nfi] = bfac * zz[i-j];
+            fx[xoffset+j        ] = bfac * pow(ri[0], i-j);
+            fx[yoffset+j        ] = bfac * pow(ri[1], i-j);
+            fx[yoffset+j +   nfi] = bfac * pow(ri[2], i-j);
         }
     }
 }
@@ -336,124 +328,3 @@ void _lj_down_and_write(double* __restrict__ out, double* __restrict__ buf, cons
     }
     __syncthreads();
 }
-
-/*
-__device__
-void _li_up_up(double *out, double *buf, const int li, const int lj){
-    const int nfi = (li+1) * (li+2) / 2;
-    const int nfj = (lj+1) * (lj+2) / 2;
-    const int nfi0 = (li-1) * li / 2;
-    double *outxx = out;
-    double *outxy = out + nfi*nfj;
-    double *outxz = out + 2*nfi*nfj;
-    double *outyx = out + 3*nfi*nfj;
-    double *outyy = out + 4*nfi*nfj;
-    double *outyz = out + 5*nfi*nfj;
-    double *outzx = out + 6*nfi*nfj;
-    double *outzy = out + 7*nfi*nfj;
-    double *outzz = out + 8*nfi*nfj;
-    const double fac = 1.0 / _ecp_fac[li-1] / _ecp_fac[lj-2];
-    for (int ij = threadIdx.x; ij < nfi0*nfj; ij+=blockDim.x){
-        const int i = ij % nfi0;
-        const int j = ij / nfi0;
-        const double ypow1 = _cart_pow_y[i] + 1;
-        const double zpow1 = _cart_pow_z[i] + 1;
-        const double xpow1 = li-1 - _cart_pow_y[i] - _cart_pow_z[i] + 1;
-
-        const double ypow2 = _cart_pow_y[i] + 2;
-        const double zpow2 = _cart_pow_z[i] + 2;
-        const double xpow2 = li-1 - _cart_pow_y[i] - _cart_pow_z[i] + 2;
-
-        const int idx = i;
-        const int idy = _y_addr[i];
-        const int idz = _z_addr[i];
-
-        outxx[j*nfi +          idx] += fac * xpow1 * xpow2 * buf[j*nfi0 + i];
-        outxy[j*nfi + _y_addr[idx]] += fac * xpow2 * ypow2 * buf[j*nfi0 + i];
-        outxz[j*nfi + _z_addr[idx]] += fac * xpow2 * zpow2 * buf[j*nfi0 + i];
-
-        outyx[j*nfi +          idy] += fac * xpow2 * ypow2 * buf[j*nfi0 + i];
-        outyy[j*nfi + _y_addr[idy]] += fac * ypow1 * ypow2 * buf[j*nfi0 + i];
-        outyz[j*nfi + _z_addr[idy]] += fac * ypow2 * zpow2 * buf[j*nfi0 + i];
-
-        outzx[j*nfi +          idz] += fac * xpow2 * zpow2 * buf[j*nfi0 + i];
-        outzy[j*nfi + _y_addr[idz]] += fac * ypow2 * zpow2 * buf[j*nfi0 + i];
-        outzz[j*nfi + _z_addr[idz]] += fac * zpow1 * zpow2 * buf[j*nfi0 + i];
-    }
-    __syncthreads();
-}
-
-__device__
-void _li_up_down(double *out, double *buf, const int li, const int lj){
-    const int nfi = (li+1) * (li+2) / 2;
-    const int nfj = (lj+1) * (lj+2) / 2;
-    double *outxx = out;
-    double *outxy = out + nfi*nfj;
-    double *outxz = out + 2*nfi*nfj;
-    double *outyx = out + 3*nfi*nfj;
-    double *outyy = out + 4*nfi*nfj;
-    double *outyz = out + 5*nfi*nfj;
-    double *outzx = out + 6*nfi*nfj;
-    double *outzy = out + 7*nfi*nfj;
-    double *outzz = out + 8*nfi*nfj;
-
-    for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){
-        const int i = ij % nfi;
-        const int j = ij / nfi;
-        const double yfac = _cart_pow_y[i];
-        const double zfac = _cart_pow_z[i];
-        const double xfac = li-1 - _cart_pow_y[i] - _cart_pow_z[i];
-
-        outxx[j*nfi +          i] += xfac * buf[j*nfi + i];
-        outxy[j*nfi + _y_addr[i]] += yfac * buf[j*nfi + i];
-        outxz[j*nfi + _z_addr[i]] += zfac * buf[j*nfi + i];
-
-        outyx[j*nfi +          i] += xfac * buf[j*nfi + _y_addr[i]];
-        outyy[j*nfi + _y_addr[i]] += yfac * buf[j*nfi + _y_addr[i]];
-        outyz[j*nfi + _z_addr[i]] += zfac * buf[j*nfi + _y_addr[i]];
-
-        outzx[j*nfi +          i] += xfac * buf[j*nfi + _z_addr[i]];
-        outzy[j*nfi + _y_addr[i]] += yfac * buf[j*nfi + _z_addr[i]];
-        outzz[j*nfi + _z_addr[i]] += zfac * buf[j*nfi + _z_addr[i]];
-    }
-    __syncthreads();
-}
-
-__device__
-void _li_down_down(double *out, double *buf, const int li, const int lj){
-    const int nfi = (li+1) * (li+2) / 2;
-    const int nfj = (lj+1) * (lj+2) / 2;
-    const int nfi2 = (li+3) * (li+4) / 2;
-    double *outxx = out;
-    double *outxy = out + nfi*nfj;
-    double *outxz = out + 2*nfi*nfj;
-    double *outyx = out + 3*nfi*nfj;
-    double *outyy = out + 4*nfi*nfj;
-    double *outyz = out + 5*nfi*nfj;
-    double *outzx = out + 6*nfi*nfj;
-    double *outzy = out + 7*nfi*nfj;
-    double *outzz = out + 8*nfi*nfj;
-    const double fac = _ecp_fac[li] / _ecp_fac[li+2];
-    for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){
-        const int i = ij % nfi;
-        const int j = ij / nfi;
-
-        const int idx = i;
-        const int idy = _y_addr[i];
-        const int idz = _z_addr[i];
-
-        outxx[j*nfi + i] += fac * buf[j*nfi2 + idx];
-        outxy[j*nfi + i] += fac * buf[j*nfi2 + idy];
-        outxz[j*nfi + i] += fac * buf[j*nfi2 + idz];
-
-        outyx[j*nfi + i] += fac * buf[j*nfi2 + _y_addr[idx]];
-        outyy[j*nfi + i] += fac * buf[j*nfi2 + _y_addr[idy]];
-        outyz[j*nfi + i] += fac * buf[j*nfi2 + _y_addr[idz]];
-
-        outzx[j*nfi + i] += fac * buf[j*nfi2 + _z_addr[idx]];
-        outzy[j*nfi + i] += fac * buf[j*nfi2 + _z_addr[idy]];
-        outzz[j*nfi + i] += fac * buf[j*nfi2 + _z_addr[idz]];
-    }
-    __syncthreads();
-}
-*/

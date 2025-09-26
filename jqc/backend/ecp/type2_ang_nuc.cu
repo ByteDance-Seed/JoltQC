@@ -17,14 +17,14 @@
 template <int l> __device__
 void type2_ang_nuc_l(double * __restrict__ omega,
                     const int i, const int j, const int k,
-                    double * __restrict__ unitr){
+                    double unitr[3]){
 return;
 }
 
 template <> __device__
 void type2_ang_nuc_l<0>(double * __restrict__ omega,
                     const int i, const int j, const int k,
-                    double * __restrict__ unitr){
+                    double unitr[3]){
     constexpr int l = 0;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -59,7 +59,7 @@ void type2_ang_nuc_l<0>(double * __restrict__ omega,
 template <> __device__
 void type2_ang_nuc_l<1>(double * __restrict__ omega,
                     const int i, const int j, const int k,
-                    double * __restrict__ unitr){
+                    double unitr[3]){
     constexpr int l = 1;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -116,7 +116,7 @@ void type2_ang_nuc_l<1>(double * __restrict__ omega,
 template <> __device__
 void type2_ang_nuc_l<2>(double * __restrict__ omega,
                     const int i, const int j, const int k,
-                    double * __restrict__ unitr){
+                    double unitr[3]){
     constexpr int l = 2;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -210,7 +210,7 @@ void type2_ang_nuc_l<2>(double * __restrict__ omega,
 template <> __device__
 void type2_ang_nuc_l<3>(double * __restrict__ omega,
                     const int i, const int j, const int k,
-                    double * __restrict__ unitr){
+                    double unitr[3]){
     constexpr int l = 3;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -356,7 +356,7 @@ void type2_ang_nuc_l<3>(double * __restrict__ omega,
 template <> __device__
 void type2_ang_nuc_l<4>(double * __restrict__ omega,
                     const int i, const int j, const int k,
-                    double * __restrict__ unitr){
+                    double unitr[3]){
     constexpr int l = 4;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -571,7 +571,7 @@ void type2_ang_nuc_l<4>(double * __restrict__ omega,
 template <> __device__
 void type2_ang_nuc_l<5>(double * __restrict__ omega,
                     const int i, const int j, const int k,
-                    double * __restrict__ unitr){
+                    double unitr[3]){
     constexpr int l = 5;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -876,7 +876,7 @@ void type2_ang_nuc_l<5>(double * __restrict__ omega,
 template <> __device__
 void type2_ang_nuc_l<6>(double * __restrict__ omega,
                     const int i, const int j, const int k,
-                    double * __restrict__ unitr){
+                    double unitr[3]){
     constexpr int l = 6;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -1292,7 +1292,7 @@ void type2_ang_nuc_l<6>(double * __restrict__ omega,
 template <> __device__
 void type2_ang_nuc_l<7>(double * __restrict__ omega,
                     const int i, const int j, const int k,
-                    double * __restrict__ unitr){
+                    double unitr[3]){
     constexpr int l = 7;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -1844,7 +1844,7 @@ void type2_ang_nuc_l<7>(double * __restrict__ omega,
 template <> __device__
 void type2_ang_nuc_l<8>(double * __restrict__ omega,
                     const int i, const int j, const int k,
-                    double * __restrict__ unitr){
+                    double unitr[3]){
     constexpr int l = 8;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -2555,7 +2555,7 @@ void type2_ang_nuc_l<8>(double * __restrict__ omega,
 template <> __device__
 void type2_ang_nuc_l<9>(double * __restrict__ omega,
                     const int i, const int j, const int k,
-                    double * __restrict__ unitr){
+                    double unitr[3]){
     constexpr int l = 9;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;
@@ -3448,7 +3448,7 @@ void type2_ang_nuc_l<9>(double * __restrict__ omega,
 template <> __device__
 void type2_ang_nuc_l<10>(double * __restrict__ omega,
                     const int i, const int j, const int k,
-                    double * __restrict__ unitr){
+                    double unitr[3]){
     constexpr int l = 10;
     double rx[l+1], ry[l+1], rz[l+1];
     rx[0] = ry[0] = rz[0] = 1.0;

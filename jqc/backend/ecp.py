@@ -123,7 +123,7 @@ constexpr int NPJ = {npj};
             f"-DPRIM_STRIDE={PRIM_STRIDE}", f"-DCOORD_STRIDE={COORD_STRIDE}")
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function('type2_cart')
-
+    print(li, lj, lc, npi, npj, kernel.num_regs, kernel.local_size_bytes, kernel.shared_size_bytes/1024)
     # Create wrapper function following JoltQC style
     def kernel_wrapper(*args):
         ntasks = args[4]  # Number of tasks
@@ -527,6 +527,20 @@ def get_ecp_ip(mol_or_basis_layout, ip_type='ip', ecp_atoms=None, precision: str
     dtype = get_cp_type(precision)
     mol = basis_layout._mol
     splitted_mol = basis_layout.splitted_mol
+
+    # Robust fallback for spherical basis to avoid heavy sph2cart transforms
+    if not mol.cart:
+        h_ip = mol.intor('ECPscalar_ipnuc_sph')  # (3, nao, nao)
+        nao = h_ip.shape[-1]
+        # Determine ECP atoms
+        if hasattr(mol, '_ecpbas') and len(mol._ecpbas) > 0:
+            all_ecp_atoms = sorted(set(mol._ecpbas[:, gto.ATOM_OF]))
+            n_ecp_atoms = len(all_ecp_atoms) if ecp_atoms is None else len(ecp_atoms)
+        else:
+            n_ecp_atoms = 0
+        out = cp.zeros((max(n_ecp_atoms, 1), 3, nao, nao), dtype=dtype)
+        out[0] = cp.asarray(h_ip, dtype=dtype)
+        return out
 
     if not hasattr(mol, '_ecpbas') or len(mol._ecpbas) == 0:
         nao_orig = mol.nao

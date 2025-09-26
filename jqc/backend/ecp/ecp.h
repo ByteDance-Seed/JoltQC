@@ -20,13 +20,6 @@
 #define PTR_COORD       1
 #define ATM_SLOTS       6
 
-// #define ECP_LMAX        4
-// #define AO_LMAX         4    // Up to G
-// #define AO_LMAX_IP      6    // Up to G, and its second derivative
-// #define NF_MAX          15
-// #define AO_LIJMAX       10
-// #define NF_MAX_LIJ      66    // Up to l=10
-
 // Thread number has to be the same as qudrature points
 #define THREADS        128
 
