@@ -32,7 +32,7 @@ How to run ?
 
 e.g.
 > python3 generate_fragment.py 1 1 1 1 fp64 > logs/1111_fp64.log
-or 
+or
 > python3 generate_fragment.py 1 1 1 1 fp32 > logs/1111_fp32.log
 """
 
@@ -77,7 +77,7 @@ def generate_fragments(ang, max_threads=256):
                     yield fragments
 
 
-def update_frags(i, j, k, l, dtype_str):
+def update_frags(i, j, k, ell, dtype_str):
     from pathlib import Path
 
     from jqc.backend import jk_1q1t as jk_algo0
@@ -140,7 +140,7 @@ def update_frags(i, j, k, l, dtype_str):
     tile_pairs = jk.make_tile_pairs(l_ctr_bas_loc, tile_q_cond, log_cutoff)
 
     # Get nao from the sorted basis cache
-    ce, coords, angs, nprims = bas_cache
+    ce, coords, angs, _nprims = bas_cache
     ao_loc = np.concatenate(([0], np.cumsum((angs + 1) * (angs + 2) // 2)))
     nao = ao_loc[-1]
     ao_loc = cp.asarray(ao_loc, dtype=np.int32)
@@ -159,13 +159,13 @@ def update_frags(i, j, k, l, dtype_str):
         tile_pairs[i, j][:256] if (i, j) in tile_pairs else cp.array([], dtype=np.int32)
     )
     tile_kl_mapping = (
-        tile_pairs[k, l][:256] if (k, l) in tile_pairs else cp.array([], dtype=np.int32)
+        tile_pairs[k, ell][:256] if (k, ell) in tile_pairs else cp.array([], dtype=np.int32)
     )
 
     li, ip = uniq_l_ctr[i]
     lj, jp = uniq_l_ctr[j]
     lk, kp = uniq_l_ctr[k]
-    ll, lp = uniq_l_ctr[l]
+    ll, lp = uniq_l_ctr[ell]
     ang = (li, lj, lk, ll)
     nprim = (ip, jp, kp, lp)
     best_time = 1e100
@@ -173,11 +173,11 @@ def update_frags(i, j, k, l, dtype_str):
 
     from jqc.backend.jk_tasks import gen_screen_jk_tasks_kernel
 
-    script, kernel, gen_tasks_fun = gen_screen_jk_tasks_kernel(tile=TILE)
-    QUEUE_DEPTH = jk.QUEUE_DEPTH
+    _script, _kernel, gen_tasks_fun = gen_screen_jk_tasks_kernel(tile=TILE)
+    queue_depth = jk.QUEUE_DEPTH
     # cp.get_default_memory_pool().free_all_blocks()
     # cp.cuda.device.Device().synchronize()
-    pool = cp.empty((QUEUE_DEPTH), dtype=jk.ushort4_dtype)
+    pool = cp.empty((queue_depth), dtype=jk.ushort4_dtype)
     info = cp.zeros(4, dtype=np.uint32)
 
     gen_tasks_fun(
@@ -201,11 +201,13 @@ def update_frags(i, j, k, l, dtype_str):
     # Measure GPU time of algorithm 1 with different fragments
     for frag in generate_fragments(ang):
         try:
-            script, kernel, fun = jk_algo1.gen_kernel(
+            _script, _kernel, fun = jk_algo1.gen_kernel(
                 ang, nprim, frags=frag, dtype=dtype, max_shm=max_shm
             )
-        except:
-            print(f"failed to generate kernel {ang}/{nprim} with frag {frag}")
+        except Exception as e:
+            print(
+                f"failed to generate kernel {ang}/{nprim} with frag {frag}: {e}"
+            )
             continue
 
         # Reset matrices before computation
@@ -256,7 +258,7 @@ def update_frags(i, j, k, l, dtype_str):
         vk.fill(0)
 
         # Measure time of algorithm 0
-        script, kernel, fun = jk_algo0.gen_kernel(ang, nprim, dtype=dtype)
+        _script, kernel, fun = jk_algo0.gen_kernel(ang, nprim, dtype=dtype)
         kernel.compile()
         # Use the same argument structure as jk.py
         n_quartets = int(info[1].get())  # Number of quartets to process
@@ -360,6 +362,6 @@ if __name__ == "__main__":
     li = int(sys.argv[1])
     lj = int(sys.argv[2])
     lk = int(sys.argv[3])
-    ll = int(sys.argv[4])
+    ell = int(sys.argv[4])
     dtype = str(sys.argv[5])
-    update_frags(li, lj, lk, ll, dtype)
+    update_frags(li, lj, lk, ell, dtype)

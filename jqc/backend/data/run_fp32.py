@@ -34,8 +34,8 @@ commands = []
 for i in range(n_groups):
     for j in range(i + 1):
         for k in range(i + 1):
-            for l in range(k + 1):
-                cmd = f" python3 generate_fragment.py {i} {j} {k} {l} fp32 > logs/{i}{j}{k}{l}_fp32.log"
+            for ell in range(k + 1):
+                cmd = f" python3 generate_fragment.py {i} {j} {k} {ell} fp32 > logs/{i}{j}{k}{ell}_fp32.log"
                 commands.append(env_cmd + " && " + cmd)
 
 max_concurrent_jobs = 1

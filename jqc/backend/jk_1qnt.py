@@ -30,7 +30,7 @@ from jqc.backend.cuda_scripts import (
 from jqc.backend.util import generate_lookup_table
 from jqc.constants import COORD_STRIDE, MAX_SMEM, NPRIM_MAX, PRIM_STRIDE
 
-__all__ = ["gen_jk_kernel"]
+__all__ = ["gen_kernel"]
 
 # grab shared memory size of the device
 dev_id = cp.cuda.runtime.getDevice()

@@ -73,7 +73,7 @@ def gen_jk_kernel(
 
     if frags is None:
         li, lj, lk, ll = angulars
-        ijkl_str = key = str(li * 1000 + lj * 100 + lk * 10 + ll)
+        ijkl_str = str(li * 1000 + lj * 100 + lk * 10 + ll)
         if dtype == np.double:
             frags = frags_fp64
         elif dtype == np.float32:

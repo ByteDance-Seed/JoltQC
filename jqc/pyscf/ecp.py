@@ -1,3 +1,17 @@
+# Copyright 2025 ByteDance Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 JoltQC ECP PySCF Integration
 
@@ -124,32 +138,6 @@ def ecp_performance_info(mol) -> Dict[str, Any]:
         'estimated_memory_mb': nao * nao * 8 / 1024 / 1024,  # Rough estimate
     }
 
-
-# Convenience functions for specific ECP use cases
-def enable_ecp_jit(mol, precision: str = 'auto', **kwargs) -> None:
-    """
-    Enable JIT-compiled ECP integrals with automatic precision selection
-
-    Args:
-        mol: PySCF molecule object
-        precision: 'auto', 'fp64', 'fp32', or 'mixed'
-        **kwargs: Additional precision control arguments
-    """
-    if precision == 'auto':
-        nao = mol.nao_nr()
-        if nao < 300:
-            precision = 'fp64'
-        elif nao < 800:
-            precision = 'mixed'
-        else:
-            precision = 'fp32'
-
-    # Override precision in kwargs
-    kwargs['precision'] = precision
-
-    patch_ecp_integrals(mol, **kwargs)
-
-
 def benchmark_ecp(mol, n_trials: int = 5) -> Dict[str, float]:
     """
     Benchmark ECP integral evaluation
@@ -192,31 +180,3 @@ def benchmark_ecp(mol, n_trials: int = 5) -> Dict[str, float]:
             results[precision] = {'error': str(e)}
 
     return results
-
-
-# Provide gpu4pyscf-compatible API wrappers
-def get_ecp_ip_gpu4pyscf_compat(mol, ip_type='ip', ecp_atoms=None):
-    """
-    GPU4PySCF-compatible wrapper for get_ecp_ip
-
-    This provides the same API as gpu4pyscf.gto.ecp.get_ecp_ip
-    """
-    return get_ecp_ip(mol, ip_type=ip_type, ecp_atoms=ecp_atoms, precision='fp64')
-
-
-def get_ecp_ipip_gpu4pyscf_compat(mol, ip_type='ipipv', ecp_atoms=None):
-    """
-    GPU4PySCF-compatible wrapper for get_ecp_ipip
-
-    This provides the same API as gpu4pyscf.gto.ecp.get_ecp_ipip
-    """
-    return get_ecp_ipip(mol, ip_type=ip_type, ecp_atoms=ecp_atoms, precision='fp64')
-
-
-def get_ecp_gpu4pyscf_compat(mol):
-    """
-    GPU4PySCF-compatible wrapper for get_ecp
-
-    This provides the same API as gpu4pyscf.gto.ecp.get_ecp
-    """
-    return get_ecp(mol, precision='fp64')

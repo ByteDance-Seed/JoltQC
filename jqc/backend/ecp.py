@@ -1,3 +1,17 @@
+# Copyright 2025 ByteDance Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 JoltQC ECP (Effective Core Potential) kernel implementations
 JIT-compiled CUDA kernels for ECP integral evaluation
@@ -15,15 +29,16 @@ from typing import Any, Dict
 import cupy as cp
 import numpy as np
 from pyscf import gto
-from jqc.constants import COORD_STRIDE, PRIM_STRIDE
+
+from jqc.constants import COORD_STRIDE, PRIM_STRIDE, MAX_L_ECP
 
 __all__ = [
+    "ecp_generator",
     "get_ecp",
     "get_ecp_ip",
     "get_ecp_ipip",
-    "sort_ecp_basis",
     "make_ecp_tasks",
-    "ecp_generator",
+    "sort_ecp_basis",
 ]
 
 
@@ -58,12 +73,6 @@ def _compile_ecp_type2_kernel(li: int, lj: int, lc: int, npi=None, npj=None, pre
     Returns:
         Compiled kernel function
     """
-    # Backward-compatibility shim: allow signature (li, lj, lc, precision)
-    # If third positional after lc is a string, it's precision and use npi=npj=1
-    if isinstance(npi, str) and npj is None:
-        precision = npi  # precision passed in place of npi
-        npi = 1
-        npj = 1
     if npi is None:
         npi = 1
     if npj is None:
@@ -77,60 +86,19 @@ def _compile_ecp_type2_kernel(li: int, lj: int, lc: int, npi=None, npj=None, pre
     if cache_key in _ecp_kernel_cache:
         return _ecp_kernel_cache[cache_key]
 
-    # Common macro parameters shared by ECP kernels
-    # Note: Some constants are defined in ecp.h, avoid conflicts
-    common_macros = f"""
-#define THREADS 128
-#define NGAUSS 128
-
-// Math constants
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
-// Memory layout constants
-#define PRIM_STRIDE {PRIM_STRIDE}
-#define COORD_STRIDE {COORD_STRIDE}
-
-// Forward declarations for quadrature arrays
-extern __device__ double r128[128];
-extern __device__ double w128[128];
-"""
-
     # Create constexpr injection string following 1q1t pattern
     const_injection = f"""
-typedef unsigned int uint32_t;
 using DataType = {dtype_cuda};
 constexpr int LI = {li};
 constexpr int LJ = {lj};
 constexpr int LC = {lc};
 constexpr int NPI = {npi};
 constexpr int NPJ = {npj};
-
-{common_macros}
-
-// Pair-stride over (c,e) tuples
-constexpr int prim_stride = PRIM_STRIDE / 2;
-
-// Data structure definitions (after macros are defined)
-struct __align__(2*sizeof(DataType)) DataType2 {{
-    DataType c, e;
-}};
-
-struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {{
-    DataType x, y, z;
-#if COORD_STRIDE >= 4
-    DataType w;
-#endif
-#if COORD_STRIDE > 4
-    DataType _padding[COORD_STRIDE - 4];
-#endif
-}};
 """
 
     # Read the CUDA source
     cuda_source = ""
-    for filename in ['ecp.h', 'bessel.cu', 'cart2sph.cu', 'common.cu', 'gauss_chebyshev.cu', 'type2_ang_nuc.cu', 'ecp_type2.cu']:
+    for filename in ['ecp.h', 'prelude.cuh', 'gauss_chebyshev.cu', 'bessel.cu', 'cart2sph.cu', 'common.cu', 'type2_ang_nuc.cu', 'ecp_type2.cu']:
         cuda_file = os.path.join(os.path.dirname(__file__), 'ecp', filename)
         with open(cuda_file) as f:
             cuda_source += f.read()
@@ -150,7 +118,10 @@ struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {{
         cuda_source = cuda_source.replace('M_PI', 'M_PI_F')
 
     # Compile module following JoltQC pattern
-    mod = cp.RawModule(code=cuda_source, options=_get_compile_options())
+    # Inject layout constants via -D to avoid string duplication
+    opts = (*_get_compile_options(),
+            f"-DPRIM_STRIDE={PRIM_STRIDE}", f"-DCOORD_STRIDE={COORD_STRIDE}")
+    mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function('type2_cart')
 
     # Create wrapper function following JoltQC style
@@ -178,11 +149,6 @@ def _compile_ecp_type1_kernel(li: int, lj: int, npi=None, npj=None, precision: s
     Returns:
         Compiled kernel function
     """
-    # Backward-compatibility shim: allow signature (li, lj, precision)
-    if isinstance(npi, str) and npj is None:
-        precision = npi
-        npi = 1
-        npj = 1
     if npi is None:
         npi = 1
     if npj is None:
@@ -196,56 +162,18 @@ def _compile_ecp_type1_kernel(li: int, lj: int, npi=None, npj=None, precision: s
     if cache_key in _ecp_kernel_cache:
         return _ecp_kernel_cache[cache_key]
 
-    # Common macro parameters shared by ECP kernels
-    # Note: Some constants are defined in ecp.h, avoid conflicts
-    common_macros = f"""
-#define THREADS 128
-#define NGAUSS 128
-
-// Math constants
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
-// PRIM_STRIDE here matches host scalar stride; device uses prim_stride = PRIM_STRIDE/2
-#define PRIM_STRIDE {PRIM_STRIDE}
-#define COORD_STRIDE {COORD_STRIDE}
-
-// Forward declarations for quadrature arrays
-extern __device__ double r128[128];
-extern __device__ double w128[128];
-"""
-
     # Create constexpr injection string following 1q1t pattern
     const_injection = f"""
-typedef unsigned int uint32_t;
 using DataType = {dtype_cuda};
 constexpr int LI = {li};
 constexpr int LJ = {lj};
 constexpr int NPI = {npi};
 constexpr int NPJ = {npj};
-
-{common_macros}
-
-// Data structure definitions (after macros are defined)
-struct __align__(2*sizeof(DataType)) DataType2 {{
-    DataType c, e;
-}};
-
-struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {{
-    DataType x, y, z;
-#if COORD_STRIDE >= 4
-    DataType w;
-#endif
-#if COORD_STRIDE > 4
-    DataType _padding[COORD_STRIDE - 4];
-#endif
-}};
 """
 
     # Read the CUDA source
     cuda_source = ""
-    for filename in ['ecp.h', 'bessel.cu', 'cart2sph.cu', 'common.cu', 'gauss_chebyshev.cu', 'type1_ang_nuc.cu', 'ecp_type1.cu']:
+    for filename in ['ecp.h', 'prelude.cuh', 'gauss_chebyshev.cu', 'bessel.cu', 'cart2sph.cu', 'common.cu', 'type1_ang_nuc.cu', 'ecp_type1.cu']:
         cuda_file = os.path.join(os.path.dirname(__file__), 'ecp', filename)
         with open(cuda_file) as f:
             cuda_source += f.read()
@@ -265,7 +193,9 @@ struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {{
         cuda_source = cuda_source.replace('M_PI', 'M_PI_F')
 
     # Compile module following JoltQC pattern
-    mod = cp.RawModule(code=cuda_source, options=_get_compile_options())
+    opts = (*_get_compile_options(),
+            f"-DPRIM_STRIDE={PRIM_STRIDE}", f"-DCOORD_STRIDE={COORD_STRIDE}")
+    mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function('type1_cart')
 
     # Create wrapper function following JoltQC style
@@ -295,11 +225,6 @@ def _compile_ecp_type1_ip_kernel(li: int, lj: int, npi=None, npj=None, precision
     Returns:
         Compiled IP kernel function
     """
-    # Handle backward compatibility
-    if isinstance(npi, str) and npj is None:
-        precision = npi
-        npi = 1
-        npj = 1
     if npi is None:
         npi = 1
     if npj is None:
@@ -313,54 +238,18 @@ def _compile_ecp_type1_ip_kernel(li: int, lj: int, npi=None, npj=None, precision
     if cache_key in _ecp_kernel_cache:
         return _ecp_kernel_cache[cache_key]
 
-    # Common macro parameters
-    common_macros = f"""
-#define THREADS 128
-#define NGAUSS 128
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
-#define PRIM_STRIDE {PRIM_STRIDE}
-#define COORD_STRIDE {COORD_STRIDE}
-
-extern __device__ double r128[128];
-extern __device__ double w128[128];
-"""
-
     # Create constexpr injection
     const_injection = f"""
-typedef unsigned int uint32_t;
 using DataType = {dtype_cuda};
 constexpr int LI = {li};
 constexpr int LJ = {lj};
 constexpr int NPI = {npi};
 constexpr int NPJ = {npj};
-
-{common_macros}
-
-// Pair-stride over (c,e) tuples
-constexpr int prim_stride = PRIM_STRIDE / 2;
-
-struct __align__(2*sizeof(DataType)) DataType2 {{
-    DataType c, e;
-}};
-
-struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {{
-    DataType x, y, z;
-#if COORD_STRIDE >= 4
-    DataType w;
-#endif
-#if COORD_STRIDE > 4
-    DataType _padding[COORD_STRIDE - 4];
-#endif
-}};
 """
 
     # Read the CUDA source
     cuda_source = ""
-    for filename in ['ecp.h', 'bessel.cu', 'cart2sph.cu', 'common.cu', 'gauss_chebyshev.cu',
+    for filename in ['ecp.h', 'prelude.cuh', 'gauss_chebyshev.cu', 'bessel.cu', 'cart2sph.cu', 'common.cu',
                      'type1_ang_nuc.cu', 'ecp_type1.cu', 'ecp_type1_ip.cu']:
         cuda_file = os.path.join(os.path.dirname(__file__), 'ecp', filename)
         with open(cuda_file) as f:
@@ -375,7 +264,9 @@ struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {{
         cuda_source = cuda_source.replace('M_PI', 'M_PI_F')
 
     # Compile module
-    mod = cp.RawModule(code=cuda_source, options=_get_compile_options())
+    opts = (*_get_compile_options(),
+            f"-DPRIM_STRIDE={PRIM_STRIDE}", f"-DCOORD_STRIDE={COORD_STRIDE}")
+    mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function('type1_cart_ip1')
 
     # No longer need dynamic shared memory - using static shared memory declarations
@@ -405,11 +296,6 @@ def _compile_ecp_type2_ip_kernel(li: int, lj: int, lc: int, npi=None, npj=None, 
     Returns:
         Compiled IP kernel function
     """
-    # Handle backward compatibility
-    if isinstance(npi, str) and npj is None:
-        precision = npi
-        npi = 1
-        npj = 1
     if npi is None:
         npi = 1
     if npj is None:
@@ -423,55 +309,19 @@ def _compile_ecp_type2_ip_kernel(li: int, lj: int, lc: int, npi=None, npj=None, 
     if cache_key in _ecp_kernel_cache:
         return _ecp_kernel_cache[cache_key]
 
-    # Common macro parameters
-    common_macros = f"""
-#define THREADS 128
-#define NGAUSS 128
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
-#define PRIM_STRIDE {PRIM_STRIDE}
-#define COORD_STRIDE {COORD_STRIDE}
-
-extern __device__ double r128[128];
-extern __device__ double w128[128];
-"""
-
     # Create constexpr injection
     const_injection = f"""
-typedef unsigned int uint32_t;
 using DataType = {dtype_cuda};
 constexpr int LI = {li};
 constexpr int LJ = {lj};
 constexpr int LC = {lc};
 constexpr int NPI = {npi};
 constexpr int NPJ = {npj};
-
-{common_macros}
-
-// Pair-stride over (c,e) tuples
-constexpr int prim_stride = PRIM_STRIDE / 2;
-
-struct __align__(2*sizeof(DataType)) DataType2 {{
-    DataType c, e;
-}};
-
-struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {{
-    DataType x, y, z;
-#if COORD_STRIDE >= 4
-    DataType w;
-#endif
-#if COORD_STRIDE > 4
-    DataType _padding[COORD_STRIDE - 4];
-#endif
-}};
 """
 
     # Read the CUDA source
     cuda_source = ""
-    for filename in ['ecp.h', 'bessel.cu', 'cart2sph.cu', 'common.cu', 'gauss_chebyshev.cu',
+    for filename in ['ecp.h', 'prelude.cuh', 'gauss_chebyshev.cu', 'bessel.cu', 'cart2sph.cu', 'common.cu',
                      'type2_ang_nuc.cu', 'ecp_type2.cu', 'ecp_type2_ip.cu']:
         cuda_file = os.path.join(os.path.dirname(__file__), 'ecp', filename)
         with open(cuda_file) as f:
@@ -486,7 +336,9 @@ struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {{
         cuda_source = cuda_source.replace('M_PI', 'M_PI_F')
 
     # Compile module
-    mod = cp.RawModule(code=cuda_source, options=_get_compile_options())
+    opts = (*_get_compile_options(),
+            f"-DPRIM_STRIDE={PRIM_STRIDE}", f"-DCOORD_STRIDE={COORD_STRIDE}")
+    mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function('type2_cart_ip1')
 
     # No longer need dynamic shared memory calculations - using static shared memory declarations
@@ -516,11 +368,6 @@ def _compile_ecp_type1_ipip_kernel(li: int, lj: int, variant: str, npi=None, npj
     Returns:
         Compiled IPIP kernel function
     """
-    # Handle backward compatibility
-    if isinstance(npi, str) and npj is None:
-        precision = npi
-        npi = 1
-        npj = 1
     if npi is None:
         npi = 1
     if npj is None:
@@ -534,54 +381,18 @@ def _compile_ecp_type1_ipip_kernel(li: int, lj: int, variant: str, npi=None, npj
     if cache_key in _ecp_kernel_cache:
         return _ecp_kernel_cache[cache_key]
 
-    # Common macro parameters
-    common_macros = f"""
-#define THREADS 128
-#define NGAUSS 128
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
-#define PRIM_STRIDE {PRIM_STRIDE}
-#define COORD_STRIDE {COORD_STRIDE}
-
-extern __device__ double r128[128];
-extern __device__ double w128[128];
-"""
-
     # Create constexpr injection
     const_injection = f"""
-typedef unsigned int uint32_t;
 using DataType = {dtype_cuda};
 constexpr int LI = {li};
 constexpr int LJ = {lj};
 constexpr int NPI = {npi};
 constexpr int NPJ = {npj};
-
-{common_macros}
-
-// Pair-stride over (c,e) tuples
-constexpr int prim_stride = PRIM_STRIDE / 2;
-
-struct __align__(2*sizeof(DataType)) DataType2 {{
-    DataType c, e;
-}};
-
-struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {{
-    DataType x, y, z;
-#if COORD_STRIDE >= 4
-    DataType w;
-#endif
-#if COORD_STRIDE > 4
-    DataType _padding[COORD_STRIDE - 4];
-#endif
-}};
 """
 
     # Read the CUDA source
     cuda_source = ""
-    for filename in ['ecp.h', 'bessel.cu', 'cart2sph.cu', 'common.cu', 'gauss_chebyshev.cu',
+    for filename in ['ecp.h', 'prelude.cuh', 'gauss_chebyshev.cu', 'bessel.cu', 'cart2sph.cu', 'common.cu',
                      'type1_ang_nuc.cu', 'ecp_type1.cu', 'ecp_type1_ip.cu']:
         cuda_file = os.path.join(os.path.dirname(__file__), 'ecp', filename)
         with open(cuda_file) as f:
@@ -596,7 +407,9 @@ struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {{
         cuda_source = cuda_source.replace('M_PI', 'M_PI_F')
 
     # Compile module
-    mod = cp.RawModule(code=cuda_source, options=_get_compile_options())
+    opts = (*_get_compile_options(),
+            f"-DPRIM_STRIDE={PRIM_STRIDE}", f"-DCOORD_STRIDE={COORD_STRIDE}")
+    mod = cp.RawModule(code=cuda_source, options=opts)
     kernel_name = f'type1_cart_{variant}'
     kernel = mod.get_function(kernel_name)
 
@@ -628,11 +441,6 @@ def _compile_ecp_type2_ipip_kernel(li: int, lj: int, lc: int, variant: str, npi=
     Returns:
         Compiled IPIP kernel function
     """
-    # Handle backward compatibility
-    if isinstance(npi, str) and npj is None:
-        precision = npi
-        npi = 1
-        npj = 1
     if npi is None:
         npi = 1
     if npj is None:
@@ -646,55 +454,19 @@ def _compile_ecp_type2_ipip_kernel(li: int, lj: int, lc: int, variant: str, npi=
     if cache_key in _ecp_kernel_cache:
         return _ecp_kernel_cache[cache_key]
 
-    # Common macro parameters
-    common_macros = f"""
-#define THREADS 128
-#define NGAUSS 128
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
-#define PRIM_STRIDE {PRIM_STRIDE}
-#define COORD_STRIDE {COORD_STRIDE}
-
-extern __device__ double r128[128];
-extern __device__ double w128[128];
-"""
-
     # Create constexpr injection
     const_injection = f"""
-typedef unsigned int uint32_t;
 using DataType = {dtype_cuda};
 constexpr int LI = {li};
 constexpr int LJ = {lj};
 constexpr int LC = {lc};
 constexpr int NPI = {npi};
 constexpr int NPJ = {npj};
-
-{common_macros}
-
-// Pair-stride over (c,e) tuples
-constexpr int prim_stride = PRIM_STRIDE / 2;
-
-struct __align__(2*sizeof(DataType)) DataType2 {{
-    DataType c, e;
-}};
-
-struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {{
-    DataType x, y, z;
-#if COORD_STRIDE >= 4
-    DataType w;
-#endif
-#if COORD_STRIDE > 4
-    DataType _padding[COORD_STRIDE - 4];
-#endif
-}};
 """
 
     # Read the CUDA source
     cuda_source = ""
-    for filename in ['ecp.h', 'bessel.cu', 'cart2sph.cu', 'common.cu', 'gauss_chebyshev.cu',
+    for filename in ['ecp.h', 'prelude.cuh', 'gauss_chebyshev.cu', 'bessel.cu', 'cart2sph.cu', 'common.cu',
                      'type2_ang_nuc.cu', 'ecp_type2.cu', 'ecp_type2_ip.cu']:
         cuda_file = os.path.join(os.path.dirname(__file__), 'ecp', filename)
         with open(cuda_file) as f:
@@ -709,28 +481,13 @@ struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {{
         cuda_source = cuda_source.replace('M_PI', 'M_PI_F')
 
     # Compile module
-    mod = cp.RawModule(code=cuda_source, options=_get_compile_options())
+    opts = (*_get_compile_options(),
+            f"-DPRIM_STRIDE={PRIM_STRIDE}", f"-DCOORD_STRIDE={COORD_STRIDE}")
+    mod = cp.RawModule(code=cuda_source, options=opts)
     kernel_name = f'type2_cart_{variant}'
     kernel = mod.get_function(kernel_name)
 
-    # Dynamic shared memory based on our templated kernel's maximum unrolled LIT/LJT (in doubles)
-    if variant == 'ipipv':
-        li_eff = li + 2
-        lj_eff = lj
-    else:  # ipvip
-        li_eff = li + 1
-        lj_eff = lj + 1
-
-    LI1 = (li_eff + 1)
-    LJ1 = (lj_eff + 1)
-    LIC1 = (li_eff + lc + 1)
-    LJC1 = (lj_eff + lc + 1)
-    LCC1 = 2 * lc + 1
-    BLKI = ((LIC1 + 1) // 2) * LCC1
-    BLKJ = ((LJC1 + 1) // 2) * LCC1
-    nfi = (li_eff + 1) * (li_eff + 2) // 2
-    nfj = (lj_eff + 1) * (lj_eff + 2) // 2
-    # No longer need dynamic shared memory calculations - using static shared memory declarations
+    # Static shared memory declarations are used; no dynamic sizing needed here
 
     def kernel_wrapper(*args):
         ntasks = args[4]  # Number of tasks
@@ -815,9 +572,7 @@ def get_ecp_ip(mol_or_basis_layout, ip_type='ip', ecp_atoms=None, precision: str
     n_ecp_atoms = len(ecp_atoms)
     mat1_flat = cp.zeros((3*n_ecp_atoms, nao, nao), dtype=dtype)
 
-    # Optional debug toggles to isolate kernel types
-    disable_type1 = os.getenv('JQC_DISABLE_ECP_TYPE1') == '1'
-    disable_type2 = os.getenv('JQC_DISABLE_ECP_TYPE2') == '1'
+    # Kernel types are selected automatically by lk; no env toggles
 
     # Compute ECP IP integrals for each basis group combination and ECP type
     # Use full (i,j) combinations to capture both i- and j-side contributions
@@ -853,15 +608,11 @@ def get_ecp_ip(mol_or_basis_layout, ip_type='ip', ecp_atoms=None, precision: str
 
                 # Choose appropriate IP kernel based on ECP type
                 if lk < 0:
-                    if disable_type1:
-                        continue
                     _compile_ecp_type1_ip_kernel(li, lj, npi, npj, precision)(
                         mat1_flat, ao_loc, nao, tasks, ntasks, ecpbas, ecploc,
                         basis_layout.coords, basis_layout.ce, atm, env
                     )
                 else:
-                    if disable_type2:
-                        continue
                     # Type2 IP kernel for semi-local channels
                     _compile_ecp_type2_ip_kernel(li, lj, lk, npi, npj, precision)(
                         mat1_flat, ao_loc, nao, tasks, ntasks, ecpbas, ecploc,
@@ -874,7 +625,6 @@ def get_ecp_ip(mol_or_basis_layout, ip_type='ip', ecp_atoms=None, precision: str
     result = cp.zeros((n_ecp_atoms, 3, nao_orig, nao_orig), dtype=dtype)
 
     # Map ECP atoms and transform each component from flattened format
-    ecp_atom_to_idx = {atom: idx for idx, atom in enumerate(sorted(set(sorted_ecpbas[:, gto.ATOM_OF])))}
     for i in range(n_ecp_atoms):
         for comp in range(3):
             flat_idx = 3*i + comp
@@ -956,10 +706,6 @@ def get_ecp_ipip(mol_or_basis_layout, ip_type='ipipv', ecp_atoms=None, precision
     n_ecp_atoms = len(ecp_atoms)
     mat1_flat = cp.zeros((9*n_ecp_atoms, nao, nao), dtype=dtype)
 
-    # Optional debug toggles to isolate kernel types
-    disable_type1 = os.getenv('JQC_DISABLE_ECP_TYPE1') == '1'
-    disable_type2 = os.getenv('JQC_DISABLE_ECP_TYPE2') == '1'
-
     # Compute ECP IPIP integrals for each basis group combination and ECP type
     # Use full (i,j) combinations to capture both i- and j-side contributions
     for i in range(n_groups):
@@ -994,15 +740,11 @@ def get_ecp_ipip(mol_or_basis_layout, ip_type='ipipv', ecp_atoms=None, precision
 
                 # Choose appropriate IPIP kernel based on ECP type
                 if lk < 0:
-                    if disable_type1:
-                        continue
                     _compile_ecp_type1_ipip_kernel(li, lj, ip_type, npi, npj, precision)(
                         mat1_flat, ao_loc, nao, tasks, ntasks, ecpbas, ecploc,
                         basis_layout.coords, basis_layout.ce, atm, env
                     )
                 else:
-                    if disable_type2:
-                        continue
                     # Type2 IPIP kernel for semi-local channels
                     _compile_ecp_type2_ipip_kernel(li, lj, lk, ip_type, npi, npj, precision)(
                         mat1_flat, ao_loc, nao, tasks, ntasks, ecpbas, ecploc,
@@ -1152,10 +894,6 @@ def get_ecp(mol_or_basis_layout, precision: str = 'fp64') -> cp.ndarray:
     # Initialize result matrix in splitted_mol basis
     mat1 = cp.zeros((nao, nao), dtype=dtype)
 
-    # Optional debug toggles to isolate kernel types
-    disable_type1 = os.getenv('JQC_DISABLE_ECP_TYPE1') == '1'
-    disable_type2 = os.getenv('JQC_DISABLE_ECP_TYPE2') == '1'
-
     # Compute ECP integrals for each basis group combination and ECP type
     # Following gpu4pyscf's triple loop pattern
     for i in range(n_groups):
@@ -1190,16 +928,12 @@ def get_ecp(mol_or_basis_layout, precision: str = 'fp64') -> cp.ndarray:
                 ntasks = len(tasks)
                 # Choose appropriate kernel based on ECP type
                 if lk < 0:
-                    if disable_type1:
-                        continue
                     _compile_ecp_type1_kernel(li, lj, npi, npj, precision)(
                         mat1, ao_loc, nao, tasks, ntasks, ecpbas, ecploc,
                         basis_layout.coords, basis_layout.ce,
                         atm, env
                     )
                 else:
-                    if disable_type2:
-                        continue
                     # Type2 kernel for semi-local channels
                     _compile_ecp_type2_kernel(li, lj, lk, npi, npj, precision)(
                         mat1, ao_loc, nao, tasks, ntasks, ecpbas, ecploc,
@@ -1245,9 +979,6 @@ def ecp_generator(mol_or_basis_layout, precision: str = 'fp64') -> Dict[str, Any
     }
 
 
-# Angular momentum limits for kernel generation
-MAX_L_ECP = 4  # Maximum angular momentum for ECP kernels
-
 def precompile_ecp_kernels(precision: str = 'fp64'):
     """
     Precompile common ECP kernels to avoid JIT overhead
@@ -1260,7 +991,7 @@ def precompile_ecp_kernels(precision: str = 'fp64'):
     for li in range(max_l_type1 + 1):
         for lj in range(li, max_l_type1 + 1):
             try:
-                _compile_ecp_type1_kernel(li, lj, precision)
+                _compile_ecp_type1_kernel(li, lj, 1, 1, precision)
                 print(f"Compiled ECP Type1 kernel for L=({li},{lj}) with {precision}")
             except Exception as e:
                 print(f"Failed to compile ECP Type1 kernel for L=({li},{lj}): {e}")
@@ -1271,7 +1002,7 @@ def precompile_ecp_kernels(precision: str = 'fp64'):
             if li + lj > max_l_type1:  # Only for combinations not covered by Type1
                 for lc in range(MAX_L_ECP + 1):
                     try:
-                        _compile_ecp_type2_kernel(li, lj, lc, precision)
+                        _compile_ecp_type2_kernel(li, lj, lc, 1, 1, precision)
                         print(f"Compiled ECP Type2 kernel for L=({li},{lj},{lc}) with {precision}")
                     except Exception as e:
                         print(f"Failed to compile ECP Type2 kernel for L=({li},{lj},{lc}): {e}")

@@ -83,7 +83,7 @@ class TestGenerateFragments:
         max_threads = 64  # Lower limit
         fragments = list(generate_fragments(ang, max_threads=max_threads))
 
-        nf = np.array([(l + 1) * (l + 2) // 2 for l in ang])
+        nf = np.array([(ell + 1) * (ell + 2) // 2 for ell in ang])
 
         for frag in fragments:
             nthreads = (nf + frag - 1) // frag
@@ -105,7 +105,7 @@ class TestUpdateFrags:
             try:
                 os.chdir(tmpdir)  # Change to temp dir without gly30.xyz
                 with pytest.raises(
-                    FileNotFoundError, match="Required file gly30.xyz not found"
+                    FileNotFoundError, match=r"Required file gly30\.xyz not found"
                 ):
                     update_frags(0, 0, 0, 0, "fp64")
             finally:
