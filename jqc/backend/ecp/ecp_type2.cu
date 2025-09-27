@@ -192,7 +192,7 @@ void type2_facs_omega(double* __restrict__ omega, const double r[3]){
 }
 
 template <int L> __device__
-void type2_ang(double* __restrict__ facs, const double rca[3], const double* __restrict__ omega){
+void type2_ang(double* __restrict__ facs, const double* __restrict__ fi, const double* __restrict__ omega){
     constexpr int L1 = L+1;
     constexpr int NF = L1*(L1+1)/2;
     constexpr int LCC1 = (2*LC+1);
@@ -203,20 +203,17 @@ void type2_ang(double* __restrict__ facs, const double rca[3], const double* __r
     for (int i = threadIdx.x; i < L1*LC1*NF; i+=THREADS){
         facs[i] = 0.0;
     }
-
-    __shared__ double fi[NF*3];
-    cache_fac<L>(fi, rca);
     __syncthreads();
-
+    
     // i,j,k,ijkmn->(i+j+k)pmn
     for (int p = 0; p < NF; p++){
         const int iy = _cart_pow_y[p];
         const int iz = _cart_pow_z[p];
         const int ix = L - iy - iz;
 
-        double *fx = fi + (ix+1)*ix/2;
-        double *fy = fi + (iy+1)*iy/2 + NF;
-        double *fz = fi + (iz+1)*iz/2 + NF*2;
+        const double *fx = fi + (ix+1)*ix/2;
+        const double *fy = fi + (iy+1)*iy/2 + NF;
+        const double *fz = fi + (iz+1)*iz/2 + NF*2;
         
         for (int i = 0; i <= ix; i++){
         for (int j = 0; j <= iy; j++){
@@ -349,12 +346,22 @@ void type2_cart(double* __restrict__ gctr,
     for (int i = 0; i < nreg; i++){
         reg_gctr[i] = 0.0;
     }
-    
+
+    // Pre-calculate fi and fj to reduce shared memory usage in type2_ang calls
+    constexpr int nfi_3 = nfi * 3;
+    constexpr int nfj_3 = nfj * 3;
+    __shared__ double fi[nfi_3];
+    __shared__ double fj[nfj_3];
+
+    cache_fac<LI>(fi, rca);
+    cache_fac<LJ>(fj, rcb);
+    __syncthreads();
+
     // (k+l)pq,kimp,ljmq->ij
 #pragma unroll 1
     for (int m = 0; m < LCC1; m++){
-        type2_ang<LI>(angi, rca, omegai+m);
-        type2_ang<LJ>(angj, rcb, omegaj+m);
+        type2_ang<LI>(angi, fi, omegai+m);
+        type2_ang<LJ>(angj, fj, omegaj+m);
         __syncthreads();
         // Accumulate per-thread block partial sums into reg_gctr buckets
         constexpr int PT = 4;  // tile size in p

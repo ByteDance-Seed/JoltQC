@@ -124,7 +124,7 @@ class KnownValues(unittest.TestCase):
     def _log(self, msg: str):
         # Left-align the tag to a fixed width for tidy, readable output
         print(f"[{self._tag():<40}] {msg}")
-
+    
     def test_ecp_small_cart(self):
         h1_cpu = mol_small.intor('ECPscalar_cart')
         h1_gpu = get_ecp(mol_small).get()
@@ -142,7 +142,7 @@ class KnownValues(unittest.TestCase):
         h1_gpu = get_ecp(mol_sph).get()
         self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
         assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6  # Machine precision threshold
-
+    
     def test_ecp_small_cart_ip1(self):
         # Match gpu4pyscf iprinv style: compare per-ECP-atom contributions
         h1_gpu = get_ecp_ip(mol_small)
