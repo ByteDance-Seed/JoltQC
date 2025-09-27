@@ -17,7 +17,7 @@ if _ndev == 0:
 
 
 def setUpModule():
-    global mol_cart, mol_sph, cu1_basis
+    global mol_small, mol_cart, mol_sph, cu1_basis
     cu1_basis = gto.basis.parse(
         '''
      H    S
@@ -40,7 +40,7 @@ def setUpModule():
         '''
     )
 
-    mol_cart = gto.M(
+    mol_small = gto.M(
         atom="Cu 0 0 0",
         basis="sto-3g",
         ecp="crenbl",
@@ -79,12 +79,42 @@ Na G
         verbose=0,
     )
 
+    mol_cart = gto.M(
+        atom='''
+            Na 0.5 0.5 0.
+            Na  0.  1.  1.
+        ''',
+        basis={'Na': cu1_basis, 'H': cu1_basis},
+        ecp={'Na': gto.basis.parse_ecp('''
+Na nelec 10
+Na ul
+2       1.0                   0.5
+Na S
+2      13.652203             732.2692
+2       6.826101              26.484721
+Na P
+2      10.279868             299.489474
+2       5.139934              26.466234
+Na D
+2       7.349859             124.457595
+2       3.674929              14.035995
+Na F
+2       3.034072              21.531031
+Na G
+2       4.808857             -21.607597
+        ''')},
+        cart=1,
+        output="/dev/null",
+        verbose=0,
+    )
+
 
 def tearDownModule():
-    global mol_cart, mol_sph
+    global mol_small, mol_cart, mol_sph
+    mol_small.stdout.close()
     mol_cart.stdout.close()
     mol_sph.stdout.close()
-    del mol_cart, mol_sph
+    del mol_small, mol_cart, mol_sph
 
 
 class KnownValues(unittest.TestCase):
@@ -94,6 +124,12 @@ class KnownValues(unittest.TestCase):
     def _log(self, msg: str):
         # Left-align the tag to a fixed width for tidy, readable output
         print(f"[{self._tag():<40}] {msg}")
+
+    def test_ecp_small_cart(self):
+        h1_cpu = mol_small.intor('ECPscalar_cart')
+        h1_gpu = get_ecp(mol_small).get()
+        self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
+        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6  # Machine precision threshold
 
     def test_ecp_cart(self):
         h1_cpu = mol_cart.intor('ECPscalar_cart')
@@ -107,6 +143,28 @@ class KnownValues(unittest.TestCase):
         self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
         assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6  # Machine precision threshold
 
+    def test_ecp_small_cart_ip1(self):
+        # Match gpu4pyscf iprinv style: compare per-ECP-atom contributions
+        h1_gpu = get_ecp_ip(mol_small)
+        ecp_atoms = set(mol_small._ecpbas[:, gto.ATOM_OF])
+        for atm_id in ecp_atoms:
+            with mol_small.with_rinv_at_nucleus(atm_id):
+                h1_cpu = mol_small.intor('ECPscalar_iprinv_cart')
+            self._log(f"atom: {atm_id:2d}  norm: {np.linalg.norm(h1_cpu - h1_gpu[atm_id].get()):.3e}")
+            assert np.linalg.norm(h1_cpu - h1_gpu[atm_id].get()) < 1e-6
+
+    def test_ecp_small_cart_ipipv(self):
+        h1_cpu = mol_small.intor('ECPscalar_ipipnuc', comp=9)
+        h1_gpu = get_ecp_ipip(mol_small, 'ipipv').sum(axis=0).get()
+        self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
+        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6
+
+    def test_ecp_small_cart_ipvip(self):
+        h1_cpu = mol_small.intor('ECPscalar_ipnucip', comp=9)
+        h1_gpu = get_ecp_ipip(mol_small, 'ipvip').sum(axis=0).get()
+        self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
+        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6
+
     def test_ecp_cart_ip1(self):
         # Match gpu4pyscf iprinv style: compare per-ECP-atom contributions
         h1_gpu = get_ecp_ip(mol_cart)
@@ -117,9 +175,9 @@ class KnownValues(unittest.TestCase):
             self._log(f"atom: {atm_id:2d}  norm: {np.linalg.norm(h1_cpu - h1_gpu[atm_id].get()):.3e}")
             assert np.linalg.norm(h1_cpu - h1_gpu[atm_id].get()) < 1e-6
 
-    def test_ecp_sph_ipnuc(self):
-        h1_cpu = mol_sph.intor('ECPscalar_ipnuc_sph')
-        h1_gpu = get_ecp_ip(mol_sph).sum(axis=0).get()
+    def test_ecp_cart_ipnuc(self):
+        h1_cpu = mol_cart.intor('ECPscalar_ipnuc_cart')
+        h1_gpu = get_ecp_ip(mol_cart).sum(axis=0).get()
         self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
         assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6
 
@@ -132,6 +190,34 @@ class KnownValues(unittest.TestCase):
     def test_ecp_cart_ipvip_cart(self):
         h1_cpu = mol_cart.intor('ECPscalar_ipnucip', comp=9)
         h1_gpu = get_ecp_ipip(mol_cart, 'ipvip').sum(axis=0).get()
+        self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
+        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6
+
+    def test_ecp_sph_ip1(self):
+        # Match gpu4pyscf iprinv style: compare per-ECP-atom contributions
+        h1_gpu = get_ecp_ip(mol_sph)
+        ecp_atoms = set(mol_sph._ecpbas[:, gto.ATOM_OF])
+        for atm_id in ecp_atoms:
+            with mol_sph.with_rinv_at_nucleus(atm_id):
+                h1_cpu = mol_sph.intor('ECPscalar_iprinv_sph')
+            self._log(f"atom: {atm_id:2d}  norm: {np.linalg.norm(h1_cpu - h1_gpu[atm_id].get()):.3e}")
+            assert np.linalg.norm(h1_cpu - h1_gpu[atm_id].get()) < 1e-6
+
+    def test_ecp_sph_ipnuc(self):
+        h1_cpu = mol_sph.intor('ECPscalar_ipnuc_sph')
+        h1_gpu = get_ecp_ip(mol_sph).sum(axis=0).get()
+        self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
+        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6
+
+    def test_ecp_sph_ipipv(self):
+        h1_cpu = mol_sph.intor('ECPscalar_ipipnuc', comp=9)
+        h1_gpu = get_ecp_ipip(mol_sph, 'ipipv').sum(axis=0).get()
+        self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
+        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6
+
+    def test_ecp_sph_ipvip(self):
+        h1_cpu = mol_sph.intor('ECPscalar_ipnucip', comp=9)
+        h1_gpu = get_ecp_ipip(mol_sph, 'ipvip').sum(axis=0).get()
         self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
         assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6
 

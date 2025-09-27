@@ -21,7 +21,8 @@ void type1_cart_kernel(double* __restrict__ gctr,
                 const int* __restrict__ ecpbas, const int* __restrict__ ecploc,
                 const DataType4* __restrict__ coords,
                 const DataType2* __restrict__ coeff_exp,
-                const int* __restrict__ atm, const double* __restrict__ env)
+                const int* __restrict__ atm, const double* __restrict__ env,
+                const int npi, const int npj)
 {
     // Coordinates from basis layout with explicit COORD_STRIDE handling.
     // Treat coords as scalar array to avoid relying on struct alignment.
@@ -64,8 +65,8 @@ void type1_cart_kernel(double* __restrict__ gctr,
     const DataType2* cei = coeff_exp + ish * prim_stride;
     const DataType2* cej = coeff_exp + jsh * prim_stride;
 
-    for (int ip = 0; ip < NPI; ip++){
-        for (int jp = 0; jp < NPJ; jp++){
+    for (int ip = 0; ip < npi; ip++){
+        for (int jp = 0; jp < npj; jp++){
             double rij[3];
             double ai_prim = cei[ip].e;
             double aj_prim = cej[jp].e;
@@ -162,7 +163,8 @@ void type1_cart_ip1(double* __restrict__ gctr,
                 const int* __restrict__ ecpbas, const int* __restrict__ ecploc,
                 const DataType4* __restrict__ coords,
                 const DataType2* __restrict__ coeff_exp,
-                const int* __restrict__ atm, const double* __restrict__ env)
+                const int* __restrict__ atm, const double* __restrict__ env,
+                const int npi, const int npj)
 {
     const int task_id = blockIdx.x;
     if (task_id >= ntasks){
@@ -192,13 +194,13 @@ void type1_cart_ip1(double* __restrict__ gctr,
     // Accumulate derivative contributions with respect to AO i.
     // j-side contributions are accumulated via (j,i) tasks in host tasking (full tasks).
     // Use LI+1 for orderi=1 to match unrolled cache pattern
-    type1_cart_kernel<LI+1, LJ, 1, 0>(buf, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env);
+    type1_cart_kernel<LI+1, LJ, 1, 0>(buf, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj);
     __syncthreads();
     _li_down<LI, LJ>(gctr_smem, buf);
 
     if constexpr (LI > 0){
         // Use LI-1 for orderi=0 companion
-        type1_cart_kernel<LI-1, LJ, 0, 0>(buf, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env);
+        type1_cart_kernel<LI-1, LJ, 0, 0>(buf, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj);
         __syncthreads();
         _li_up<LI, LJ>(gctr_smem, buf);
     }
@@ -223,7 +225,8 @@ void type1_cart_ipipv(double* __restrict__ gctr,
                 const int* __restrict__ ecpbas, const int* __restrict__ ecploc,
                 const DataType4* __restrict__ coords,
                 const DataType2* __restrict__ coeff_exp,
-                const int* __restrict__ atm, const double* __restrict__ env)
+                const int* __restrict__ atm, const double* __restrict__ env,
+                const int npi, const int npj)
 {
     const int task_id = blockIdx.x;
     if (task_id >= ntasks){
@@ -243,7 +246,7 @@ void type1_cart_ipipv(double* __restrict__ gctr,
     constexpr int nfj_max = (LJ+1)*(LJ+2)/2;
     __shared__ double buf1[nfi2_max*nfj_max];
     // Use LI+2 for orderi=2 stage
-    type1_cart_kernel<LI+2, LJ, 2, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env);
+    type1_cart_kernel<LI+2, LJ, 2, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj);
     __syncthreads();
 
     constexpr int nfi1_max = (LI+2)*(LI+3)/2;
@@ -255,7 +258,7 @@ void type1_cart_ipipv(double* __restrict__ gctr,
     _li_down<LI+1, LJ>(buf, buf1);
 
     // Then LI for orderi=1 stage
-    type1_cart_kernel<LI, LJ, 1, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env);
+    type1_cart_kernel<LI, LJ, 1, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj);
     __syncthreads();
     _li_up<LI+1, LJ>(buf, buf1);
     _li_down_and_write<LI, LJ>(gctr, buf, nao);
@@ -268,7 +271,7 @@ void type1_cart_ipipv(double* __restrict__ gctr,
         _li_down<LI-1, LJ>(buf, buf1);
         if constexpr (LI > 1){
             // Final companion LI-2 for orderi=0
-            type1_cart_kernel<LI-2, LJ, 0, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env);
+            type1_cart_kernel<LI-2, LJ, 0, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj);
             __syncthreads();
             _li_up<LI-1, LJ>(buf, buf1);
         }
@@ -284,7 +287,8 @@ void type1_cart_ipvip(double* __restrict__ gctr,
                 const int* __restrict__ ecpbas, const int* __restrict__ ecploc,
                 const DataType4* __restrict__ coords,
                 const DataType2* __restrict__ coeff_exp,
-                const int* __restrict__ atm, const double* __restrict__ env)
+                const int* __restrict__ atm, const double* __restrict__ env,
+                const int npi, const int npj)
 {
     const int task_id = blockIdx.x;
     if (task_id >= ntasks){
@@ -304,7 +308,7 @@ void type1_cart_ipvip(double* __restrict__ gctr,
     constexpr int nfj1_max = (LJ+2)*(LJ+3)/2;
     __shared__ double buf1[nfi1_max*nfj1_max];
     // Start with LI+1, LJ+1 for mixed order
-    type1_cart_kernel<LI+1, LJ+1, 1, 1>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env);
+    type1_cart_kernel<LI+1, LJ+1, 1, 1>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj);
     __syncthreads();
 
     constexpr int nfi_max = (LI+1)*(LI+2)/2;
@@ -316,7 +320,7 @@ void type1_cart_ipvip(double* __restrict__ gctr,
     _li_down<LI, LJ+1>(buf, buf1);
     if constexpr (LI > 0){
         // Companion LI-1, LJ+1 for orderi=0, orderj=1
-        type1_cart_kernel<LI-1, LJ+1, 0, 1>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env);
+        type1_cart_kernel<LI-1, LJ+1, 0, 1>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj);
         __syncthreads();
         _li_up<LI, LJ+1>(buf, buf1);
     }
@@ -328,12 +332,12 @@ void type1_cart_ipvip(double* __restrict__ gctr,
         }
         __syncthreads();
         // LI+1, LJ-1 for orderi=1, orderj=0 branch
-        type1_cart_kernel<LI+1, LJ-1, 1, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env);
+        type1_cart_kernel<LI+1, LJ-1, 1, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj);
         __syncthreads();
         _li_down<LI, LJ-1>(buf, buf1);
         if constexpr (LI > 0){
             // LI-1, LJ-1 for orderi=0, orderj=0 companion
-            type1_cart_kernel<LI-1, LJ-1, 0, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env);
+            type1_cart_kernel<LI-1, LJ-1, 0, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj);
             __syncthreads();
             _li_up<LI, LJ-1>(buf, buf1);
         }

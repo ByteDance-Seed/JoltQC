@@ -60,7 +60,7 @@ def _get_compile_options():
     # Note: ECP derivative normalization is handled in basis coefficients; no extra scaling.
     return ("-std=c++17", "--use_fast_math", "--minimal")
 
-def _compile_ecp_type2_kernel(li: int, lj: int, lc: int, npi=None, npj=None, precision: str = 'fp64'):
+def _compile_ecp_type2_kernel(li: int, lj: int, lc: int, precision: str = 'fp64'):
     """
     Compile ECP Type2 kernel for specific angular momentum combination
 
@@ -73,15 +73,11 @@ def _compile_ecp_type2_kernel(li: int, lj: int, lc: int, npi=None, npj=None, pre
     Returns:
         Compiled kernel function
     """
-    if npi is None:
-        npi = 1
-    if npj is None:
-        npj = 1
 
     dtype = get_cp_type(precision)
     dtype_cuda = "float" if dtype == cp.float32 else "double"
 
-    cache_key = (li, lj, lc, npi, npj, 'type2', precision)
+    cache_key = (li, lj, lc, 'type2', precision)
 
     if cache_key in _ecp_kernel_cache:
         return _ecp_kernel_cache[cache_key]
@@ -92,8 +88,6 @@ using DataType = {dtype_cuda};
 constexpr int LI = {li};
 constexpr int LJ = {lj};
 constexpr int LC = {lc};
-constexpr int NPI = {npi};
-constexpr int NPJ = {npj};
 """
 
     # Read the CUDA source
@@ -123,13 +117,18 @@ constexpr int NPJ = {npj};
             f"-DPRIM_STRIDE={PRIM_STRIDE}", f"-DCOORD_STRIDE={COORD_STRIDE}")
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function('type2_cart')
-    print(li, lj, lc, npi, npj, kernel.num_regs, kernel.local_size_bytes, kernel.shared_size_bytes/1024)
+    
     # Create wrapper function following JoltQC style
     def kernel_wrapper(*args):
+        # Extract nprim values from additional arguments (last 2 arguments)
         ntasks = args[4]  # Number of tasks
+        npi = args[-2]    # npi is second-to-last argument
+        npj = args[-1]    # npj is last argument
         block_size = 128
         grid_size = ntasks
-        kernel((grid_size,), (block_size,), args)
+        # Pass original args (excluding npi, npj) plus npi, npj to kernel
+        kernel_args = args[:-2] + (npi, npj)
+        kernel((grid_size,), (block_size,), kernel_args)
 
     # Cache the compiled kernel
     _ecp_kernel_cache[cache_key] = kernel_wrapper
@@ -137,7 +136,7 @@ constexpr int NPJ = {npj};
     return kernel_wrapper
 
 
-def _compile_ecp_type1_kernel(li: int, lj: int, npi=None, npj=None, precision: str = 'fp64'):
+def _compile_ecp_type1_kernel(li: int, lj: int, precision: str = 'fp64'):
     """
     Compile ECP Type1 kernel for specific angular momentum combination
 
@@ -149,15 +148,11 @@ def _compile_ecp_type1_kernel(li: int, lj: int, npi=None, npj=None, precision: s
     Returns:
         Compiled kernel function
     """
-    if npi is None:
-        npi = 1
-    if npj is None:
-        npj = 1
 
     dtype = get_cp_type(precision)
     dtype_cuda = "float" if dtype == cp.float32 else "double"
 
-    cache_key = (li, lj, npi, npj, precision)
+    cache_key = (li, lj, precision)
 
     if cache_key in _ecp_kernel_cache:
         return _ecp_kernel_cache[cache_key]
@@ -167,8 +162,6 @@ def _compile_ecp_type1_kernel(li: int, lj: int, npi=None, npj=None, precision: s
 using DataType = {dtype_cuda};
 constexpr int LI = {li};
 constexpr int LJ = {lj};
-constexpr int NPI = {npi};
-constexpr int NPJ = {npj};
 """
 
     # Read the CUDA source
@@ -198,13 +191,20 @@ constexpr int NPJ = {npj};
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function('type1_cart')
     # print(li, lj, npi, npj, kernel.num_regs, kernel.local_size_bytes, kernel.shared_size_bytes/1024)
-
+    if (kernel.local_size_bytes > 2048):
+        Warning.warn(f"High local memory usage detected in type1_cart kernel: {kernel.local_size_bytes} bytes")
+    
     # Create wrapper function following JoltQC style
     def kernel_wrapper(*args):
+        # Extract nprim values from additional arguments (last 2 arguments)
         ntasks = args[4]  # Number of tasks
+        npi = args[-2]    # npi is second-to-last argument
+        npj = args[-1]    # npj is last argument
         block_size = 128
         grid_size = ntasks
-        kernel((grid_size,), (block_size,), args)
+        # Pass original args (excluding npi, npj) plus npi, npj to kernel
+        kernel_args = args[:-2] + (npi, npj)
+        kernel((grid_size,), (block_size,), kernel_args)
 
     # Cache the compiled kernel
     _ecp_kernel_cache[cache_key] = kernel_wrapper
@@ -212,29 +212,23 @@ constexpr int NPJ = {npj};
     return kernel_wrapper
 
 
-def _compile_ecp_type1_ip_kernel(li: int, lj: int, npi=None, npj=None, precision: str = 'fp64'):
+def _compile_ecp_type1_ip_kernel(li: int, lj: int, precision: str = 'fp64'):
     """
     Compile ECP Type1 IP (first derivative) kernel for specific angular momentum combination
 
     Args:
         li: Angular momentum of first basis function
         lj: Angular momentum of second basis function
-        npi: Number of primitives for shell i
-        npj: Number of primitives for shell j
         precision: Floating point precision ('fp64', 'fp32', 'mixed')
 
     Returns:
         Compiled IP kernel function
     """
-    if npi is None:
-        npi = 1
-    if npj is None:
-        npj = 1
 
     dtype = get_cp_type(precision)
     dtype_cuda = "float" if dtype == cp.float32 else "double"
 
-    cache_key = (li, lj, npi, npj, 'type1_ip', precision)
+    cache_key = (li, lj, 'type1_ip', precision)
 
     if cache_key in _ecp_kernel_cache:
         return _ecp_kernel_cache[cache_key]
@@ -244,8 +238,6 @@ def _compile_ecp_type1_ip_kernel(li: int, lj: int, npi=None, npj=None, precision
 using DataType = {dtype_cuda};
 constexpr int LI = {li};
 constexpr int LJ = {lj};
-constexpr int NPI = {npi};
-constexpr int NPJ = {npj};
 """
 
     # Read the CUDA source
@@ -269,20 +261,24 @@ constexpr int NPJ = {npj};
             f"-DPRIM_STRIDE={PRIM_STRIDE}", f"-DCOORD_STRIDE={COORD_STRIDE}")
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function('type1_cart_ip1')
-
-    # No longer need dynamic shared memory - using static shared memory declarations
-
+    if (kernel.local_size_bytes > 2048):
+        Warning.warn(f"High local memory usage detected in type1_cart_ip1 kernel: {kernel.local_size_bytes} bytes")
     def kernel_wrapper(*args):
+        # Extract nprim values from additional arguments (last 2 arguments)
         ntasks = args[4]  # Number of tasks
+        npi = args[-2]    # npi is second-to-last argument
+        npj = args[-1]    # npj is last argument
         block_size = 128
         grid_size = ntasks
-        kernel((grid_size,), (block_size,), args)
+        # Pass original args (excluding npi, npj) plus npi, npj to kernel
+        kernel_args = args[:-2] + (npi, npj)
+        kernel((grid_size,), (block_size,), kernel_args)
 
     _ecp_kernel_cache[cache_key] = kernel_wrapper
     return kernel_wrapper
 
 
-def _compile_ecp_type2_ip_kernel(li: int, lj: int, lc: int, npi=None, npj=None, precision: str = 'fp64'):
+def _compile_ecp_type2_ip_kernel(li: int, lj: int, lc: int, precision: str = 'fp64'):
     """
     Compile ECP Type2 IP (first derivative) kernel for specific angular momentum combination
 
@@ -290,22 +286,16 @@ def _compile_ecp_type2_ip_kernel(li: int, lj: int, lc: int, npi=None, npj=None, 
         li: Angular momentum of first basis function
         lj: Angular momentum of second basis function
         lc: Angular momentum of ECP center
-        npi: Number of primitives for shell i
-        npj: Number of primitives for shell j
         precision: Floating point precision ('fp64', 'fp32', 'mixed')
 
     Returns:
         Compiled IP kernel function
     """
-    if npi is None:
-        npi = 1
-    if npj is None:
-        npj = 1
 
     dtype = get_cp_type(precision)
     dtype_cuda = "float" if dtype == cp.float32 else "double"
 
-    cache_key = (li, lj, lc, npi, npj, 'type2_ip', precision)
+    cache_key = (li, lj, lc, 'type2_ip', precision)
 
     if cache_key in _ecp_kernel_cache:
         return _ecp_kernel_cache[cache_key]
@@ -316,8 +306,6 @@ using DataType = {dtype_cuda};
 constexpr int LI = {li};
 constexpr int LJ = {lj};
 constexpr int LC = {lc};
-constexpr int NPI = {npi};
-constexpr int NPJ = {npj};
 """
 
     # Read the CUDA source
@@ -341,20 +329,24 @@ constexpr int NPJ = {npj};
             f"-DPRIM_STRIDE={PRIM_STRIDE}", f"-DCOORD_STRIDE={COORD_STRIDE}")
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function('type2_cart_ip1')
-
-    # No longer need dynamic shared memory calculations - using static shared memory declarations
-
+    if (kernel.local_size_bytes > 2048):
+        Warning.warn(f"High local memory usage detected in type2_cart_ip1 kernel: {kernel.local_size_bytes} bytes")
     def kernel_wrapper(*args):
+        # Extract nprim values from additional arguments (last 2 arguments)
         ntasks = args[4]  # Number of tasks
+        npi = args[-2]    # npi is second-to-last argument
+        npj = args[-1]    # npj is last argument
         block_size = 128
         grid_size = ntasks
-        kernel((grid_size,), (block_size,), args)
+        # Pass original args (excluding npi, npj) plus npi, npj to kernel
+        kernel_args = args[:-2] + (npi, npj)
+        kernel((grid_size,), (block_size,), kernel_args)
 
     _ecp_kernel_cache[cache_key] = kernel_wrapper
     return kernel_wrapper
 
 
-def _compile_ecp_type1_ipip_kernel(li: int, lj: int, variant: str, npi=None, npj=None, precision: str = 'fp64'):
+def _compile_ecp_type1_ipip_kernel(li: int, lj: int, variant: str, precision: str = 'fp64'):
     """
     Compile ECP Type1 IPIP (second derivative) kernel for specific angular momentum combination
 
@@ -369,15 +361,11 @@ def _compile_ecp_type1_ipip_kernel(li: int, lj: int, variant: str, npi=None, npj
     Returns:
         Compiled IPIP kernel function
     """
-    if npi is None:
-        npi = 1
-    if npj is None:
-        npj = 1
 
     dtype = get_cp_type(precision)
     dtype_cuda = "float" if dtype == cp.float32 else "double"
 
-    cache_key = (li, lj, variant, npi, npj, 'type1_ipip', precision)
+    cache_key = (li, lj, variant, 'type1_ipip', precision)
 
     if cache_key in _ecp_kernel_cache:
         return _ecp_kernel_cache[cache_key]
@@ -387,8 +375,6 @@ def _compile_ecp_type1_ipip_kernel(li: int, lj: int, variant: str, npi=None, npj
 using DataType = {dtype_cuda};
 constexpr int LI = {li};
 constexpr int LJ = {lj};
-constexpr int NPI = {npi};
-constexpr int NPJ = {npj};
 """
 
     # Read the CUDA source
@@ -413,20 +399,24 @@ constexpr int NPJ = {npj};
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel_name = f'type1_cart_{variant}'
     kernel = mod.get_function(kernel_name)
-
-    # No longer need dynamic shared memory - using static shared memory declarations
-
+    if (kernel.local_size_bytes > 2048):
+        Warning.warn(f"High local memory usage detected in {kernel_name} kernel: {kernel.local_size_bytes} bytes")
     def kernel_wrapper(*args):
+        # Extract nprim values from additional arguments (last 2 arguments)
         ntasks = args[4]  # Number of tasks
+        npi = args[-2]    # npi is second-to-last argument
+        npj = args[-1]    # npj is last argument
         block_size = 128
         grid_size = ntasks
-        kernel((grid_size,), (block_size,), args)
+        # Pass original args (excluding npi, npj) plus npi, npj to kernel
+        kernel_args = args[:-2] + (npi, npj)
+        kernel((grid_size,), (block_size,), kernel_args)
 
     _ecp_kernel_cache[cache_key] = kernel_wrapper
     return kernel_wrapper
 
 
-def _compile_ecp_type2_ipip_kernel(li: int, lj: int, lc: int, variant: str, npi=None, npj=None, precision: str = 'fp64'):
+def _compile_ecp_type2_ipip_kernel(li: int, lj: int, lc: int, variant: str, precision: str = 'fp64'):
     """
     Compile ECP Type2 IPIP (second derivative) kernel for specific angular momentum combination
 
@@ -442,15 +432,11 @@ def _compile_ecp_type2_ipip_kernel(li: int, lj: int, lc: int, variant: str, npi=
     Returns:
         Compiled IPIP kernel function
     """
-    if npi is None:
-        npi = 1
-    if npj is None:
-        npj = 1
 
     dtype = get_cp_type(precision)
     dtype_cuda = "float" if dtype == cp.float32 else "double"
 
-    cache_key = (li, lj, lc, variant, npi, npj, 'type2_ipip', precision)
+    cache_key = (li, lj, lc, variant, 'type2_ipip', precision)
 
     if cache_key in _ecp_kernel_cache:
         return _ecp_kernel_cache[cache_key]
@@ -461,8 +447,6 @@ using DataType = {dtype_cuda};
 constexpr int LI = {li};
 constexpr int LJ = {lj};
 constexpr int LC = {lc};
-constexpr int NPI = {npi};
-constexpr int NPJ = {npj};
 """
 
     # Read the CUDA source
@@ -488,13 +472,18 @@ constexpr int NPJ = {npj};
     kernel_name = f'type2_cart_{variant}'
     kernel = mod.get_function(kernel_name)
 
-    # Static shared memory declarations are used; no dynamic sizing needed here
-
+    if (kernel.local_size_bytes > 2048):
+        Warning.warn(f"High local memory usage detected in {kernel_name} kernel: {kernel.local_size_bytes} bytes")
     def kernel_wrapper(*args):
+        # Extract nprim values from additional arguments (last 2 arguments)
         ntasks = args[4]  # Number of tasks
+        npi = args[-2]    # npi is second-to-last argument
+        npj = args[-1]    # npj is last argument
         block_size = 128
         grid_size = ntasks
-        kernel((grid_size,), (block_size,), args)
+        # Pass original args (excluding npi, npj) plus npi, npj to kernel
+        kernel_args = args[:-2] + (npi, npj)
+        kernel((grid_size,), (block_size,), kernel_args)
 
     _ecp_kernel_cache[cache_key] = kernel_wrapper
     return kernel_wrapper
@@ -623,20 +612,16 @@ def get_ecp_ip(mol_or_basis_layout, ip_type='ip', ecp_atoms=None, precision: str
 
                 # Choose appropriate IP kernel based on ECP type
                 if lk < 0:
-                    _compile_ecp_type1_ip_kernel(li, lj, npi, npj, precision)(
+                    _compile_ecp_type1_ip_kernel(li, lj, precision)(
                         mat1_flat, ao_loc, nao, tasks, ntasks, ecpbas, ecploc,
-                        basis_layout.coords, basis_layout.ce, atm, env
+                        basis_layout.coords, basis_layout.ce, atm, env, npi, npj
                     )
                 else:
                     # Type2 IP kernel for semi-local channels
-                    _compile_ecp_type2_ip_kernel(li, lj, lk, npi, npj, precision)(
+                    _compile_ecp_type2_ip_kernel(li, lj, lk, precision)(
                         mat1_flat, ao_loc, nao, tasks, ntasks, ecpbas, ecploc,
-                        basis_layout.coords, basis_layout.ce, atm, env
+                        basis_layout.coords, basis_layout.ce, atm, env, npi, npj
                     )
-
-    # Transform result from splitted_mol basis back to original mol basis
-    # Note: Do not symmetrize here. IP components are not guaranteed symmetric.
-
     result = cp.zeros((n_ecp_atoms, 3, nao_orig, nao_orig), dtype=dtype)
 
     # Map ECP atoms and transform each component from flattened format
@@ -755,19 +740,16 @@ def get_ecp_ipip(mol_or_basis_layout, ip_type='ipipv', ecp_atoms=None, precision
 
                 # Choose appropriate IPIP kernel based on ECP type
                 if lk < 0:
-                    _compile_ecp_type1_ipip_kernel(li, lj, ip_type, npi, npj, precision)(
+                    _compile_ecp_type1_ipip_kernel(li, lj, ip_type, precision)(
                         mat1_flat, ao_loc, nao, tasks, ntasks, ecpbas, ecploc,
-                        basis_layout.coords, basis_layout.ce, atm, env
+                        basis_layout.coords, basis_layout.ce, atm, env, npi, npj
                     )
                 else:
                     # Type2 IPIP kernel for semi-local channels
-                    _compile_ecp_type2_ipip_kernel(li, lj, lk, ip_type, npi, npj, precision)(
+                    _compile_ecp_type2_ipip_kernel(li, lj, lk, ip_type, precision)(
                         mat1_flat, ao_loc, nao, tasks, ntasks, ecpbas, ecploc,
-                        basis_layout.coords, basis_layout.ce, atm, env
+                        basis_layout.coords, basis_layout.ce, atm, env, npi, npj
                     )
-
-    # Transform result from splitted_mol basis back to original mol basis
-    # Note: Do not symmetrize here. IPIP components are not guaranteed symmetric.
 
     result = cp.zeros((n_ecp_atoms, 9, nao_orig, nao_orig), dtype=dtype)
 
@@ -943,16 +925,16 @@ def get_ecp(mol_or_basis_layout, precision: str = 'fp64') -> cp.ndarray:
                 ntasks = len(tasks)
                 # Choose appropriate kernel based on ECP type
                 if lk < 0:
-                    _compile_ecp_type1_kernel(li, lj, npi, npj, precision)(
+                    _compile_ecp_type1_kernel(li, lj, precision)(
                         mat1, ao_loc, nao, tasks, ntasks, ecpbas, ecploc,
                         basis_layout.coords, basis_layout.ce,
-                        atm, env
+                        atm, env, npi, npj
                     )
                 else:
                     # Type2 kernel for semi-local channels
-                    _compile_ecp_type2_kernel(li, lj, lk, npi, npj, precision)(
+                    _compile_ecp_type2_kernel(li, lj, lk, precision)(
                         mat1, ao_loc, nao, tasks, ntasks, ecpbas, ecploc,
-                        basis_layout.coords, basis_layout.ce, atm, env
+                        basis_layout.coords, basis_layout.ce, atm, env, npi, npj
                     )
 
     # Transform result from splitted_mol basis back to original mol basis
@@ -1006,7 +988,7 @@ def precompile_ecp_kernels(precision: str = 'fp64'):
     for li in range(max_l_type1 + 1):
         for lj in range(li, max_l_type1 + 1):
             try:
-                _compile_ecp_type1_kernel(li, lj, 1, 1, precision)
+                _compile_ecp_type1_kernel(li, lj, precision)
                 print(f"Compiled ECP Type1 kernel for L=({li},{lj}) with {precision}")
             except Exception as e:
                 print(f"Failed to compile ECP Type1 kernel for L=({li},{lj}): {e}")
@@ -1017,7 +999,7 @@ def precompile_ecp_kernels(precision: str = 'fp64'):
             if li + lj > max_l_type1:  # Only for combinations not covered by Type1
                 for lc in range(MAX_L_ECP + 1):
                     try:
-                        _compile_ecp_type2_kernel(li, lj, lc, 1, 1, precision)
+                        _compile_ecp_type2_kernel(li, lj, lc, precision)
                         print(f"Compiled ECP Type2 kernel for L=({li},{lj},{lc}) with {precision}")
                     except Exception as e:
                         print(f"Failed to compile ECP Type2 kernel for L=({li},{lj},{lc}): {e}")

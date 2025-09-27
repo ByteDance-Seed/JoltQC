@@ -25,8 +25,8 @@ static double rnorm3d(double x, double y, double z) {
     return rsqrt(x*x + y*y + z*z);
 }
 
-template <int order, int LIC, int np> __device__
-void type2_facs_rad(double facs[LIC+1], const double rca, const DataType2* __restrict__ ce){
+template <int order, int LIC> __device__
+void type2_facs_rad(double facs[LIC+1], const double rca, const DataType2* __restrict__ ce, const int np){
     double root = 0.0;
     if (threadIdx.x < NGAUSS){
         root = r128[threadIdx.x];
@@ -89,6 +89,7 @@ void type2_facs_omega(double* __restrict__ omega, const double r[3]){
     double rx[L+LC+1];
     double ry[L+LC+1];
     double rz[L+LC+1];
+
     rx[0] = 1.0; ry[0] = 1.0; rz[0] = 1.0;
     for (int i = 1; i <= L+LC; i++){
         rx[i] = rx[i-1] * unitr[0];
@@ -245,7 +246,7 @@ void type2_ang(double* __restrict__ facs, const double rca[3], const double* __r
     }
 }
 
-// placeholder for LI, LJ, LC
+// Refactored to take nprim as runtime parameters instead of constexpr injection
 extern "C" __global__
 void type2_cart(double* __restrict__ gctr,
                 const int* __restrict__ ao_loc, const int nao,
@@ -253,7 +254,8 @@ void type2_cart(double* __restrict__ gctr,
                 const int* __restrict__ ecpbas, const int* __restrict__ ecploc,
                 const DataType4* __restrict__ coords,
                 const DataType2* __restrict__ coeff_exp,
-                const int* __restrict__ atm, const double* __restrict__ env)
+                const int* __restrict__ atm, const double* __restrict__ env,
+                const int npi, const int npj)
 {
     const int task_id = blockIdx.x;
     if (task_id >= ntasks){
@@ -304,10 +306,10 @@ void type2_cart(double* __restrict__ gctr,
     const DataType2* cei = coeff_exp + ish * prim_stride;
     const DataType2* cej = coeff_exp + jsh * prim_stride;
     
-    double radi[LIC1]; 
-    type2_facs_rad<0, LI+LC, NPI>(radi, dca, cei);
+    double radi[LIC1];
+    type2_facs_rad<0, LI+LC>(radi, dca, cei, npi);
     double radj[LJC1];
-    type2_facs_rad<0, LJ+LC, NPJ>(radj, dcb, cej);
+    type2_facs_rad<0, LJ+LC>(radj, dcb, cej, npj);
 
     __shared__ double rad_all[(LI+LJ+1) * LIC1 * LJC1];
     set_shared_memory(rad_all, (LI+LJ+1)*LIC1*LJC1);
@@ -364,34 +366,30 @@ void type2_cart(double* __restrict__ gctr,
             }
             const int i = ij % nfi;
             const int j = ij / nfi;
+            // Precompute base offsets to reduce redundant calculations
+            const int angi_base = i*LIC1;
+            const int angj_base = j*LJC1;
             double s = 0.0;
             for (int k = 0; k <= LI; k++){
             for (int l = 0; l <= LJ; l++){
-                double *pangi = angi + k*nfi*LIC1 + i*LIC1;
-                double *pangj = angj + l*nfj*LJC1 + j*LJC1;
-                double *prad  = rad_all + (k+l)*LIC1*LJC1;
+                // Use precomputed bases to reduce register pressure
+                const int angi_offset = k*nfi*LIC1 + angi_base;
+                const int angj_offset = l*nfj*LJC1 + angj_base;
+                const int rad_offset = (k+l)*LIC1*LJC1;
+                // Streaming computation to reduce register pressure (eliminates ap[PT], bq[QT] arrays)
                 for (int p0 = 0; p0 < LIC1; p0 += PT){
                     const int pmax = min(PT, LIC1 - p0);
-                    double ap[PT];
-                    #pragma unroll
-                    for (int tp = 0; tp < PT; ++tp){
-                        ap[tp] = (tp < pmax) ? pangi[p0 + tp] : 0.0;
-                    }
                     for (int q0 = 0; q0 < LJC1; q0 += QT){
                         const int qmax = min(QT, LJC1 - q0);
-                        double bq[QT];
-                        #pragma unroll
-                        for (int tq = 0; tq < QT; ++tq){
-                            bq[tq] = (tq < qmax) ? pangj[q0 + tq] : 0.0;
-                        }
                         #pragma unroll
                         for (int tp = 0; tp < PT; ++tp){
                             if (tp >= pmax) break;
-                            const double * __restrict__ prad_row = prad + (p0 + tp) * LJC1 + q0;
+                            const double ap_val = angi[angi_offset + p0 + tp];
                             #pragma unroll
                             for (int tq = 0; tq < QT; ++tq){
                                 if (tq >= qmax) break;
-                                s += prad_row[tq] * ap[tp] * bq[tq];
+                                const double bq_val = angj[angj_offset + q0 + tq];
+                                s += rad_all[rad_offset + (p0 + tp) * LJC1 + q0 + tq] * ap_val * bq_val;
                             }
                         }
                     }

@@ -115,7 +115,7 @@ void type1_rad_ang(double* __restrict__ rad_ang,
 }
 
 
-// placeholder for LI, LJ, npi, npj
+// Refactored to take nprim as runtime parameters instead of constexpr injection
 extern "C" __global__
 void type1_cart(double* __restrict__ gctr,
                 const int* __restrict__ ao_loc, const int nao,
@@ -123,7 +123,8 @@ void type1_cart(double* __restrict__ gctr,
                 const int* __restrict__ ecpbas, const int* __restrict__ ecploc,
                 const DataType4* __restrict__ coords,
                 const DataType2* __restrict__ coeff_exp,
-                const int* __restrict__ atm, const double* __restrict__ env)
+                const int* __restrict__ atm, const double* __restrict__ env,
+                const int npi, const int npj)
 {
     const int task_id = blockIdx.x;
     if (task_id >= ntasks){
@@ -170,12 +171,12 @@ void type1_cart(double* __restrict__ gctr,
 
     // ECP Type1 normalization factor - basis layout already includes normalization
     constexpr double fac = 16.0 * M_PI * M_PI;
-    for (int ip = 0; ip < NPI; ip++){
+    for (int ip = 0; ip < npi; ip++){
         const int ish_ip = ip + ish * prim_stride;
         const DataType2 cei = coeff_exp[ish_ip];
         const DataType ai = cei.e;
         const DataType ci = cei.c;
-        for (int jp = 0; jp < NPJ; jp++){
+        for (int jp = 0; jp < npj; jp++){
             const int jsh_jp = jp + jsh * prim_stride;
             const DataType2 cej = coeff_exp[jsh_jp];
             const DataType aj = cej.e;
