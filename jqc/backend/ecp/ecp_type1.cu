@@ -169,7 +169,7 @@ void type1_cart(double* __restrict__ gctr,
     set_shared_memory(rad_ang, LIJ1*LIJ1*LIJ1);
 
     // ECP Type1 normalization factor - basis layout already includes normalization
-    const double fac = 16.0 * M_PI * M_PI;
+    constexpr double fac = 16.0 * M_PI * M_PI;
     for (int ip = 0; ip < NPI; ip++){
         const int ish_ip = ip + ish * prim_stride;
         const DataType2 cei = coeff_exp[ish_ip];
@@ -204,7 +204,7 @@ void type1_cart(double* __restrict__ gctr,
     cache_fac<LI>(fi, rca);
     cache_fac<LJ>(fj, rcb);
     __syncthreads();
-    
+
     for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){
         const int mi = ij%nfi;
         const int mj = ij/nfi;

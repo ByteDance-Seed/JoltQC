@@ -14,27 +14,33 @@
  * limitations under the License.
  */
 
-template <int l> __device__
-void type2_ang_nuc_l(double buf[(LC+1)*(LC+2)/2],
+/*
+ * NORMALIZATION NOTE: 4.0*M_PI factor application
+ *
+ * Each type2_ang_nuc_l<X> function multiplies its output buffer by 4.0*M_PI:
+ *   for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
+ *
+ * This normalization is applied BEFORE cart2sph transformation and gets stored
+ * in the omega array. The omega values are later used independently of the main
+ * kernel's 16.0*M_PI*M_PI normalization factor, so both normalizations are needed.
+ *
+ * Data flow: type2_ang_nuc_l → buf *= 4.0*M_PI → cart2sph → omega → type2_ang → facs
+ * Final: facs values get multiplied by main kernel's 16.0*M_PI*M_PI factor
+ */
+
+template <int l> __device__ __forceinline__
+void type2_ang_nuc_l(double buf[(LC+1)*(LC+2)/2], double *c,
                     const int i, const int j, const int k,
-                    double unitr[3]){
+                    double *rx, double *ry, double *rz){
 return;
 }
 
-template <> __device__
-void type2_ang_nuc_l<0>(double buf[(LC+1)*(LC+2)/2],
+template <> __device__ __forceinline__
+void type2_ang_nuc_l<0>(double buf[(LC+1)*(LC+2)/2], double *c,
                     const int i, const int j, const int k,
-                    double unitr[3]){
+                    double *rx, double *ry, double *rz){
     constexpr int l = 0;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1] = {0.0};
+    for (int i = 0; i < 2*l+1; i++) c[i] = 0.0;
     c[0] += 0.28209479177387814*(rx[0]*ry[0]*rz[0]);;
 
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] = 0.0;
@@ -54,20 +60,12 @@ void type2_ang_nuc_l<0>(double buf[(LC+1)*(LC+2)/2],
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
-template <> __device__
-void type2_ang_nuc_l<1>(double buf[(LC+1)*(LC+2)/2],
+template <> __device__ __forceinline__
+void type2_ang_nuc_l<1>(double buf[(LC+1)*(LC+2)/2], double *c,
                     const int i, const int j, const int k,
-                    double unitr[3]){
+                    double *rx, double *ry, double *rz){
     constexpr int l = 1;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1] = {0.0};
+    for (int i = 0; i < 2*l+1; i++) c[i] = 0.0;
     c[0] += 0.4886025119029199*(rx[1]*ry[0]*rz[0]);
     c[1] += 0.4886025119029199*(rx[0]*ry[1]*rz[0]);
     c[2] += 0.4886025119029199*(rx[0]*ry[0]*rz[1]);;
@@ -109,20 +107,12 @@ void type2_ang_nuc_l<1>(double buf[(LC+1)*(LC+2)/2],
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
-template <> __device__
-void type2_ang_nuc_l<2>(double buf[(LC+1)*(LC+2)/2],
+template <> __device__ __forceinline__
+void type2_ang_nuc_l<2>(double buf[(LC+1)*(LC+2)/2], double *c,
                     const int i, const int j, const int k,
-                    double unitr[3]){
+                    double *rx, double *ry, double *rz){
     constexpr int l = 2;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1] = {0.0};
+    for (int i = 0; i < 2*l+1; i++) c[i] = 0.0;
     c[0] += 1.0925484305920792*(rx[1]*ry[1]*rz[0]);
     c[1] += 1.0925484305920792*(rx[0]*ry[1]*rz[1]);
     c[2] += -0.31539156525252*(rx[2]*ry[0]*rz[0]);
@@ -201,20 +191,12 @@ void type2_ang_nuc_l<2>(double buf[(LC+1)*(LC+2)/2],
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
-template <> __device__
-void type2_ang_nuc_l<3>(double buf[(LC+1)*(LC+2)/2],
+template <> __device__ __forceinline__
+void type2_ang_nuc_l<3>(double buf[(LC+1)*(LC+2)/2], double *c,
                     const int i, const int j, const int k,
-                    double unitr[3]){
+                    double *rx, double *ry, double *rz){
     constexpr int l = 3;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1] = {0.0};
+    for (int i = 0; i < 2*l+1; i++) c[i] = 0.0;
     c[0] += 1.7701307697799304*(rx[2]*ry[1]*rz[0]);
     c[0] += -0.5900435899266435*(rx[0]*ry[3]*rz[0]);
     c[1] += 2.8906114426405543*(rx[1]*ry[1]*rz[1]);
@@ -345,20 +327,12 @@ void type2_ang_nuc_l<3>(double buf[(LC+1)*(LC+2)/2],
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
-template <> __device__
-void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2],
+template <> __device__ __forceinline__
+void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2], double *c,
                     const int i, const int j, const int k,
-                    double unitr[3]){
+                    double *rx, double *ry, double *rz){
     constexpr int l = 4;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1] = {0.0};
+    for (int i = 0; i < 2*l+1; i++) c[i] = 0.0;
     c[0] += 2.5033429417967046*(rx[3]*ry[1]*rz[0]);
     c[0] += -2.5033429417967046*(rx[1]*ry[3]*rz[0]);
     c[1] += 5.310392309339791*(rx[2]*ry[1]*rz[1]);
@@ -558,20 +532,12 @@ void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2],
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
-template <> __device__
-void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2],
+template <> __device__ __forceinline__
+void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
                     const int i, const int j, const int k,
-                    double unitr[3]){
+                    double *rx, double *ry, double *rz){
     constexpr int l = 5;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1] = {0.0};
+    for (int i = 0; i < 2*l+1; i++) c[i] = 0.0;
     c[0] += 3.2819102842008507*(rx[4]*ry[1]*rz[0]);
     c[0] += -6.563820568401701*(rx[2]*ry[3]*rz[0]);
     c[0] += 0.6563820568401701*(rx[0]*ry[5]*rz[0]);
@@ -861,20 +827,12 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2],
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
-template <> __device__
-void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2],
+template <> __device__ __forceinline__
+void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
                     const int i, const int j, const int k,
-                    double unitr[3]){
+                    double *rx, double *ry, double *rz){
     constexpr int l = 6;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1] = {0.0};
+    for (int i = 0; i < 2*l+1; i++) c[i] = 0.0;
     c[0] += 4.099104631151486*(rx[5]*ry[1]*rz[0]);
     c[0] += -13.663682103838289*(rx[3]*ry[3]*rz[0]);
     c[0] += 4.099104631151486*(rx[1]*ry[5]*rz[0]);
@@ -1275,20 +1233,12 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2],
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
-template <> __device__
-void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2],
+template <> __device__ __forceinline__
+void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
                     const int i, const int j, const int k,
-                    double unitr[3]){
+                    double *rx, double *ry, double *rz){
     constexpr int l = 7;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1] = {0.0};
+    for (int i = 0; i < 2*l+1; i++) c[i] = 0.0;
     c[0] += 4.950139127672174*(rx[6]*ry[1]*rz[0]);
     c[0] += -24.75069563836087*(rx[4]*ry[3]*rz[0]);
     c[0] += 14.850417383016522*(rx[2]*ry[5]*rz[0]);
@@ -1825,20 +1775,11 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2],
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
-template <> __device__
-void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2],
+template <> __device__ __forceinline__
+void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
                     const int i, const int j, const int k,
-                    double unitr[3]){
+                    double *rx, double *ry, double *rz){
     constexpr int l = 8;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1];
     for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
     c[0] += 5.83141328139864*(rx[7]*ry[1]*rz[0]);
     c[0] += -40.81989296979048*(rx[5]*ry[3]*rz[0]);
@@ -2535,20 +2476,11 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2],
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
-template <> __device__
-void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2],
+template <> __device__ __forceinline__
+void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
                     const int i, const int j, const int k,
-                    double unitr[3]){
+                    double *rx, double *ry, double *rz){
     constexpr int l = 9;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1];
     for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
     c[0] += 6.740108566678694*(rx[8]*ry[1]*rz[0]);
     c[0] += -62.9076799556678*(rx[6]*ry[3]*rz[0]);
@@ -3427,20 +3359,12 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2],
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
-template <> __device__
-void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2],
+template <> __device__ __forceinline__
+void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
                     const int i, const int j, const int k,
-                    double unitr[3]){
+                    double *rx, double *ry, double *rz){
     constexpr int l = 10;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1] = {0.0};
+    for (int i = 0; i < 2*l+1; i++) c[i] = 0.0;
     c[0] += 7.673951182219901*(rx[9]*ry[1]*rz[0]);
     c[0] += -92.08741418663881*(rx[7]*ry[3]*rz[0]);
     c[0] += 193.3835697919415*(rx[5]*ry[5]*rz[0]);

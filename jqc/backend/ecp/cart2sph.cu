@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-template <int L>__device__
+template <int L>__device__ __forceinline__
 static void cart2sph(double *gsph, double *gcart){
     if constexpr(L == 0) {
         gsph[0] = 0.282094791773878143 * gcart[0];

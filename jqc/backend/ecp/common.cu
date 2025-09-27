@@ -79,7 +79,7 @@ double rad_part(const int ish, const int* __restrict__ ecpbas, const double* __r
     return u1 * rr * w;
 }
 
-template <int L> __device__
+template <int L> __device__ __forceinline__
 void cache_fac(double *fx, const double ri[3]){
     constexpr int LI1 = L + 1;
     constexpr int nfi = (LI1+1)*LI1/2;

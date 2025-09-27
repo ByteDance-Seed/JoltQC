@@ -85,9 +85,20 @@ void type2_facs_omega(double* __restrict__ omega, const double r[3]){
         unitr[1] = r[1] * norm_r;
         unitr[2] = r[2] * norm_r;
     }
+    
+    double rx[L+LC+1];
+    double ry[L+LC+1];
+    double rz[L+LC+1];
+    rx[0] = 1.0; ry[0] = 1.0; rz[0] = 1.0;
+    for (int i = 1; i <= L+LC; i++){
+        rx[i] = rx[i-1] * unitr[0];
+        ry[i] = ry[i-1] * unitr[1];
+        rz[i] = rz[i-1] * unitr[2];
+    }
 
+    constexpr int LLC = L + LC;
     double buf[(LC+1)*(LC+2)/2];
-
+    double c_buf[2*LLC+1];
     // LC + (i+j+k) + (L + LC) needs to be even
     // When i+j+k + LC is even
     for (int n = threadIdx.x; n < (L+1)*(L+1)*(L+1); n+=blockDim.x){
@@ -104,36 +115,35 @@ void type2_facs_omega(double* __restrict__ omega, const double r[3]){
         constexpr int blk = (L+LC+2)/2 * (LC*2+1);
         double *pomega = omega + (ioff+joff+k)*blk;
 
-        //for (int lmb = need_even; lmb <= L+LC; lmb+=2){
-        if constexpr(L+LC >= 0)  {
-            type2_ang_nuc_l<0>(buf, i, j, k, unitr);  
+        if constexpr(LLC >= 0)  {
+            type2_ang_nuc_l<0>(buf, c_buf, i, j, k, rx, ry, rz);
             cart2sph<LC>(pomega, buf);
             pomega += (2*LC+1);
         }
-        if constexpr(L+LC >= 2)  {
-            type2_ang_nuc_l<2>(buf, i, j, k, unitr);  
+        if constexpr(LLC >= 2)  {
+            type2_ang_nuc_l<2>(buf, c_buf, i, j, k, rx, ry, rz);  
             cart2sph<LC>(pomega, buf);
             pomega += (2*LC+1);
         }
-        if constexpr(L+LC >= 4)  {
-            type2_ang_nuc_l<4>(buf, i, j, k, unitr);  
+        if constexpr(LLC >= 4)  {
+            type2_ang_nuc_l<4>(buf, c_buf, i, j, k, rx, ry, rz);  
             cart2sph<LC>(pomega, buf);
-            pomega+=(2*LC+1);
+            pomega += (2*LC+1);
         }
-        if constexpr(L+LC >= 6)  {
-            type2_ang_nuc_l<6>(buf, i, j, k, unitr);  
+        if constexpr(LLC >= 6)  {
+            type2_ang_nuc_l<6>(buf, c_buf, i, j, k, rx, ry, rz);  
             cart2sph<LC>(pomega, buf);
-            pomega+=(2*LC+1);
+            pomega += (2*LC+1);
         }
-        if constexpr(L+LC >= 8)  {
-            type2_ang_nuc_l<8>(buf, i, j, k, unitr);  
+        if constexpr(LLC >= 8)  {
+            type2_ang_nuc_l<8>(buf, c_buf, i, j, k, rx, ry, rz);  
             cart2sph<LC>(pomega, buf);
-            pomega+=(2*LC+1);
+            pomega += (2*LC+1);
         }
-        if constexpr(L+LC >= 10) {
-            type2_ang_nuc_l<10>(buf, i, j, k, unitr); 
+        if constexpr(LLC >= 10) {
+            type2_ang_nuc_l<10>(buf, c_buf, i, j, k, rx, ry, rz); 
             cart2sph<LC>(pomega, buf);
-            pomega+=(2*LC+1);
+            pomega += (2*LC+1);
         }
     }
 
@@ -152,28 +162,28 @@ void type2_facs_omega(double* __restrict__ omega, const double r[3]){
         double *pomega = omega + (ioff+joff+k)*blk;
 
         //for (int lmb = need_even; lmb <= L+LC; lmb+=2){
-        if constexpr(L+LC >= 1)  {
-            type2_ang_nuc_l<1>(buf, i, j, k, unitr);  
+        if constexpr(LLC >= 1)  {
+            type2_ang_nuc_l<1>(buf, c_buf, i, j, k, rx, ry, rz);  
             cart2sph<LC>(pomega, buf);
             pomega += (2*LC+1);
         }
-        if constexpr(L+LC >= 3)  {
-            type2_ang_nuc_l<3>(buf, i, j, k, unitr);
+        if constexpr(LLC >= 3)  {
+            type2_ang_nuc_l<3>(buf, c_buf, i, j, k, rx, ry, rz);
             cart2sph<LC>(pomega, buf);
             pomega += (2*LC+1);
         }
-        if constexpr(L+LC >= 5)  {
-            type2_ang_nuc_l<5>(buf, i, j, k, unitr);
+        if constexpr(LLC >= 5)  {
+            type2_ang_nuc_l<5>(buf, c_buf, i, j, k, rx, ry, rz);
             cart2sph<LC>(pomega, buf);
             pomega += (2*LC+1);
         }
-        if constexpr(L+LC >= 7)  {
-            type2_ang_nuc_l<7>(buf, i, j, k, unitr);
+        if constexpr(LLC >= 7)  {
+            type2_ang_nuc_l<7>(buf, c_buf, i, j, k, rx, ry, rz);
             cart2sph<LC>(pomega, buf);
             pomega += (2*LC+1);
         }
-        if constexpr(L+LC >= 9)  {
-            type2_ang_nuc_l<9>(buf, i, j, k, unitr);
+        if constexpr(LLC >= 9)  {
+            type2_ang_nuc_l<9>(buf, c_buf, i, j, k, rx, ry, rz);
             cart2sph<LC>(pomega, buf); 
             pomega += (2*LC+1);
         }
@@ -217,27 +227,15 @@ void type2_ang(double* __restrict__ facs, const double rca[3], const double* __r
             const int joff = (L_i-j)*(L_i-j+1)/2;
             const double *pomega = omega + (ioff+joff+k)*BLK;
             
-            /*
-            for (int m = threadIdx.x; m < LC1; m+=THREADS){
-                if ((LC+ijk)%2 == m%2){
-                    facs[ijk*NF*LC1 + p*LC1 + m] += fac * pomega[m/2*LCC1];
-                }
-            }
-            */
             const int parity  = (LC + ijk) & 1;  // required parity (0 = even, 1 = odd)
             // Precompute base pointer for facs
-            double* facs_base = &facs[(size_t)ijk * NF * LC1 + (size_t)p * LC1];
+            double* facs_base = &facs[ijk * NF * LC1 + p * LC1];
 
             // Find this thread’s first valid m that matches parity
             int m = threadIdx.x;
             if ( (m & 1) != parity ) {
                 m += 1;  // shift to next parity
             }
-            // Stride by 2*threads so we only visit values with the correct parity
-            //for (; m < LC1; m += THREADS * 2) {
-            //    int half_index = m >> 1;  // equivalent to m/2 since parity ensures divisibility
-            //    facs_base[m] += fac * pomega[(size_t)half_index * LCC1];
-            //}
             // Assume L + LC + 1 < 128 or 256
             if (m < LC1){
                 const int half_index = m >> 1;  // equivalent to m/2 since parity ensures divisibility
@@ -275,14 +273,6 @@ void type2_cart(double* __restrict__ gctr,
     const int atm_id = ecpbas[ATOM_OF+ecploc[ksh]*BAS_SLOTS];
     const double *rc = env + atm[PTR_COORD+atm_id*ATM_SLOTS];
 
-    double rca[3], rcb[3];
-    rca[0] = rc[0] - ri[0];
-    rca[1] = rc[1] - ri[1];
-    rca[2] = rc[2] - ri[2];
-    rcb[0] = rc[0] - rj[0];
-    rcb[1] = rc[1] - rj[1];
-    rcb[2] = rc[2] - rj[2];
-
     constexpr int LI1 = LI+1;
     constexpr int LJ1 = LJ+1;
     constexpr int LIC1 = LI+LC+1;
@@ -292,22 +282,31 @@ void type2_cart(double* __restrict__ gctr,
     constexpr int BLKI = (LIC1+1)/2 * LCC1;
     constexpr int BLKJ = (LJC1+1)/2 * LCC1;
 
+    double rca[3];
     __shared__ double omegai[LI1*(LI1+1)*(LI1+2)/6 * BLKI]; // up to 12600 Bytes
-    __shared__ double omegaj[LJ1*(LJ1+1)*(LJ1+2)/6 * BLKJ];
-
+    rca[0] = rc[0] - ri[0];
+    rca[1] = rc[1] - ri[1];
+    rca[2] = rc[2] - ri[2];
     type2_facs_omega<LI>(omegai, rca);
-    type2_facs_omega<LJ>(omegaj, rcb);
-    __syncthreads();
-
-    double radi[LIC1];
-    double radj[LJC1];
     const double dca = norm3d(rca[0], rca[1], rca[2]);
+
+    double rcb[3];
+    __shared__ double omegaj[LJ1*(LJ1+1)*(LJ1+2)/6 * BLKJ]; // up to 12600 Bytes
+    rcb[0] = rc[0] - rj[0];
+    rcb[1] = rc[1] - rj[1];
+    rcb[2] = rc[2] - rj[2];
+    type2_facs_omega<LJ>(omegaj, rcb);
     const double dcb = norm3d(rcb[0], rcb[1], rcb[2]);
+
+    __syncthreads();
 
     // Coefficient pointers for primitive (c,e) pairs of each shell
     const DataType2* cei = coeff_exp + ish * prim_stride;
     const DataType2* cej = coeff_exp + jsh * prim_stride;
+    
+    double radi[LIC1]; 
     type2_facs_rad<0, LI+LC, NPI>(radi, dca, cei);
+    double radj[LJC1];
     type2_facs_rad<0, LJ+LC, NPJ>(radj, dcb, cej);
 
     __shared__ double rad_all[(LI+LJ+1) * LIC1 * LJC1];
@@ -350,6 +349,7 @@ void type2_cart(double* __restrict__ gctr,
     }
     
     // (k+l)pq,kimp,ljmq->ij
+#pragma unroll 1
     for (int m = 0; m < LCC1; m++){
         type2_ang<LI>(angi, rca, omegai+m);
         type2_ang<LJ>(angj, rcb, omegaj+m);

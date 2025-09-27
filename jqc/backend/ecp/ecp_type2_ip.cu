@@ -32,14 +32,6 @@ void type2_cart_kernel(double* __restrict__ gctr,
     const int atm_id = ecpbas[ATOM_OF+ecploc[ksh]*BAS_SLOTS];
     const double *rc = env + atm[PTR_COORD+atm_id*ATM_SLOTS];
 
-    double rca[3], rcb[3];
-    rca[0] = rc[0] - ri[0];
-    rca[1] = rc[1] - ri[1];
-    rca[2] = rc[2] - ri[2];
-    rcb[0] = rc[0] - rj[0];
-    rcb[1] = rc[1] - rj[1];
-    rcb[2] = rc[2] - rj[2];
-
     constexpr int LI1 = LIT+1;
     constexpr int LJ1 = LJT+1;
     constexpr int LIC1 = LIT+LCT+1;
@@ -52,18 +44,27 @@ void type2_cart_kernel(double* __restrict__ gctr,
     // Use static shared memory - sizes must match the template parameters used in function calls
     __shared__ double omegai[LI1*(LI1+1)*(LI1+2)/6 * BLKI];
     __shared__ double omegaj[LJ1*(LJ1+1)*(LJ1+2)/6 * BLKJ];
-    __shared__ double rad_all[(LIT+LJT+1) * LIC1 * LJC1];
 
+    double rca[3];
+    rca[0] = rc[0] - ri[0];
+    rca[1] = rc[1] - ri[1];
+    rca[2] = rc[2] - ri[2];
     type2_facs_omega<LIT>(omegai, rca);
-    type2_facs_omega<LJT>(omegaj, rcb);
-    __syncthreads();
+    const double dca = norm3d(rca[0], rca[1], rca[2]);
 
+    double rcb[3];
+    rcb[0] = rc[0] - rj[0];
+    rcb[1] = rc[1] - rj[1];
+    rcb[2] = rc[2] - rj[2];
+    type2_facs_omega<LJT>(omegaj, rcb);
+    const double dcb = norm3d(rcb[0], rcb[1], rcb[2]);
+    __syncthreads();
+    
+    __shared__ double rad_all[(LIT+LJT+1) * LIC1 * LJC1];
     set_shared_memory(rad_all, (LIT+LJT+1)*LIC1*LJC1);
 
     double radi[LIC1];
     double radj[LJC1];
-    const double dca = norm3d(rca[0], rca[1], rca[2]);
-    const double dcb = norm3d(rcb[0], rcb[1], rcb[2]);
 
     // Coefficient pointers for primitive (c,e) pairs of each shell
     const DataType2* cei = coeff_exp + ish * prim_stride;
@@ -98,7 +99,7 @@ void type2_cart_kernel(double* __restrict__ gctr,
     __shared__ double angi[LI1*nfi*LIC1];
     __shared__ double angj[LJ1*nfj*LJC1];
 
-    const double fac = 16.0 * M_PI * M_PI;
+    constexpr double fac = 16.0 * M_PI * M_PI;
 
     for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){
         gctr[ij] = 0.0;

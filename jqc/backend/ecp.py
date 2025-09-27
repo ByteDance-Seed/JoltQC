@@ -197,6 +197,7 @@ constexpr int NPJ = {npj};
             f"-DPRIM_STRIDE={PRIM_STRIDE}", f"-DCOORD_STRIDE={COORD_STRIDE}")
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function('type1_cart')
+    # print(li, lj, npi, npj, kernel.num_regs, kernel.local_size_bytes, kernel.shared_size_bytes/1024)
 
     # Create wrapper function following JoltQC style
     def kernel_wrapper(*args):

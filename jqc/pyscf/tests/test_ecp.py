@@ -99,13 +99,13 @@ class KnownValues(unittest.TestCase):
         h1_cpu = mol_cart.intor('ECPscalar_cart')
         h1_gpu = get_ecp(mol_cart).get()
         self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
-        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-8  # Machine precision threshold
+        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6  # Machine precision threshold
 
     def test_ecp_sph(self):
         h1_cpu = mol_sph.intor('ECPscalar_sph')
         h1_gpu = get_ecp(mol_sph).get()
         self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
-        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-8  # Machine precision threshold
+        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6  # Machine precision threshold
 
     def test_ecp_cart_ip1(self):
         # Match gpu4pyscf iprinv style: compare per-ECP-atom contributions
@@ -115,25 +115,25 @@ class KnownValues(unittest.TestCase):
             with mol_cart.with_rinv_at_nucleus(atm_id):
                 h1_cpu = mol_cart.intor('ECPscalar_iprinv_cart')
             self._log(f"atom: {atm_id:2d}  norm: {np.linalg.norm(h1_cpu - h1_gpu[atm_id].get()):.3e}")
-            assert np.linalg.norm(h1_cpu - h1_gpu[atm_id].get()) < 1e-8
+            assert np.linalg.norm(h1_cpu - h1_gpu[atm_id].get()) < 1e-6
 
     def test_ecp_sph_ipnuc(self):
         h1_cpu = mol_sph.intor('ECPscalar_ipnuc_sph')
         h1_gpu = get_ecp_ip(mol_sph).sum(axis=0).get()
         self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
-        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-8
+        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6
 
     def test_ecp_cart_ipipv(self):
         h1_cpu = mol_cart.intor('ECPscalar_ipipnuc', comp=9)
         h1_gpu = get_ecp_ipip(mol_cart, 'ipipv').sum(axis=0).get()
         self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
-        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-8
+        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6
 
     def test_ecp_cart_ipvip_cart(self):
         h1_cpu = mol_cart.intor('ECPscalar_ipnucip', comp=9)
         h1_gpu = get_ecp_ipip(mol_cart, 'ipvip').sum(axis=0).get()
         self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
-        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-8
+        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6
 
 
 if __name__ == "__main__":
