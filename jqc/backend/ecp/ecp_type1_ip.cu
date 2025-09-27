@@ -14,6 +14,15 @@
  * limitations under the License.
  */
 
+/*
+ * OPTIMIZATION NOTE: Shared memory allocations in this file have been optimized
+ * for better reuse across different kernel configurations by basing sizes on
+ * global variables LI+2 and LJ+1 (injected from Python) instead of exact
+ * template parameters LIT, LJT. This allows the same shared memory regions to
+ * be reused for multiple angular momentum combinations, reducing memory
+ * allocation overhead and improving kernel performance.
+ */
+
 
 template <int LIT, int LJT, int orderi, int orderj> __device__
 void type1_cart_kernel(double* __restrict__ gctr,
@@ -22,7 +31,11 @@ void type1_cart_kernel(double* __restrict__ gctr,
                 const DataType4* __restrict__ coords,
                 const DataType2* __restrict__ coeff_exp,
                 const int* __restrict__ atm, const double* __restrict__ env,
-                const int npi, const int npj)
+                const int npi, const int npj,
+                double* __restrict__ rad_ang_smem,
+                double* __restrict__ rad_all_smem,
+                double* __restrict__ fi_smem,
+                double* __restrict__ fj_smem)
 {
     // Coordinates from basis layout with explicit COORD_STRIDE handling.
     // Treat coords as scalar array to avoid relying on struct alignment.
@@ -51,9 +64,9 @@ void type1_cart_kernel(double* __restrict__ gctr,
     constexpr int LIJ1 = LIT+LJT+1;
     constexpr int LIJ3 = LIJ1*LIJ1*LIJ1;
 
-    // Use static shared memory like the working type1 kernel
-    __shared__ double rad_ang[LIJ3];
-    __shared__ double rad_all[LIJ1*LIJ1];
+    // Use shared memory passed from caller
+    double* rad_ang = rad_ang_smem;
+    double* rad_all = rad_all_smem;
 
     for (int i = threadIdx.x; i < LIJ3; i+=blockDim.x) {
         rad_ang[i] = 0;
@@ -107,12 +120,12 @@ void type1_cart_kernel(double* __restrict__ gctr,
         }
     }
 
-    //constexpr int NFI_MAX = (LIT+orderi+1)*(LIT+orderi+2)/2;
-    //constexpr int NFJ_MAX = (LJT+orderj+1)*(LJT+orderj+2)/2;
     constexpr int nfi = (LIT+1) * (LIT+2) / 2;
     constexpr int nfj = (LJT+1) * (LJT+2) / 2;
-    __shared__ double fi[3*nfi];
-    __shared__ double fj[3*nfj];
+
+    // Use shared memory passed from caller
+    double* fi = fi_smem;
+    double* fj = fj_smem;
     cache_fac<LIT>(fi, rca);
     cache_fac<LJT>(fj, rcb);
     __syncthreads();
@@ -191,16 +204,28 @@ void type1_cart_ip1(double* __restrict__ gctr,
     constexpr int nfj_max = (LJ+1)*(LJ+2)/2;
     __shared__ double buf[nfi_max*nfj_max];
 
+    // Allocate shared memory for type1_cart_kernel based on global LI+2, LJ+1
+    constexpr int MAX_LIJ1 = (LI+2)+(LJ+1)+1;
+    constexpr int MAX_LIJ3 = MAX_LIJ1*MAX_LIJ1*MAX_LIJ1;
+    constexpr int MAX_NFI = (LI+2+1) * (LI+2+2) / 2;
+    constexpr int MAX_NFJ = (LJ+1+1) * (LJ+1+2) / 2;
+    __shared__ double rad_ang_shared[MAX_LIJ3];
+    __shared__ double rad_all_shared[MAX_LIJ1*MAX_LIJ1];
+    __shared__ double fi_shared[3*MAX_NFI];
+    __shared__ double fj_shared[3*MAX_NFJ];
+
     // Accumulate derivative contributions with respect to AO i.
     // j-side contributions are accumulated via (j,i) tasks in host tasking (full tasks).
     // Use LI+1 for orderi=1 to match unrolled cache pattern
-    type1_cart_kernel<LI+1, LJ, 1, 0>(buf, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj);
+    type1_cart_kernel<LI+1, LJ, 1, 0>(buf, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj,
+                                      rad_ang_shared, rad_all_shared, fi_shared, fj_shared);
     __syncthreads();
     _li_down<LI, LJ>(gctr_smem, buf);
 
     if constexpr (LI > 0){
         // Use LI-1 for orderi=0 companion
-        type1_cart_kernel<LI-1, LJ, 0, 0>(buf, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj);
+        type1_cart_kernel<LI-1, LJ, 0, 0>(buf, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj,
+                                          rad_ang_shared, rad_all_shared, fi_shared, fj_shared);
         __syncthreads();
         _li_up<LI, LJ>(gctr_smem, buf);
     }
@@ -245,12 +270,24 @@ void type1_cart_ipipv(double* __restrict__ gctr,
     constexpr int nfi2_max = (LI+3)*(LI+4)/2;
     constexpr int nfj_max = (LJ+1)*(LJ+2)/2;
     __shared__ double buf1[nfi2_max*nfj_max];
-    // Use LI+2 for orderi=2 stage
-    type1_cart_kernel<LI+2, LJ, 2, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj);
-    __syncthreads();
 
     constexpr int nfi1_max = (LI+2)*(LI+3)/2;
     __shared__ double buf[3*nfi1_max*nfj_max];
+
+    // Allocate shared memory for type1_cart_kernel based on global LI+2, LJ+1
+    constexpr int MAX_LIJ1 = (LI+2)+(LJ+1)+1;
+    constexpr int MAX_LIJ3 = MAX_LIJ1*MAX_LIJ1*MAX_LIJ1;
+    constexpr int MAX_NFI = (LI+2+1) * (LI+2+2) / 2;
+    constexpr int MAX_NFJ = (LJ+1+1) * (LJ+1+2) / 2;
+    __shared__ double rad_ang_shared[MAX_LIJ3];
+    __shared__ double rad_all_shared[MAX_LIJ1*MAX_LIJ1];
+    __shared__ double fi_shared[3*MAX_NFI];
+    __shared__ double fj_shared[3*MAX_NFJ];
+
+    // Use LI+2 for orderi=2 stage
+    type1_cart_kernel<LI+2, LJ, 2, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj,
+                                      rad_ang_shared, rad_all_shared, fi_shared, fj_shared);
+    __syncthreads();
     for (int i = threadIdx.x; i < 3*nfi1_max*nfj_max; i+=blockDim.x){
         buf[i] = 0.0;
     }
@@ -258,7 +295,8 @@ void type1_cart_ipipv(double* __restrict__ gctr,
     _li_down<LI+1, LJ>(buf, buf1);
 
     // Then LI for orderi=1 stage
-    type1_cart_kernel<LI, LJ, 1, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj);
+    type1_cart_kernel<LI, LJ, 1, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj,
+                                    rad_ang_shared, rad_all_shared, fi_shared, fj_shared);
     __syncthreads();
     _li_up<LI+1, LJ>(buf, buf1);
     _li_down_and_write<LI, LJ>(gctr, buf, nao);
@@ -271,7 +309,8 @@ void type1_cart_ipipv(double* __restrict__ gctr,
         _li_down<LI-1, LJ>(buf, buf1);
         if constexpr (LI > 1){
             // Final companion LI-2 for orderi=0
-            type1_cart_kernel<LI-2, LJ, 0, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj);
+            type1_cart_kernel<LI-2, LJ, 0, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj,
+                                              rad_ang_shared, rad_all_shared, fi_shared, fj_shared);
             __syncthreads();
             _li_up<LI-1, LJ>(buf, buf1);
         }
@@ -307,12 +346,24 @@ void type1_cart_ipvip(double* __restrict__ gctr,
     constexpr int nfi1_max = (LI+2)*(LI+3)/2;
     constexpr int nfj1_max = (LJ+2)*(LJ+3)/2;
     __shared__ double buf1[nfi1_max*nfj1_max];
-    // Start with LI+1, LJ+1 for mixed order
-    type1_cart_kernel<LI+1, LJ+1, 1, 1>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj);
-    __syncthreads();
 
     constexpr int nfi_max = (LI+1)*(LI+2)/2;
     __shared__ double buf[3*nfi_max*nfj1_max];
+
+    // Allocate shared memory for type1_cart_kernel based on global LI+2, LJ+1
+    constexpr int MAX_LIJ1 = (LI+2)+(LJ+1)+1;
+    constexpr int MAX_LIJ3 = MAX_LIJ1*MAX_LIJ1*MAX_LIJ1;
+    constexpr int MAX_NFI = (LI+2+1) * (LI+2+2) / 2;
+    constexpr int MAX_NFJ = (LJ+1+1) * (LJ+1+2) / 2;
+    __shared__ double rad_ang_shared[MAX_LIJ3];
+    __shared__ double rad_all_shared[MAX_LIJ1*MAX_LIJ1];
+    __shared__ double fi_shared[3*MAX_NFI];
+    __shared__ double fj_shared[3*MAX_NFJ];
+
+    // Start with LI+1, LJ+1 for mixed order
+    type1_cart_kernel<LI+1, LJ+1, 1, 1>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj,
+                                        rad_ang_shared, rad_all_shared, fi_shared, fj_shared);
+    __syncthreads();
     for (int i = threadIdx.x; i < 3*nfi_max*nfj1_max; i+=blockDim.x){
         buf[i] = 0.0;
     }
@@ -320,7 +371,8 @@ void type1_cart_ipvip(double* __restrict__ gctr,
     _li_down<LI, LJ+1>(buf, buf1);
     if constexpr (LI > 0){
         // Companion LI-1, LJ+1 for orderi=0, orderj=1
-        type1_cart_kernel<LI-1, LJ+1, 0, 1>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj);
+        type1_cart_kernel<LI-1, LJ+1, 0, 1>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj,
+                                            rad_ang_shared, rad_all_shared, fi_shared, fj_shared);
         __syncthreads();
         _li_up<LI, LJ+1>(buf, buf1);
     }
@@ -332,12 +384,14 @@ void type1_cart_ipvip(double* __restrict__ gctr,
         }
         __syncthreads();
         // LI+1, LJ-1 for orderi=1, orderj=0 branch
-        type1_cart_kernel<LI+1, LJ-1, 1, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj);
+        type1_cart_kernel<LI+1, LJ-1, 1, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj,
+                                            rad_ang_shared, rad_all_shared, fi_shared, fj_shared);
         __syncthreads();
         _li_down<LI, LJ-1>(buf, buf1);
         if constexpr (LI > 0){
             // LI-1, LJ-1 for orderi=0, orderj=0 companion
-            type1_cart_kernel<LI-1, LJ-1, 0, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj);
+            type1_cart_kernel<LI-1, LJ-1, 0, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj,
+                                                rad_ang_shared, rad_all_shared, fi_shared, fj_shared);
             __syncthreads();
             _li_up<LI, LJ-1>(buf, buf1);
         }

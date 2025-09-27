@@ -151,9 +151,9 @@ void _li_up(double* __restrict__ out, double* __restrict__ buf){
         const double zfac = (_cart_pow_z[i] + 1);
         const double xfac = (LI_PARAM-1 - _cart_pow_y[i] - _cart_pow_z[i] + 1);
 
-        atomicAdd(outx + j*nfi +          i, xfac * buf[j*nfi0 + i]);
-        atomicAdd(outy + j*nfi + _y_addr[i], yfac * buf[j*nfi0 + i]);
-        atomicAdd(outz + j*nfi + _z_addr[i], zfac * buf[j*nfi0 + i]);
+        atomicAdd(outx + j*nfi +          i, xfac * buf[ij]);
+        atomicAdd(outy + j*nfi + _y_addr[i], yfac * buf[ij]);
+        atomicAdd(outz + j*nfi + _z_addr[i], zfac * buf[ij]);
     }
     __syncthreads();
 }
@@ -180,17 +180,17 @@ void _li_up_and_write(double* __restrict__ out, double* __restrict__ buf, const 
         const double xfac = (LI_PARAM-1 - _cart_pow_y[i] - _cart_pow_z[i] + 1);
 
         const int i_addr[3] = {i, _y_addr[i], _z_addr[i]};
-        atomicAdd(outxx + j + i_addr[0]*nao, xfac * buf[j*nfi0 + i]);
-        atomicAdd(outxy + j + i_addr[1]*nao, yfac * buf[j*nfi0 + i]);
-        atomicAdd(outxz + j + i_addr[2]*nao, zfac * buf[j*nfi0 + i]);
+        atomicAdd(outxx + j + i_addr[0]*nao, xfac * buf[ij]);
+        atomicAdd(outxy + j + i_addr[1]*nao, yfac * buf[ij]);
+        atomicAdd(outxz + j + i_addr[2]*nao, zfac * buf[ij]);
 
-        atomicAdd(outyx + j + i_addr[0]*nao, xfac * buf[j*nfi0 + i + nfi0*nfj]);
-        atomicAdd(outyy + j + i_addr[1]*nao, yfac * buf[j*nfi0 + i + nfi0*nfj]);
-        atomicAdd(outyz + j + i_addr[2]*nao, zfac * buf[j*nfi0 + i + nfi0*nfj]);
+        atomicAdd(outyx + j + i_addr[0]*nao, xfac * buf[ij + nfi0*nfj]);
+        atomicAdd(outyy + j + i_addr[1]*nao, yfac * buf[ij + nfi0*nfj]);
+        atomicAdd(outyz + j + i_addr[2]*nao, zfac * buf[ij + nfi0*nfj]);
 
-        atomicAdd(outzx + j + i_addr[0]*nao, xfac * buf[j*nfi0 + i + 2*nfi0*nfj]);
-        atomicAdd(outzy + j + i_addr[1]*nao, yfac * buf[j*nfi0 + i + 2*nfi0*nfj]);
-        atomicAdd(outzz + j + i_addr[2]*nao, zfac * buf[j*nfi0 + i + 2*nfi0*nfj]);
+        atomicAdd(outzx + j + i_addr[0]*nao, xfac * buf[ij + 2*nfi0*nfj]);
+        atomicAdd(outzy + j + i_addr[1]*nao, yfac * buf[ij + 2*nfi0*nfj]);
+        atomicAdd(outzz + j + i_addr[2]*nao, zfac * buf[ij + 2*nfi0*nfj]);
     }
     __syncthreads();
 }
@@ -208,9 +208,9 @@ void _li_down(double* __restrict__ out, double* __restrict__ buf){
     for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){
         const int i = ij % nfi;
         const int j = ij / nfi;
-        atomicAdd(outx + j*nfi+i, buf[j*nfi1+i]);
-        atomicAdd(outy + j*nfi+i, buf[j*nfi1+_y_addr[i]]);
-        atomicAdd(outz + j*nfi+i, buf[j*nfi1+_z_addr[i]]);
+        atomicAdd(outx + ij, buf[j*nfi1+i]);
+        atomicAdd(outy + ij, buf[j*nfi1+_y_addr[i]]);
+        atomicAdd(outz + ij, buf[j*nfi1+_z_addr[i]]);
     }
     __syncthreads();
 }
@@ -228,9 +228,9 @@ void _lj_down(double* __restrict__ out, double* __restrict__ buf){
         const int i = ij % nfi;
         const int j = ij / nfi;
         const int j_addr[3] = {j, _y_addr[j], _z_addr[j]};
-        atomicAdd(outx + j*nfi + i, buf[j_addr[0]*nfi + i]);
-        atomicAdd(outy + j*nfi + i, buf[j_addr[1]*nfi + i]);
-        atomicAdd(outz + j*nfi + i, buf[j_addr[2]*nfi + i]);
+        atomicAdd(outx + ij, buf[j_addr[0]*nfi + i]);
+        atomicAdd(outy + ij, buf[j_addr[1]*nfi + i]);
+        atomicAdd(outz + ij, buf[j_addr[2]*nfi + i]);
     }
     __syncthreads();
 }
@@ -255,18 +255,18 @@ void _li_down_and_write(double* __restrict__ out, double* __restrict__ buf, cons
         const int i = ij % nfi;
         const int j = ij / nfi;
         const int i_addr[3] = {i, _y_addr[i], _z_addr[i]};
+        const int ij_nao = j + i*nao;
+        atomicAdd(outxx + ij_nao, buf[j*nfi1 + i_addr[0]]);
+        atomicAdd(outxy + ij_nao, buf[j*nfi1 + i_addr[1]]);
+        atomicAdd(outxz + ij_nao, buf[j*nfi1 + i_addr[2]]);
 
-        atomicAdd(outxx + j + i*nao, buf[j*nfi1 + i_addr[0]]);
-        atomicAdd(outxy + j + i*nao, buf[j*nfi1 + i_addr[1]]);
-        atomicAdd(outxz + j + i*nao, buf[j*nfi1 + i_addr[2]]);
+        atomicAdd(outyx + ij_nao, buf[j*nfi1 + i_addr[0] + nfi1*nfj]);
+        atomicAdd(outyy + ij_nao, buf[j*nfi1 + i_addr[1] + nfi1*nfj]);
+        atomicAdd(outyz + ij_nao, buf[j*nfi1 + i_addr[2] + nfi1*nfj]);
 
-        atomicAdd(outyx + j + i*nao, buf[j*nfi1 + i_addr[0] + nfi1*nfj]);
-        atomicAdd(outyy + j + i*nao, buf[j*nfi1 + i_addr[1] + nfi1*nfj]);
-        atomicAdd(outyz + j + i*nao, buf[j*nfi1 + i_addr[2] + nfi1*nfj]);
-
-        atomicAdd(outzx + j + i*nao, buf[j*nfi1 + i_addr[0] + 2*nfi1*nfj]);
-        atomicAdd(outzy + j + i*nao, buf[j*nfi1 + i_addr[1] + 2*nfi1*nfj]);
-        atomicAdd(outzz + j + i*nao, buf[j*nfi1 + i_addr[2] + 2*nfi1*nfj]);
+        atomicAdd(outzx + ij_nao, buf[j*nfi1 + i_addr[0] + 2*nfi1*nfj]);
+        atomicAdd(outzy + ij_nao, buf[j*nfi1 + i_addr[1] + 2*nfi1*nfj]);
+        atomicAdd(outzz + ij_nao, buf[j*nfi1 + i_addr[2] + 2*nfi1*nfj]);
     }
     __syncthreads();
 }
@@ -293,17 +293,17 @@ void _lj_up_and_write(double* __restrict__ out, double* __restrict__ buf, const 
         const double xfac = (LJ_PARAM-1 - _cart_pow_y[j] - _cart_pow_z[j] + 1);
         const int j_addr[3] = {j, _y_addr[j], _z_addr[j]};
 
-        atomicAdd(outxx + j_addr[0] + nao*i, xfac * buf[j*nfi + i]);
-        atomicAdd(outxy + j_addr[1] + nao*i, yfac * buf[j*nfi + i]);
-        atomicAdd(outxz + j_addr[2] + nao*i, zfac * buf[j*nfi + i]);
+        atomicAdd(outxx + j_addr[0] + nao*i, xfac * buf[ij]);
+        atomicAdd(outxy + j_addr[1] + nao*i, yfac * buf[ij]);
+        atomicAdd(outxz + j_addr[2] + nao*i, zfac * buf[ij]);
 
-        atomicAdd(outyx + j_addr[0] + nao*i, xfac * buf[j*nfi + i + nfi*nfj0]);
-        atomicAdd(outyy + j_addr[1] + nao*i, yfac * buf[j*nfi + i + nfi*nfj0]);
-        atomicAdd(outyz + j_addr[2] + nao*i, zfac * buf[j*nfi + i + nfi*nfj0]);
+        atomicAdd(outyx + j_addr[0] + nao*i, xfac * buf[ij + nfi*nfj0]);
+        atomicAdd(outyy + j_addr[1] + nao*i, yfac * buf[ij + nfi*nfj0]);
+        atomicAdd(outyz + j_addr[2] + nao*i, zfac * buf[ij + nfi*nfj0]);
 
-        atomicAdd(outzx + j_addr[0] + nao*i, xfac * buf[j*nfi + i + 2*nfi*nfj0]);
-        atomicAdd(outzy + j_addr[1] + nao*i, yfac * buf[j*nfi + i + 2*nfi*nfj0]);
-        atomicAdd(outzz + j_addr[2] + nao*i, zfac * buf[j*nfi + i + 2*nfi*nfj0]);
+        atomicAdd(outzx + j_addr[0] + nao*i, xfac * buf[ij + 2*nfi*nfj0]);
+        atomicAdd(outzy + j_addr[1] + nao*i, yfac * buf[ij + 2*nfi*nfj0]);
+        atomicAdd(outzz + j_addr[2] + nao*i, zfac * buf[ij + 2*nfi*nfj0]);
     }
     __syncthreads();
 }
@@ -326,18 +326,19 @@ void _lj_down_and_write(double* __restrict__ out, double* __restrict__ buf, cons
         const int i = ij % nfi;
         const int j = ij / nfi;
         const int j_addr[3] = {j, _y_addr[j], _z_addr[j]};
+        const int ij_nao = j + i*nao;
+        constexpr int stride = nfi*nfj1;
+        atomicAdd(outxx + ij_nao, buf[j_addr[0]*nfi + i]);
+        atomicAdd(outxy + ij_nao, buf[j_addr[1]*nfi + i]);
+        atomicAdd(outxz + ij_nao, buf[j_addr[2]*nfi + i]);
 
-        atomicAdd(outxx + j + i*nao, buf[j_addr[0]*nfi + i]);
-        atomicAdd(outxy + j + i*nao, buf[j_addr[1]*nfi + i]);
-        atomicAdd(outxz + j + i*nao, buf[j_addr[2]*nfi + i]);
+        atomicAdd(outyx + ij_nao, buf[j_addr[0]*nfi + i + stride]);
+        atomicAdd(outyy + ij_nao, buf[j_addr[1]*nfi + i + stride]);
+        atomicAdd(outyz + ij_nao, buf[j_addr[2]*nfi + i + stride]);
 
-        atomicAdd(outyx + j + i*nao, buf[j_addr[0]*nfi + i + nfi*nfj1]);
-        atomicAdd(outyy + j + i*nao, buf[j_addr[1]*nfi + i + nfi*nfj1]);
-        atomicAdd(outyz + j + i*nao, buf[j_addr[2]*nfi + i + nfi*nfj1]);
-
-        atomicAdd(outzx + j + i*nao, buf[j_addr[0]*nfi + i + 2*nfi*nfj1]);
-        atomicAdd(outzy + j + i*nao, buf[j_addr[1]*nfi + i + 2*nfi*nfj1]);
-        atomicAdd(outzz + j + i*nao, buf[j_addr[2]*nfi + i + 2*nfi*nfj1]);
+        atomicAdd(outzx + ij_nao, buf[j_addr[0]*nfi + i + 2*stride]);
+        atomicAdd(outzy + ij_nao, buf[j_addr[1]*nfi + i + 2*stride]);
+        atomicAdd(outzz + ij_nao, buf[j_addr[2]*nfi + i + 2*stride]);
     }
     __syncthreads();
 }
