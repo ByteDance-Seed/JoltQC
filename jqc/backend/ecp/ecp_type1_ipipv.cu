@@ -25,9 +25,8 @@
 
 
 
-
 extern "C" __global__
-void type1_cart_ip1(double* __restrict__ gctr,
+void type1_cart_ipipv(double* __restrict__ gctr,
                 const int* __restrict__ ao_loc, const int nao,
                 const int* __restrict__ tasks, const int ntasks,
                 const int* __restrict__ ecpbas, const int* __restrict__ ecploc,
@@ -44,55 +43,52 @@ void type1_cart_ip1(double* __restrict__ gctr,
     const int ish = tasks[task_id];
     const int jsh = tasks[task_id + ntasks];
     const int ksh = tasks[task_id + 2*ntasks];
+
     const int ioff = ao_loc[ish];
     const int joff = ao_loc[jsh];
     const int ecp_id = ecpbas[ECP_ATOM_ID+ecploc[ksh]*BAS_SLOTS];
-    gctr += 3*ecp_id*nao*nao + ioff*nao + joff;
-    
-    constexpr int nfi = (LI+1) * (LI+2) / 2;
-    constexpr int nfj = (LJ+1) * (LJ+2) / 2;
+    gctr += ioff*nao + joff + 9*ecp_id*nao*nao;
+
+    constexpr int nfi2_max = (LI+3)*(LI+4)/2;
+    constexpr int nfj_max = (LJ+1)*(LJ+2)/2;
+    constexpr int nfi1_max = (LI+2)*(LI+3)/2;
     extern __shared__ char shared_mem[];
 
-    // Allocate gctr_smem from shared memory
-    double* gctr_smem = reinterpret_cast<double*>(shared_mem);
-    size_t gctr_offset = nfi * nfj * 3 * sizeof(double);
+    // Allocate buffers from dynamic shared memory
+    double* buf1 = reinterpret_cast<double*>(shared_mem);
+    size_t buf1_offset = nfi2_max * nfj_max * sizeof(double);
+    double* buf = reinterpret_cast<double*>(shared_mem + buf1_offset);
+    size_t buf_offset = buf1_offset + 3 * nfi1_max * nfj_max * sizeof(double);
+    char* kernel_shared_mem = shared_mem + buf_offset;
 
-    for (int ij = threadIdx.x; ij < nfi*nfj*3; ij+=blockDim.x){
-        gctr_smem[ij] = 0.0;
+    // Use LI+2 for orderi=2 stage
+    type1_cart_kernel<LI+2, LJ, 2, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+    __syncthreads();
+    for (int i = threadIdx.x; i < 3*nfi1_max*nfj_max; i+=blockDim.x){
+        buf[i] = 0.0;
     }
     __syncthreads();
+    _li_down<LI+1, LJ>(buf, buf1);
 
-    constexpr int nfi_max = (LI+2)*(LI+3)/2;
-    constexpr int nfj_max = (LJ+1)*(LJ+2)/2;
-
-    // Allocate buffer and kernel shared memory
-    double* buf = reinterpret_cast<double*>(shared_mem + gctr_offset);
-    char* kernel_shared_mem = shared_mem + gctr_offset + nfi_max * nfj_max * sizeof(double);
-
-    // Accumulate derivative contributions with respect to AO i.
-    // j-side contributions are accumulated via (j,i) tasks in host tasking (full tasks).
-    // Use LI+1 for orderi=1 to match unrolled cache pattern
-    type1_cart_kernel<LI+1, LJ, 1, 0>(buf, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+    // Then LI for orderi=1 stage
+    type1_cart_kernel<LI, LJ, 1, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
     __syncthreads();
-    _li_down<LI, LJ>(gctr_smem, buf);
+    _li_up<LI+1, LJ>(buf, buf1);
+    _li_down_and_write<LI, LJ>(gctr, buf, nao);
 
     if constexpr (LI > 0){
-        // Use LI-1 for orderi=0 companion
-        type1_cart_kernel<LI-1, LJ, 0, 0>(buf, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+        for (int i = threadIdx.x; i < 3*nfi1_max*nfj_max; i+=blockDim.x){
+            buf[i] = 0.0;
+        }
         __syncthreads();
-        _li_up<LI, LJ>(gctr_smem, buf);
-    }
-
-    for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){
-        const int i = ij%nfi;
-        const int j = ij/nfi;
-        double *gx = gctr;
-        double *gy = gctr +   nao*nao;
-        double *gz = gctr + 2*nao*nao;
-        atomicAdd(gx+i*nao+j, gctr_smem[ij]);
-        atomicAdd(gy+i*nao+j, gctr_smem[ij+nfi*nfj]);
-        atomicAdd(gz+i*nao+j, gctr_smem[ij+2*nfi*nfj]);
+        _li_down<LI-1, LJ>(buf, buf1);
+        if constexpr (LI > 1){
+            // Final companion LI-2 for orderi=0
+            type1_cart_kernel<LI-2, LJ, 0, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+            __syncthreads();
+            _li_up<LI-1, LJ>(buf, buf1);
+        }
+        _li_up_and_write<LI, LJ>(gctr, buf, nao);
     }
     return;
 }
-

@@ -60,6 +60,233 @@ def _get_compile_options():
     # Note: ECP derivative normalization is handled in basis coefficients; no extra scaling.
     return ("-std=c++17", "--use_fast_math", "--minimal")
 
+
+def _estimate_type1_shared_memory(li: int, lj: int, precision: str = 'fp64') -> int:
+    """
+    Estimate shared memory requirements for Type1 ECP kernels
+
+    Args:
+        li: Angular momentum of first basis function
+        lj: Angular momentum of second basis function
+        precision: Floating point precision ('fp64', 'fp32', 'mixed')
+
+    Returns:
+        Estimated shared memory size in bytes
+    """
+    dtype_size = 4 if precision == 'fp32' else 8
+
+    # Basic kernel shared memory
+    nfi = (li + 1) * (li + 2) // 2
+    nfj = (lj + 1) * (lj + 2) // 2
+
+    # Arrays from type1_cart_kernel template
+    LI1_MAX = li + 1
+    LJ1_MAX = lj + 1
+    LIJ1_MAX = LI1_MAX + lj
+    NFI_MAX = LI1_MAX * (LI1_MAX + 1) // 2
+    NFJ_MAX = LJ1_MAX * (LJ1_MAX + 1) // 2
+
+    # Core arrays (similar to type2 but simpler)
+    OMEGA_I_SIZE = LI1_MAX * (LI1_MAX + 1) * (LI1_MAX + 2) // 6 * 3  # Simplified omega
+    OMEGA_J_SIZE = LJ1_MAX * (LJ1_MAX + 1) * (LJ1_MAX + 2) // 6 * 3
+    RAD_ALL_SIZE = LIJ1_MAX * 10  # Simplified radial grid
+    ANGI_SIZE = LI1_MAX * 3 * NFI_MAX
+    ANGJ_SIZE = LJ1_MAX * 3 * NFJ_MAX
+
+    # fi and fj arrays
+    FI_SIZE = LI1_MAX * (LI1_MAX + 1) // 2 * 3
+    FJ_SIZE = LJ1_MAX * (LJ1_MAX + 1) // 2 * 3
+
+    # Buffer arrays
+    BUF_SIZE = NFI_MAX * NFJ_MAX
+
+    total_doubles = (OMEGA_I_SIZE + OMEGA_J_SIZE + RAD_ALL_SIZE +
+                    ANGI_SIZE + ANGJ_SIZE + FI_SIZE + FJ_SIZE + BUF_SIZE)
+
+    return total_doubles * dtype_size
+
+
+def _estimate_type1_ip_shared_memory(li: int, lj: int, precision: str = 'fp64') -> int:
+    """
+    Estimate shared memory requirements for Type1 IP ECP kernels
+
+    Args:
+        li: Angular momentum of first basis function
+        lj: Angular momentum of second basis function
+        precision: Floating point precision ('fp64', 'fp32', 'mixed')
+
+    Returns:
+        Estimated shared memory size in bytes
+    """
+    dtype_size = 4 if precision == 'fp32' else 8
+
+    # IP kernels need gctr_smem for accumulation
+    nfi = (li + 1) * (li + 2) // 2
+    nfj = (lj + 1) * (lj + 2) // 2
+    gctr_smem_size = 3 * nfi * nfj  # 3 components for derivatives
+
+    # Plus base kernel memory
+    base_memory = _estimate_type1_shared_memory(li, lj, precision) // dtype_size
+
+    total_doubles = base_memory + gctr_smem_size
+    return total_doubles * dtype_size
+
+
+def _estimate_type1_ipip_shared_memory(li: int, lj: int, variant: str, precision: str = 'fp64') -> int:
+    """
+    Estimate shared memory requirements for Type1 IPIP ECP kernels
+
+    Args:
+        li: Angular momentum of first basis function
+        lj: Angular momentum of second basis function
+        variant: IPIP variant ('ipipv' or 'ipvip')
+        precision: Floating point precision ('fp64', 'fp32', 'mixed')
+
+    Returns:
+        Estimated shared memory size in bytes
+    """
+    dtype_size = 4 if precision == 'fp32' else 8
+
+    # IPIP kernels need larger buffers and intermediate storage
+    if variant == 'ipipv':
+        # ipipv needs storage for mixed derivatives
+        nfi_max = (li + 2) * (li + 3) // 2  # LI+1 for intermediate
+        nfj_max = (lj + 2) * (lj + 3) // 2  # LJ+1 for intermediate
+    else:  # ipvip
+        nfi_max = (li + 3) * (li + 4) // 2  # LI+2 for intermediate
+        nfj_max = (lj + 1) * (lj + 2) // 2  # LJ for intermediate
+
+    # Multiple buffer stages needed
+    buf1_size = nfi_max * nfj_max
+    buf_size = 3 * (li + 1) * (li + 2) // 2 * (lj + 1) * (lj + 2) // 2
+
+    # Plus base kernel memory with higher angular momentum
+    base_li = li + 2 if variant == 'ipvip' else li + 1
+    base_lj = lj + 1 if variant == 'ipipv' else lj
+    base_memory = _estimate_type1_shared_memory(base_li, base_lj, precision) // dtype_size
+
+    total_doubles = base_memory + buf1_size + buf_size
+    return total_doubles * dtype_size
+
+
+def _estimate_type2_shared_memory(li: int, lj: int, lc: int, precision: str = 'fp64') -> int:
+    """
+    Estimate shared memory requirements for Type2 ECP kernels
+
+    Args:
+        li: Angular momentum of first basis function
+        lj: Angular momentum of second basis function
+        lc: Angular momentum of ECP center
+        precision: Floating point precision ('fp64', 'fp32', 'mixed')
+
+    Returns:
+        Estimated shared memory size in bytes
+    """
+    dtype_size = 4 if precision == 'fp32' else 8
+
+    # Arrays from type2_cart_kernel template
+    LI1_MAX = li + 1
+    LJ1_MAX = lj + 1
+    LIJ1_MAX = LI1_MAX + lj
+    NFI_MAX = LI1_MAX * (LI1_MAX + 1) // 2
+    NFJ_MAX = LJ1_MAX * (LJ1_MAX + 1) // 2
+    LIC1_MAX = LI1_MAX + lc
+    LJC1_MAX = LJ1_MAX + lc
+    LCC1 = 2 * lc + 1
+
+    # Omega arrays (largest contributors)
+    MAX_BLKI = (LIC1_MAX + 1) // 2 * LCC1
+    MAX_BLKJ = (LJC1_MAX + 1) // 2 * LCC1
+    OMEGA_I_SIZE = LI1_MAX * (LI1_MAX + 1) * (LI1_MAX + 2) // 6 * MAX_BLKI
+    OMEGA_J_SIZE = LJ1_MAX * (LJ1_MAX + 1) * (LJ1_MAX + 2) // 6 * MAX_BLKJ
+
+    # Radial and angular arrays
+    RAD_ALL_SIZE = LIJ1_MAX * LIC1_MAX * LJC1_MAX
+    ANGI_SIZE = LI1_MAX * LIC1_MAX * NFI_MAX
+    ANGJ_SIZE = LJ1_MAX * LJC1_MAX * NFJ_MAX
+
+    # fi and fj arrays
+    FI_SIZE = LI1_MAX * (LI1_MAX + 1) // 2 * 3
+    FJ_SIZE = LJ1_MAX * (LJ1_MAX + 1) // 2 * 3
+
+    # Buffer array
+    BUF_SIZE = NFI_MAX * NFJ_MAX
+
+    total_doubles = (OMEGA_I_SIZE + OMEGA_J_SIZE + RAD_ALL_SIZE +
+                    ANGI_SIZE + ANGJ_SIZE + FI_SIZE + FJ_SIZE + BUF_SIZE)
+
+    return total_doubles * dtype_size
+
+
+def _estimate_type2_ip_shared_memory(li: int, lj: int, lc: int, precision: str = 'fp64') -> int:
+    """
+    Estimate shared memory requirements for Type2 IP ECP kernels
+
+    Args:
+        li: Angular momentum of first basis function
+        lj: Angular momentum of second basis function
+        lc: Angular momentum of ECP center
+        precision: Floating point precision ('fp64', 'fp32', 'mixed')
+
+    Returns:
+        Estimated shared memory size in bytes
+    """
+    dtype_size = 4 if precision == 'fp32' else 8
+
+    # IP kernels need gctr_smem for accumulation
+    nfi = (li + 1) * (li + 2) // 2
+    nfj = (lj + 1) * (lj + 2) // 2
+    gctr_smem_size = 3 * nfi * nfj  # 3 components for derivatives
+
+    # Plus base kernel memory with higher angular momentum for derivatives
+    base_memory = _estimate_type2_shared_memory(li + 1, lj, lc, precision) // dtype_size
+
+    total_doubles = base_memory + gctr_smem_size
+    return total_doubles * dtype_size
+
+
+def _estimate_type2_ipip_shared_memory(li: int, lj: int, lc: int, variant: str, precision: str = 'fp64') -> int:
+    """
+    Estimate shared memory requirements for Type2 IPIP ECP kernels
+
+    Args:
+        li: Angular momentum of first basis function
+        lj: Angular momentum of second basis function
+        lc: Angular momentum of ECP center
+        variant: IPIP variant ('ipipv' or 'ipvip')
+        precision: Floating point precision ('fp64', 'fp32', 'mixed')
+
+    Returns:
+        Estimated shared memory size in bytes
+    """
+    dtype_size = 4 if precision == 'fp32' else 8
+
+    # IPIP kernels need larger buffers and intermediate storage
+    if variant == 'ipipv':
+        # ipipv: LI+3, LJ for main computation
+        nfi2_max = (li + 4) * (li + 5) // 2  # LI+3 for intermediate
+        nfj_max = (lj + 1) * (lj + 2) // 2   # LJ for intermediate
+        base_li, base_lj = li + 3, lj
+    else:  # ipvip
+        # ipvip: LI+2, LJ+2 for main computation
+        nfi2_max = (li + 3) * (li + 4) // 2  # LI+2 for intermediate
+        nfj1_max = (lj + 3) * (lj + 4) // 2  # LJ+2 for intermediate
+        base_li, base_lj = li + 2, lj + 2
+
+    # Multiple buffer stages needed
+    if variant == 'ipipv':
+        buf1_size = nfi2_max * nfj_max
+        buf_size = 3 * (li + 2) * (li + 3) // 2 * nfj_max
+    else:
+        buf1_size = nfi2_max * nfj1_max
+        buf_size = 3 * (li + 1) * (li + 2) // 2 * nfj1_max
+
+    # Plus base kernel memory with higher angular momentum
+    base_memory = _estimate_type2_shared_memory(base_li, base_lj, lc, precision) // dtype_size
+
+    total_doubles = base_memory + buf1_size + buf_size
+    return total_doubles * dtype_size
+
 def _compile_ecp_type2_kernel(li: int, lj: int, lc: int, precision: str = 'fp64'):
     """
     Compile ECP Type2 kernel for specific angular momentum combination
@@ -117,7 +344,7 @@ constexpr int LC = {lc};
             f"-DPRIM_STRIDE={PRIM_STRIDE}", f"-DCOORD_STRIDE={COORD_STRIDE}")
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function('type2_cart')
-    
+
     # Create wrapper function following JoltQC style
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
@@ -126,9 +353,13 @@ constexpr int LC = {lc};
         npj = args[-1]    # npj is last argument
         block_size = 128
         grid_size = ntasks
+
+        # Calculate dynamic shared memory size
+        shared_mem_size = _estimate_type2_shared_memory(li, lj, lc, precision)
+
         # Pass original args (excluding npi, npj) plus npi, npj to kernel
         kernel_args = args[:-2] + (npi, npj)
-        kernel((grid_size,), (block_size,), kernel_args)
+        kernel((grid_size,), (block_size,), kernel_args, shared_mem=shared_mem_size)
 
     # Cache the compiled kernel
     _ecp_kernel_cache[cache_key] = kernel_wrapper
@@ -193,7 +424,7 @@ constexpr int LJ = {lj};
     # print(li, lj, npi, npj, kernel.num_regs, kernel.local_size_bytes, kernel.shared_size_bytes/1024)
     if (kernel.local_size_bytes > 2048):
         Warning.warn(f"High local memory usage detected in type1_cart kernel: {kernel.local_size_bytes} bytes")
-    
+
     # Create wrapper function following JoltQC style
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
@@ -202,9 +433,13 @@ constexpr int LJ = {lj};
         npj = args[-1]    # npj is last argument
         block_size = 128
         grid_size = ntasks
+
+        # Calculate dynamic shared memory size
+        shared_mem_size = _estimate_type1_shared_memory(li, lj, precision)
+
         # Pass original args (excluding npi, npj) plus npi, npj to kernel
         kernel_args = args[:-2] + (npi, npj)
-        kernel((grid_size,), (block_size,), kernel_args)
+        kernel((grid_size,), (block_size,), kernel_args, shared_mem=shared_mem_size)
 
     # Cache the compiled kernel
     _ecp_kernel_cache[cache_key] = kernel_wrapper
@@ -243,7 +478,7 @@ constexpr int LJ = {lj};
     # Read the CUDA source
     cuda_source = ""
     for filename in ['ecp.h', 'prelude.cuh', 'gauss_chebyshev.cu', 'bessel.cu', 'cart2sph.cu', 'common.cu',
-                     'type1_ang_nuc.cu', 'ecp_type1.cu', 'ecp_type1_ip.cu']:
+                     'type1_ang_nuc.cu', 'ecp_type1.cu', 'ecp_type1_kernel.cu', 'ecp_type1_ip.cu']:
         cuda_file = os.path.join(os.path.dirname(__file__), 'ecp', filename)
         with open(cuda_file) as f:
             cuda_source += f.read()
@@ -263,6 +498,7 @@ constexpr int LJ = {lj};
     kernel = mod.get_function('type1_cart_ip1')
     if (kernel.local_size_bytes > 2048):
         Warning.warn(f"High local memory usage detected in type1_cart_ip1 kernel: {kernel.local_size_bytes} bytes")
+
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
         ntasks = args[4]  # Number of tasks
@@ -270,9 +506,13 @@ constexpr int LJ = {lj};
         npj = args[-1]    # npj is last argument
         block_size = 128
         grid_size = ntasks
+
+        # Calculate dynamic shared memory size
+        shared_mem_size = _estimate_type1_ip_shared_memory(li, lj, precision)
+
         # Pass original args (excluding npi, npj) plus npi, npj to kernel
         kernel_args = args[:-2] + (npi, npj)
-        kernel((grid_size,), (block_size,), kernel_args)
+        kernel((grid_size,), (block_size,), kernel_args, shared_mem=shared_mem_size)
 
     _ecp_kernel_cache[cache_key] = kernel_wrapper
     return kernel_wrapper
@@ -311,7 +551,7 @@ constexpr int LC = {lc};
     # Read the CUDA source
     cuda_source = ""
     for filename in ['ecp.h', 'prelude.cuh', 'gauss_chebyshev.cu', 'bessel.cu', 'cart2sph.cu', 'common.cu',
-                     'type2_ang_nuc.cu', 'ecp_type2.cu', 'ecp_type2_ip.cu']:
+                     'type2_ang_nuc.cu', 'ecp_type2.cu', 'ecp_type2_kernel.cu', 'ecp_type2_ip.cu']:
         cuda_file = os.path.join(os.path.dirname(__file__), 'ecp', filename)
         with open(cuda_file) as f:
             cuda_source += f.read()
@@ -331,6 +571,7 @@ constexpr int LC = {lc};
     kernel = mod.get_function('type2_cart_ip1')
     if (kernel.local_size_bytes > 2048):
         Warning.warn(f"High local memory usage detected in type2_cart_ip1 kernel: {kernel.local_size_bytes} bytes")
+
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
         ntasks = args[4]  # Number of tasks
@@ -338,9 +579,13 @@ constexpr int LC = {lc};
         npj = args[-1]    # npj is last argument
         block_size = 128
         grid_size = ntasks
+
+        # Calculate dynamic shared memory size
+        shared_mem_size = _estimate_type2_ip_shared_memory(li, lj, lc, precision)
+
         # Pass original args (excluding npi, npj) plus npi, npj to kernel
         kernel_args = args[:-2] + (npi, npj)
-        kernel((grid_size,), (block_size,), kernel_args)
+        kernel((grid_size,), (block_size,), kernel_args, shared_mem=shared_mem_size)
 
     _ecp_kernel_cache[cache_key] = kernel_wrapper
     return kernel_wrapper
@@ -377,10 +622,11 @@ constexpr int LI = {li};
 constexpr int LJ = {lj};
 """
 
-    # Read the CUDA source
+    # Read the CUDA source - use the appropriate file for the variant
     cuda_source = ""
+    variant_file = f'ecp_type1_{variant}.cu'
     for filename in ['ecp.h', 'prelude.cuh', 'gauss_chebyshev.cu', 'bessel.cu', 'cart2sph.cu', 'common.cu',
-                     'type1_ang_nuc.cu', 'ecp_type1.cu', 'ecp_type1_ip.cu']:
+                     'type1_ang_nuc.cu', 'ecp_type1.cu', 'ecp_type1_kernel.cu', variant_file]:
         cuda_file = os.path.join(os.path.dirname(__file__), 'ecp', filename)
         with open(cuda_file) as f:
             cuda_source += f.read()
@@ -401,6 +647,7 @@ constexpr int LJ = {lj};
     kernel = mod.get_function(kernel_name)
     if (kernel.local_size_bytes > 2048):
         Warning.warn(f"High local memory usage detected in {kernel_name} kernel: {kernel.local_size_bytes} bytes")
+
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
         ntasks = args[4]  # Number of tasks
@@ -408,9 +655,13 @@ constexpr int LJ = {lj};
         npj = args[-1]    # npj is last argument
         block_size = 128
         grid_size = ntasks
+
+        # Calculate dynamic shared memory size
+        shared_mem_size = _estimate_type1_ipip_shared_memory(li, lj, variant, precision)
+
         # Pass original args (excluding npi, npj) plus npi, npj to kernel
         kernel_args = args[:-2] + (npi, npj)
-        kernel((grid_size,), (block_size,), kernel_args)
+        kernel((grid_size,), (block_size,), kernel_args, shared_mem=shared_mem_size)
 
     _ecp_kernel_cache[cache_key] = kernel_wrapper
     return kernel_wrapper
@@ -449,10 +700,11 @@ constexpr int LJ = {lj};
 constexpr int LC = {lc};
 """
 
-    # Read the CUDA source
+    # Read the CUDA source - use the appropriate file for the variant
     cuda_source = ""
+    variant_file = f'ecp_type2_{variant}.cu'
     for filename in ['ecp.h', 'prelude.cuh', 'gauss_chebyshev.cu', 'bessel.cu', 'cart2sph.cu', 'common.cu',
-                     'type2_ang_nuc.cu', 'ecp_type2.cu', 'ecp_type2_ip.cu']:
+                     'type2_ang_nuc.cu', 'ecp_type2.cu', 'ecp_type2_kernel.cu', variant_file]:
         cuda_file = os.path.join(os.path.dirname(__file__), 'ecp', filename)
         with open(cuda_file) as f:
             cuda_source += f.read()
@@ -474,6 +726,7 @@ constexpr int LC = {lc};
 
     if (kernel.local_size_bytes > 2048):
         Warning.warn(f"High local memory usage detected in {kernel_name} kernel: {kernel.local_size_bytes} bytes")
+
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
         ntasks = args[4]  # Number of tasks
@@ -481,9 +734,13 @@ constexpr int LC = {lc};
         npj = args[-1]    # npj is last argument
         block_size = 128
         grid_size = ntasks
+
+        # Calculate dynamic shared memory size
+        shared_mem_size = _estimate_type2_ipip_shared_memory(li, lj, lc, variant, precision)
+
         # Pass original args (excluding npi, npj) plus npi, npj to kernel
         kernel_args = args[:-2] + (npi, npj)
-        kernel((grid_size,), (block_size,), kernel_args)
+        kernel((grid_size,), (block_size,), kernel_args, shared_mem=shared_mem_size)
 
     _ecp_kernel_cache[cache_key] = kernel_wrapper
     return kernel_wrapper
