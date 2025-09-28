@@ -155,7 +155,6 @@ void _li_up(double* __restrict__ out, double* __restrict__ buf){
         atomicAdd(outy + j*nfi + _y_addr[i], yfac * buf[ij]);
         atomicAdd(outz + j*nfi + _z_addr[i], zfac * buf[ij]);
     }
-    __syncthreads();
 }
 
 template <int LI_PARAM, int LJ_PARAM> __device__
@@ -193,7 +192,6 @@ void _li_up_and_write(double* __restrict__ out, double* __restrict__ buf, const 
         atomicAdd(outzy + i_addr[1], yfac * buf[ij + 2*nfi0*nfj]);
         atomicAdd(outzz + i_addr[2], zfac * buf[ij + 2*nfi0*nfj]);
     }
-    __syncthreads();
 }
 
 
@@ -213,7 +211,6 @@ void _li_down(double* __restrict__ out, double* __restrict__ buf){
         atomicAdd(outy + ij, buf[j*nfi1+_y_addr[i]]);
         atomicAdd(outz + ij, buf[j*nfi1+_z_addr[i]]);
     }
-    __syncthreads();
 }
 
 template <int LI_PARAM, int LJ_PARAM> __device__
@@ -233,7 +230,6 @@ void _lj_down(double* __restrict__ out, double* __restrict__ buf){
         atomicAdd(outy + ij, buf[j_addr[1]*nfi + i]);
         atomicAdd(outz + ij, buf[j_addr[2]*nfi + i]);
     }
-    __syncthreads();
 }
 
 
@@ -271,7 +267,6 @@ void _li_down_and_write(double* __restrict__ out, double* __restrict__ buf, cons
         atomicAdd(outzy + ij_nao, buf[i_addr[1] + 2*stride]);
         atomicAdd(outzz + ij_nao, buf[i_addr[2] + 2*stride]);
     }
-    __syncthreads();
 }
 
 
@@ -309,7 +304,6 @@ void _lj_up_and_write(double* __restrict__ out, double* __restrict__ buf, const 
         atomicAdd(outzy + j_addr[1], yfac * buf[ij + 2*stride]);
         atomicAdd(outzz + j_addr[2], zfac * buf[ij + 2*stride]);
     }
-    __syncthreads();
 }
 
 template <int LI_PARAM, int LJ_PARAM> __device__
@@ -345,5 +339,4 @@ void _lj_down_and_write(double* __restrict__ out, double* __restrict__ buf, cons
         atomicAdd(outzy + ij_nao, buf[j_addr[1] + 2*stride]);
         atomicAdd(outzz + ij_nao, buf[j_addr[2] + 2*stride]);
     }
-    __syncthreads();
 }

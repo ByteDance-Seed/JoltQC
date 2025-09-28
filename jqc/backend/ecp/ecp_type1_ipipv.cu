@@ -62,33 +62,42 @@ void type1_cart_ipipv(double* __restrict__ gctr,
     char* kernel_shared_mem = shared_mem + buf_offset;
 
     // Use LI+2 for orderi=2 stage
-    type1_cart_kernel<LI+2, LJ, 2, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+    type1_cart_kernel<LI+2, LJ, 2, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, 
+        coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
     __syncthreads();
-    for (int i = threadIdx.x; i < 3*nfi1_max*nfj_max; i+=blockDim.x){
+    for (int i = threadIdx.x; i < 3*nfi1_max*nfj_max; i+=THREADS){
         buf[i] = 0.0;
     }
     __syncthreads();
     _li_down<LI+1, LJ>(buf, buf1);
+    __syncthreads();
 
     // Then LI for orderi=1 stage
-    type1_cart_kernel<LI, LJ, 1, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+    type1_cart_kernel<LI, LJ, 1, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, 
+        coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
     __syncthreads();
     _li_up<LI+1, LJ>(buf, buf1);
+    __syncthreads();
     _li_down_and_write<LI, LJ>(gctr, buf, nao);
+    __syncthreads();
 
     if constexpr (LI > 0){
-        for (int i = threadIdx.x; i < 3*nfi1_max*nfj_max; i+=blockDim.x){
+        for (int i = threadIdx.x; i < 3*nfi1_max*nfj_max; i+=THREADS){
             buf[i] = 0.0;
         }
         __syncthreads();
         _li_down<LI-1, LJ>(buf, buf1);
+        __syncthreads();
         if constexpr (LI > 1){
             // Final companion LI-2 for orderi=0
-            type1_cart_kernel<LI-2, LJ, 0, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+            type1_cart_kernel<LI-2, LJ, 0, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, 
+                coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
             __syncthreads();
             _li_up<LI-1, LJ>(buf, buf1);
+            __syncthreads();
         }
         _li_up_and_write<LI, LJ>(gctr, buf, nao);
+        __syncthreads();
     }
     return;
 }

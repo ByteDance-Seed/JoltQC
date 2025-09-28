@@ -74,6 +74,7 @@ void type2_cart_ip1(double* __restrict__ gctr,
         coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
     __syncthreads();
     _li_down<LI, LJ>(gctr_smem, buf);
+    __syncthreads();
     if constexpr (LI > 0){
         // Companion LI-1 for orderi=0 stage
         set_shared_memory(buf, 3 * NFI_MAX * NFJ_MAX);
@@ -81,6 +82,7 @@ void type2_cart_ip1(double* __restrict__ gctr,
             coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
         __syncthreads();
         _li_up<LI, LJ>(gctr_smem, buf);
+        __syncthreads();
     }
 
     for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){

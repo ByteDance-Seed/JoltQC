@@ -60,7 +60,8 @@ void type2_cart_ipvip(double* __restrict__ gctr,
 
     // LI+1, LJ+1 for mixed order
     type2_cart_kernel<LI+1, LJ+1, LC, 1, 1>(
-        buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+        buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, 
+        atm, env, npi, npj, kernel_shared_mem);
     __syncthreads();
 
     // Optimize buf allocation for better reuse
@@ -68,34 +69,45 @@ void type2_cart_ipvip(double* __restrict__ gctr,
     double* buf = reinterpret_cast<double*>(shared_mem + buf1_offset);
     set_shared_memory(buf, 3*nfi_max*nfj1_max);
     _li_down<LI, LJ+1>(buf, buf1);
+    __syncthreads();
     _lj_down_and_write<LI, LJ>(gctr, buf, nao);
+    __syncthreads();
 
     if constexpr (LI > 0){
         // LI-1, LJ+1 companion
         type2_cart_kernel<LI-1, LJ+1, LC, 0, 1>(
-            buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+            buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, 
+            atm, env, npi, npj, kernel_shared_mem);
         __syncthreads();
         set_shared_memory(buf, 3*nfi_max*nfj1_max);
         _li_up<LI, LJ+1>(buf, buf1);
+        __syncthreads();
         _lj_down_and_write<LI, LJ>(gctr, buf, nao);
+        __syncthreads();
     }
 
     if constexpr (LJ > 0){
         // LI+1, LJ-1 branch
         type2_cart_kernel<LI+1, LJ-1, LC, 1, 0>(
-            buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+            buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, 
+            atm, env, npi, npj, kernel_shared_mem);
         __syncthreads();
         set_shared_memory(buf, 3*nfi_max*nfj1_max);
         _li_down<LI, LJ-1>(buf, buf1);
+        __syncthreads();
         _lj_up_and_write<LI, LJ>(gctr, buf, nao);
+        __syncthreads();
         if constexpr (LI > 0){
             // LI-1, LJ-1 companion
             type2_cart_kernel<LI-1, LJ-1, LC, 0, 0>(
-                buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+                buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, 
+                atm, env, npi, npj, kernel_shared_mem);
             __syncthreads();
             set_shared_memory(buf, 3*nfi_max*nfj1_max);
             _li_up<LI, LJ-1>(buf, buf1);
+            __syncthreads();
             _lj_up_and_write<LI, LJ>(gctr, buf, nao);
+            __syncthreads();
         }
     }
     return;

@@ -60,7 +60,8 @@ void type2_cart_ipipv(double* __restrict__ gctr,
 
     // LI+2 for orderi=2
     type2_cart_kernel<LI+2, LJ, LC, 2, 0>(
-        buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+        buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, 
+        atm, env, npi, npj, kernel_shared_mem);
     __syncthreads();
 
     // Optimize buf allocation for better reuse
@@ -68,27 +69,36 @@ void type2_cart_ipipv(double* __restrict__ gctr,
     double* buf = reinterpret_cast<double*>(shared_mem + buf1_offset);
     set_shared_memory(buf, 3*nfi1_max*nfj_max);
     _li_down<LI+1, LJ>(buf, buf1);
+    __syncthreads();
     _li_down_and_write<LI, LJ>(gctr, buf, nao);
+    __syncthreads();
 
     // LI for orderi=1
     type2_cart_kernel<LI, LJ, LC, 1, 0>(
-        buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+        buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, 
+        atm, env, npi, npj, kernel_shared_mem);
     __syncthreads();
     set_shared_memory(buf, 3*nfi1_max*nfj_max);
     _li_up<LI+1, LJ>(buf, buf1);
+    __syncthreads();
     _li_down_and_write<LI, LJ>(gctr, buf, nao);
+    __syncthreads();
 
     if constexpr (LI > 0){
         set_shared_memory(buf, 3*nfi1_max*nfj_max);
         _li_down<LI-1, LJ>(buf, buf1);
+        __syncthreads();
         _li_up_and_write<LI, LJ>(gctr, buf, nao);
+        __syncthreads();
         if constexpr (LI > 1){
             // LI-2 for orderi=0 companion
             type2_cart_kernel<LI-2, LJ, LC, 0, 0>(
-                buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+                buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, 
+                atm, env, npi, npj, kernel_shared_mem);
             __syncthreads();
             set_shared_memory(buf, 3*nfi1_max*nfj_max);
             _li_up<LI-1, LJ>(buf, buf1);
+            __syncthreads();
             _li_up_and_write<LI, LJ>(gctr, buf, nao);
         }
     }

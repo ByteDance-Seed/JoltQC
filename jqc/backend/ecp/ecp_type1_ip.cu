@@ -72,16 +72,20 @@ void type1_cart_ip1(double* __restrict__ gctr,
     // Accumulate derivative contributions with respect to AO i.
     // j-side contributions are accumulated via (j,i) tasks in host tasking (full tasks).
     // Use LI+1 for orderi=1 to match unrolled cache pattern
-    type1_cart_kernel<LI+1, LJ, 1, 0>(buf, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+    type1_cart_kernel<LI+1, LJ, 1, 0>(buf, ish, jsh, ksh, ecpbas, ecploc, 
+        coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
     __syncthreads();
     _li_down<LI, LJ>(gctr_smem, buf);
+    __syncthreads();
 
     if constexpr (LI > 0){
         // Use LI-1 for orderi=0 companion
         set_shared_memory(buf, 3 * nfi_max * nfj_max);
-        type1_cart_kernel<LI-1, LJ, 0, 0>(buf, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+        type1_cart_kernel<LI-1, LJ, 0, 0>(buf, ish, jsh, ksh, ecpbas, ecploc, 
+            coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
         __syncthreads();
         _li_up<LI, LJ>(gctr_smem, buf);
+        __syncthreads();
     }
 
     for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){

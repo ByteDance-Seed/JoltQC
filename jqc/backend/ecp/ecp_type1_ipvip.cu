@@ -62,7 +62,8 @@ void type1_cart_ipvip(double* __restrict__ gctr,
     char* kernel_shared_mem = shared_mem + buf_offset;
 
     // Start with LI+1, LJ+1 for mixed order
-    type1_cart_kernel<LI+1, LJ+1, 1, 1>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+    type1_cart_kernel<LI+1, LJ+1, 1, 1>(buf1, ish, jsh, ksh, ecpbas, ecploc, 
+        coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
     __syncthreads();
     for (int i = threadIdx.x; i < 3*nfi_max*nfj1_max; i+=blockDim.x){
         buf[i] = 0.0;
@@ -71,11 +72,14 @@ void type1_cart_ipvip(double* __restrict__ gctr,
     _li_down<LI, LJ+1>(buf, buf1);
     if constexpr (LI > 0){
         // Companion LI-1, LJ+1 for orderi=0, orderj=1
-        type1_cart_kernel<LI-1, LJ+1, 0, 1>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+        type1_cart_kernel<LI-1, LJ+1, 0, 1>(buf1, ish, jsh, ksh, ecpbas, ecploc, 
+            coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
         __syncthreads();
         _li_up<LI, LJ+1>(buf, buf1);
+        __syncthreads();
     }
     _lj_down_and_write<LI, LJ>(gctr, buf, nao);
+    __syncthreads();
 
     if constexpr (LJ > 0){
         for (int i = threadIdx.x; i < 3*nfi_max*nfj1_max; i+=blockDim.x){
@@ -83,14 +87,18 @@ void type1_cart_ipvip(double* __restrict__ gctr,
         }
         __syncthreads();
         // LI+1, LJ-1 for orderi=1, orderj=0 branch
-        type1_cart_kernel<LI+1, LJ-1, 1, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+        type1_cart_kernel<LI+1, LJ-1, 1, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, 
+            coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
         __syncthreads();
         _li_down<LI, LJ-1>(buf, buf1);
+        __syncthreads();
         if constexpr (LI > 0){
             // LI-1, LJ-1 for orderi=0, orderj=0 companion
-            type1_cart_kernel<LI-1, LJ-1, 0, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+            type1_cart_kernel<LI-1, LJ-1, 0, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, 
+                coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
             __syncthreads();
             _li_up<LI, LJ-1>(buf, buf1);
+            __syncthreads();
         }
         _lj_up_and_write<LI, LJ>(gctr, buf, nao);
     }
