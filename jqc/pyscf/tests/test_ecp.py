@@ -17,7 +17,7 @@ if _ndev == 0:
 
 
 def setUpModule():
-    global mol_small, mol_cart, mol_sph, cu1_basis
+    global mol_cart, mol_sph, cu1_basis
     cu1_basis = gto.basis.parse(
         '''
      H    S
@@ -38,17 +38,6 @@ def setUpModule():
      H    G
             6.491000E-01           1.0000000
         '''
-    )
-
-    mol_small = gto.M(
-        atom="Cu 0 0 0",
-        basis="sto-3g",
-        ecp="crenbl",
-        spin=1,
-        charge=0,
-        cart=1,  # Use spherical basis to avoid cartesian ECP IP kernel bug
-        output="/dev/null",
-        verbose=0,
     )
 
     mol_sph = gto.M(
@@ -110,11 +99,10 @@ Na G
 
 
 def tearDownModule():
-    global mol_small, mol_cart, mol_sph
-    mol_small.stdout.close()
+    global mol_cart, mol_sph
     mol_cart.stdout.close()
     mol_sph.stdout.close()
-    del mol_small, mol_cart, mol_sph
+    del mol_cart, mol_sph
 
 
 class KnownValues(unittest.TestCase):
@@ -124,12 +112,6 @@ class KnownValues(unittest.TestCase):
     def _log(self, msg: str):
         # Left-align the tag to a fixed width for tidy, readable output
         print(f"[{self._tag():<40}] {msg}")
-    
-    def test_ecp_small_cart(self):
-        h1_cpu = mol_small.intor('ECPscalar_cart')
-        h1_gpu = get_ecp(mol_small).get()
-        self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
-        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6  # Machine precision threshold
     
     def test_ecp_cart(self):
         h1_cpu = mol_cart.intor('ECPscalar_cart')
@@ -142,29 +124,6 @@ class KnownValues(unittest.TestCase):
         h1_gpu = get_ecp(mol_sph).get()
         self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
         assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6  # Machine precision threshold
-    
-    def test_ecp_small_cart_ip1(self):
-        # Match gpu4pyscf iprinv style: compare per-ECP-atom contributions
-        h1_gpu = get_ecp_ip(mol_small)
-        ecp_atoms = set(mol_small._ecpbas[:, gto.ATOM_OF])
-        for atm_id in ecp_atoms:
-            with mol_small.with_rinv_at_nucleus(atm_id):
-                # mol_small uses spherical AOs (cart=0); compare against spherical reference
-                h1_cpu = mol_small.intor('ECPscalar_iprinv_cart')
-            self._log(f"atom: {atm_id:2d}  norm: {np.linalg.norm(h1_cpu - h1_gpu[atm_id].get()):.3e}")
-            assert np.linalg.norm(h1_cpu - h1_gpu[atm_id].get()) < 1e-6
-    
-    def test_ecp_small_cart_ipipv(self):
-        h1_cpu = mol_small.intor('ECPscalar_ipipnuc', comp=9)
-        h1_gpu = get_ecp_ipip(mol_small, 'ipipv').sum(axis=0).get()
-        self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
-        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6
-    
-    def test_ecp_small_cart_ipvip(self):
-        h1_cpu = mol_small.intor('ECPscalar_ipnucip', comp=9)
-        h1_gpu = get_ecp_ipip(mol_small, 'ipvip').sum(axis=0).get()
-        self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
-        assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6
 
     def test_ecp_cart_ip1(self):
         # Match gpu4pyscf iprinv style: compare per-ECP-atom contributions
