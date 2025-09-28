@@ -127,7 +127,7 @@ void type2_cart_kernel(double* __restrict__ gctr,
     double* angj = reinterpret_cast<double*>(shared_mem_pool + offset);
     offset += ANGJ_SIZE * sizeof(double);
 
-    constexpr double fac = 16.0 * M_PI * M_PI;
+    constexpr double fac = 16.0 * M_PI * M_PI * (16.0 * M_PI * M_PI); // Additional (4*pi)^2 from angular integration
 
     for (int ij = threadIdx.x; ij < nfi*nfj; ij+=blockDim.x){
         gctr[ij] = 0.0;

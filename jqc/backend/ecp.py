@@ -24,6 +24,7 @@ Following JoltQC constexpr injection pattern for compile-time optimization.
 """
 
 import os
+import warnings
 from typing import Any, Dict
 
 import cupy as cp
@@ -43,13 +44,15 @@ __all__ = [
 
 
 def get_cp_type(precision: str):
-    """Get CuPy data type for given precision"""
-    if precision == 'fp32':
-        return cp.float32
-    elif precision == 'mixed':
-        return cp.float32  # Use FP32 as base for mixed precision
-    else:  # fp64
-        return cp.float64
+    """Return CuPy dtype for supported precision.
+
+    Only double precision (fp64) is supported.
+    """
+    if precision != 'fp64':
+        raise ValueError(
+            f"Unsupported precision '{precision}'. Only 'fp64' (double precision) is supported."
+        )
+    return cp.float64
 
 
 # Global cache for compiled kernels
@@ -73,35 +76,16 @@ def _estimate_type1_shared_memory(li: int, lj: int, precision: str = 'fp64') -> 
     Returns:
         Estimated shared memory size in bytes
     """
-    dtype_size = 4 if precision == 'fp32' else 8
+    # Only double precision is supported
+    dtype_size = 8
 
-    # Basic kernel shared memory
-    nfi = (li + 1) * (li + 2) // 2
-    nfj = (lj + 1) * (lj + 2) // 2
+    lij1 = li + lj + 1
+    lij3 = lij1 * lij1 * lij1
 
-    # Arrays from type1_cart_kernel template
-    LI1_MAX = li + 1
-    LJ1_MAX = lj + 1
-    LIJ1_MAX = LI1_MAX + lj
-    NFI_MAX = LI1_MAX * (LI1_MAX + 1) // 2
-    NFJ_MAX = LJ1_MAX * (LJ1_MAX + 1) // 2
+    fi_size = (li + 1) * (li + 2) // 2 * 3
+    fj_size = (lj + 1) * (lj + 2) // 2 * 3
 
-    # Core arrays (similar to type2 but simpler)
-    OMEGA_I_SIZE = LI1_MAX * (LI1_MAX + 1) * (LI1_MAX + 2) // 6 * 3  # Simplified omega
-    OMEGA_J_SIZE = LJ1_MAX * (LJ1_MAX + 1) * (LJ1_MAX + 2) // 6 * 3
-    RAD_ALL_SIZE = LIJ1_MAX * 10  # Simplified radial grid
-    ANGI_SIZE = LI1_MAX * 3 * NFI_MAX
-    ANGJ_SIZE = LJ1_MAX * 3 * NFJ_MAX
-
-    # fi and fj arrays
-    FI_SIZE = LI1_MAX * (LI1_MAX + 1) // 2 * 3
-    FJ_SIZE = LJ1_MAX * (LJ1_MAX + 1) // 2 * 3
-
-    # Buffer arrays
-    BUF_SIZE = NFI_MAX * NFJ_MAX
-
-    total_doubles = (OMEGA_I_SIZE + OMEGA_J_SIZE + RAD_ALL_SIZE +
-                    ANGI_SIZE + ANGJ_SIZE + FI_SIZE + FJ_SIZE + BUF_SIZE)
+    total_doubles = lij3 + lij1 * lij1 + fi_size + fj_size
 
     return total_doubles * dtype_size
 
@@ -118,17 +102,23 @@ def _estimate_type1_ip_shared_memory(li: int, lj: int, precision: str = 'fp64') 
     Returns:
         Estimated shared memory size in bytes
     """
-    dtype_size = 4 if precision == 'fp32' else 8
+    dtype_size = 8
 
     # IP kernels need gctr_smem for accumulation
     nfi = (li + 1) * (li + 2) // 2
     nfj = (lj + 1) * (lj + 2) // 2
     gctr_smem_size = 3 * nfi * nfj  # 3 components for derivatives
 
-    # Plus base kernel memory
-    base_memory = _estimate_type1_shared_memory(li, lj, precision) // dtype_size
+    # IP kernels also need buf for intermediate calculations
+    # buf size: 3 * nfi_max * nfj_max where nfi_max = (LI+2)*(LI+3)/2, nfj_max = (LJ+1)*(LJ+2)/2
+    nfi_max = (li + 2) * (li + 3) // 2
+    nfj_max = (lj + 1) * (lj + 2) // 2
+    buf_size = 3 * nfi_max * nfj_max
 
-    total_doubles = base_memory + gctr_smem_size
+    # Plus base kernel memory
+    base_memory = _estimate_type1_shared_memory(li+1, lj, precision) // dtype_size
+
+    total_doubles = base_memory + gctr_smem_size + buf_size
     return total_doubles * dtype_size
 
 
@@ -145,7 +135,7 @@ def _estimate_type1_ipip_shared_memory(li: int, lj: int, variant: str, precision
     Returns:
         Estimated shared memory size in bytes
     """
-    dtype_size = 4 if precision == 'fp32' else 8
+    dtype_size = 8
 
     # IPIP kernels need larger buffers and intermediate storage
     if variant == 'ipipv':
@@ -182,7 +172,7 @@ def _estimate_type2_shared_memory(li: int, lj: int, lc: int, precision: str = 'f
     Returns:
         Estimated shared memory size in bytes
     """
-    dtype_size = 4 if precision == 'fp32' else 8
+    dtype_size = 8
 
     # Arrays from type2_cart_kernel template
     LI1_MAX = li + 1
@@ -231,17 +221,23 @@ def _estimate_type2_ip_shared_memory(li: int, lj: int, lc: int, precision: str =
     Returns:
         Estimated shared memory size in bytes
     """
-    dtype_size = 4 if precision == 'fp32' else 8
+    dtype_size = 8
 
     # IP kernels need gctr_smem for accumulation
     nfi = (li + 1) * (li + 2) // 2
     nfj = (lj + 1) * (lj + 2) // 2
     gctr_smem_size = 3 * nfi * nfj  # 3 components for derivatives
 
+    # IP kernels also need buf for intermediate calculations
+    # buf size: 3 * NFI_MAX * NFJ_MAX where NFI_MAX = (LI+2)*(LI+3)/2, NFJ_MAX = (LJ+1)*(LJ+2)/2
+    nfi_max = (li + 2) * (li + 3) // 2
+    nfj_max = (lj + 1) * (lj + 2) // 2
+    buf_size = 3 * nfi_max * nfj_max
+
     # Plus base kernel memory with higher angular momentum for derivatives
     base_memory = _estimate_type2_shared_memory(li + 1, lj, lc, precision) // dtype_size
 
-    total_doubles = base_memory + gctr_smem_size
+    total_doubles = gctr_smem_size + buf_size + base_memory
     return total_doubles * dtype_size
 
 
@@ -259,7 +255,7 @@ def _estimate_type2_ipip_shared_memory(li: int, lj: int, lc: int, variant: str, 
     Returns:
         Estimated shared memory size in bytes
     """
-    dtype_size = 4 if precision == 'fp32' else 8
+    dtype_size = 8
 
     # IPIP kernels need larger buffers and intermediate storage
     if variant == 'ipipv':
@@ -334,9 +330,7 @@ constexpr int LC = {lc};
     # Inject constexpr values at the beginning of the source
     cuda_source = const_injection + '\n' + cuda_source
 
-    # Replace float-specific constants for fp32
-    if precision == 'fp32':
-        cuda_source = cuda_source.replace('M_PI', 'M_PI_F')
+    # Only double precision is supported; no fp32 constant replacements
 
     # Compile module following JoltQC pattern
     # Inject layout constants via -D to avoid string duplication
@@ -354,10 +348,8 @@ constexpr int LC = {lc};
         block_size = 128
         grid_size = ntasks
 
-        # Calculate dynamic shared memory size
+        # Calculate dynamic shared memory size for type2_cart
         shared_mem_size = _estimate_type2_shared_memory(li, lj, lc, precision)
-
-        # Pass original args (excluding npi, npj) plus npi, npj to kernel
         kernel_args = args[:-2] + (npi, npj)
         kernel((grid_size,), (block_size,), kernel_args, shared_mem=shared_mem_size)
 
@@ -412,9 +404,7 @@ constexpr int LJ = {lj};
     # Inject constexpr values at the beginning of the source
     cuda_source = const_injection + '\n' + cuda_source
 
-    # Replace float-specific constants for fp32
-    if precision == 'fp32':
-        cuda_source = cuda_source.replace('M_PI', 'M_PI_F')
+    # Only double precision is supported; no fp32 constant replacements
 
     # Compile module following JoltQC pattern
     opts = (*_get_compile_options(),
@@ -423,7 +413,9 @@ constexpr int LJ = {lj};
     kernel = mod.get_function('type1_cart')
     # print(li, lj, npi, npj, kernel.num_regs, kernel.local_size_bytes, kernel.shared_size_bytes/1024)
     if (kernel.local_size_bytes > 2048):
-        Warning.warn(f"High local memory usage detected in type1_cart kernel: {kernel.local_size_bytes} bytes")
+        warnings.warn(
+            f"High local memory usage detected in type1_cart kernel: {kernel.local_size_bytes} bytes"
+        )
 
     # Create wrapper function following JoltQC style
     def kernel_wrapper(*args):
@@ -434,10 +426,8 @@ constexpr int LJ = {lj};
         block_size = 128
         grid_size = ntasks
 
-        # Calculate dynamic shared memory size
+        # Calculate dynamic shared memory size for type1_cart
         shared_mem_size = _estimate_type1_shared_memory(li, lj, precision)
-
-        # Pass original args (excluding npi, npj) plus npi, npj to kernel
         kernel_args = args[:-2] + (npi, npj)
         kernel((grid_size,), (block_size,), kernel_args, shared_mem=shared_mem_size)
 
@@ -488,8 +478,7 @@ constexpr int LJ = {lj};
     cuda_source = cuda_source.replace('using DataType = double;', '')
     cuda_source = const_injection + '\n' + cuda_source
 
-    if precision == 'fp32':
-        cuda_source = cuda_source.replace('M_PI', 'M_PI_F')
+    # Only double precision is supported; no fp32 constant replacements
 
     # Compile module
     opts = (*_get_compile_options(),
@@ -497,7 +486,9 @@ constexpr int LJ = {lj};
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function('type1_cart_ip1')
     if (kernel.local_size_bytes > 2048):
-        Warning.warn(f"High local memory usage detected in type1_cart_ip1 kernel: {kernel.local_size_bytes} bytes")
+        warnings.warn(
+            f"High local memory usage detected in type1_cart_ip1 kernel: {kernel.local_size_bytes} bytes"
+        )
 
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
@@ -561,8 +552,7 @@ constexpr int LC = {lc};
     cuda_source = cuda_source.replace('using DataType = double;', '')
     cuda_source = const_injection + '\n' + cuda_source
 
-    if precision == 'fp32':
-        cuda_source = cuda_source.replace('M_PI', 'M_PI_F')
+    # Only double precision is supported; no fp32 constant replacements
 
     # Compile module
     opts = (*_get_compile_options(),
@@ -570,7 +560,9 @@ constexpr int LC = {lc};
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function('type2_cart_ip1')
     if (kernel.local_size_bytes > 2048):
-        Warning.warn(f"High local memory usage detected in type2_cart_ip1 kernel: {kernel.local_size_bytes} bytes")
+        warnings.warn(
+            f"High local memory usage detected in type2_cart_ip1 kernel: {kernel.local_size_bytes} bytes"
+        )
 
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
@@ -646,7 +638,9 @@ constexpr int LJ = {lj};
     kernel_name = f'type1_cart_{variant}'
     kernel = mod.get_function(kernel_name)
     if (kernel.local_size_bytes > 2048):
-        Warning.warn(f"High local memory usage detected in {kernel_name} kernel: {kernel.local_size_bytes} bytes")
+        warnings.warn(
+            f"High local memory usage detected in {kernel_name} kernel: {kernel.local_size_bytes} bytes"
+        )
 
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
@@ -725,7 +719,9 @@ constexpr int LC = {lc};
     kernel = mod.get_function(kernel_name)
 
     if (kernel.local_size_bytes > 2048):
-        Warning.warn(f"High local memory usage detected in {kernel_name} kernel: {kernel.local_size_bytes} bytes")
+        warnings.warn(
+            f"High local memory usage detected in {kernel_name} kernel: {kernel.local_size_bytes} bytes"
+        )
 
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
@@ -775,19 +771,30 @@ def get_ecp_ip(mol_or_basis_layout, ip_type='ip', ecp_atoms=None, precision: str
     mol = basis_layout._mol
     splitted_mol = basis_layout.splitted_mol
 
-    # Robust fallback for spherical basis to avoid heavy sph2cart transforms
+    # Spherical-basis fallback: compute per-ECP-atom derivatives on CPU and return GPU array
+    # Ensures compatibility with tests expecting per-atom blocks (iprinv-style)
     if not mol.cart:
-        h_ip = mol.intor('ECPscalar_ipnuc_sph')  # (3, nao, nao)
-        nao = h_ip.shape[-1]
-        # Determine ECP atoms
-        if hasattr(mol, '_ecpbas') and len(mol._ecpbas) > 0:
-            all_ecp_atoms = sorted(set(mol._ecpbas[:, gto.ATOM_OF]))
-            n_ecp_atoms = len(all_ecp_atoms) if ecp_atoms is None else len(ecp_atoms)
-        else:
-            n_ecp_atoms = 0
-        out = cp.zeros((max(n_ecp_atoms, 1), 3, nao, nao), dtype=dtype)
-        out[0] = cp.asarray(h_ip, dtype=dtype)
-        return out
+        nao = mol.nao
+        # No ECP on molecule
+        if not hasattr(mol, '_ecpbas') or len(mol._ecpbas) == 0:
+            if ecp_atoms is None:
+                return cp.zeros((0, 3, nao, nao), dtype=dtype)
+            else:
+                return cp.zeros((len(ecp_atoms), 3, nao, nao), dtype=dtype)
+
+        # Determine the list of ECP atoms to compute
+        all_ecp_atoms = sorted(set(mol._ecpbas[:, gto.ATOM_OF]))
+        target_atoms = all_ecp_atoms if ecp_atoms is None else [a for a in ecp_atoms if a in all_ecp_atoms]
+
+        # Compute per-atom derivatives using rinv-at-nucleus trick on CPU
+        out_host = np.zeros((len(target_atoms), 3, nao, nao), dtype=np.float64)
+        for idx, atm_id in enumerate(target_atoms):
+            with mol.with_rinv_at_nucleus(atm_id):
+                # iprinv_sph returns (3, nao, nao) for derivatives wrt nucleus atm_id
+                h_ip = mol.intor('ECPscalar_iprinv_sph')
+            out_host[idx] = h_ip
+
+        return cp.asarray(out_host, dtype=dtype)
 
     if not hasattr(mol, '_ecpbas') or len(mol._ecpbas) == 0:
         nao_orig = mol.nao

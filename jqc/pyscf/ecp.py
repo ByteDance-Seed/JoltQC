@@ -44,6 +44,10 @@ def apply_ecp(
     if not hasattr(mol, '_ecpbas') or len(mol._ecpbas) == 0:
         return {}
 
+    # Enforce double precision only
+    if precision != 'fp64':
+        raise ValueError("Only double precision ('fp64') is supported for ECP kernels")
+
     # Generate ECP kernels
     ecp_kernel = ecp_generator(mol, precision)
 
@@ -157,7 +161,7 @@ def benchmark_ecp(mol, n_trials: int = 5) -> Dict[str, float]:
     # Test different precisions
     results = {}
 
-    for precision in ['fp64', 'fp32', 'mixed']:
+    for precision in ['fp64']:
         times = []
         try:
             for _ in range(n_trials):

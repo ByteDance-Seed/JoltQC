@@ -16,23 +16,17 @@
 
 template <int l> __device__
 double type1_ang_nuc_l(const int i, const int j, const int k,
-                    double unitr[3]){
+                    double* rx, double* ry, double* rz,
+                    double* c_buf){
 return 0.0;
 }
 
 template <> __device__
 double type1_ang_nuc_l<0>(const int i, const int j, const int k,
-                            double unitr[3]){
+                            double* rx, double* ry, double* rz,
+                            double* c_buf){
     constexpr int l = 0;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1];
+    double* c = c_buf;
     for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
     c[0] += 0.28209479177387814*(rx[0]*ry[0]*rz[0]);;
 
@@ -50,17 +44,10 @@ double type1_ang_nuc_l<0>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<1>(const int i, const int j, const int k,
-                            double unitr[3]){
+                            double* rx, double* ry, double* rz,
+                            double* c_buf){
     constexpr int l = 1;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1];
+    double* c = c_buf;
     for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
     c[0] += 0.4886025119029199*(rx[1]*ry[0]*rz[0]);
     c[1] += 0.4886025119029199*(rx[0]*ry[1]*rz[0]);
@@ -94,17 +81,10 @@ double type1_ang_nuc_l<1>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<2>(const int i, const int j, const int k,
-                            double unitr[3]){
+                            double* rx, double* ry, double* rz,
+                            double* c_buf){
     constexpr int l = 2;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1];
+    double* c = c_buf;
     for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
     c[0] += 1.0925484305920792*(rx[1]*ry[1]*rz[0]);
     c[1] += 1.0925484305920792*(rx[0]*ry[1]*rz[1]);
@@ -166,17 +146,10 @@ double type1_ang_nuc_l<2>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<3>(const int i, const int j, const int k,
-                            double unitr[3]){
+                            double* rx, double* ry, double* rz,
+                            double* c_buf){
     constexpr int l = 3;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1];
+    double* c = c_buf;
     for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
     c[0] += 1.7701307697799304*(rx[2]*ry[1]*rz[0]);
     c[0] += -0.5900435899266435*(rx[0]*ry[3]*rz[0]);
@@ -278,17 +251,10 @@ double type1_ang_nuc_l<3>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<4>(const int i, const int j, const int k,
-                            double unitr[3]){
+                            double* rx, double* ry, double* rz,
+                            double* c_buf){
     constexpr int l = 4;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1];
+    double* c = c_buf;
     for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
     c[0] += 2.5033429417967046*(rx[3]*ry[1]*rz[0]);
     c[0] += -2.5033429417967046*(rx[1]*ry[3]*rz[0]);
@@ -444,17 +410,10 @@ double type1_ang_nuc_l<4>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<5>(const int i, const int j, const int k,
-                            double unitr[3]){
+                            double* rx, double* ry, double* rz,
+                            double* c_buf){
     constexpr int l = 5;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1];
+    double* c = c_buf;
     for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
     c[0] += 3.2819102842008507*(rx[4]*ry[1]*rz[0]);
     c[0] += -6.563820568401701*(rx[2]*ry[3]*rz[0]);
@@ -682,17 +641,10 @@ double type1_ang_nuc_l<5>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<6>(const int i, const int j, const int k,
-                            double unitr[3]){
+                            double* rx, double* ry, double* rz,
+                            double* c_buf){
     constexpr int l = 6;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1];
+    double* c = c_buf;
     for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
     c[0] += 4.099104631151486*(rx[5]*ry[1]*rz[0]);
     c[0] += -13.663682103838289*(rx[3]*ry[3]*rz[0]);
@@ -1010,17 +962,10 @@ double type1_ang_nuc_l<6>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<7>(const int i, const int j, const int k,
-                            double unitr[3]){
+                            double* rx, double* ry, double* rz,
+                            double* c_buf){
     constexpr int l = 7;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1];
+    double* c = c_buf;
     for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
     c[0] += 4.950139127672174*(rx[6]*ry[1]*rz[0]);
     c[0] += -24.75069563836087*(rx[4]*ry[3]*rz[0]);
@@ -1450,17 +1395,10 @@ double type1_ang_nuc_l<7>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<8>(const int i, const int j, const int k,
-                            double unitr[3]){
+                            double* rx, double* ry, double* rz,
+                            double* c_buf){
     constexpr int l = 8;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1];
+    double* c = c_buf;
     for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
     c[0] += 5.83141328139864*(rx[7]*ry[1]*rz[0]);
     c[0] += -40.81989296979048*(rx[5]*ry[3]*rz[0]);
@@ -2022,17 +1960,10 @@ double type1_ang_nuc_l<8>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<9>(const int i, const int j, const int k,
-                            double unitr[3]){
+                            double* rx, double* ry, double* rz,
+                            double* c_buf){
     constexpr int l = 9;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1];
+    double* c = c_buf;
     for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
     c[0] += 6.740108566678694*(rx[8]*ry[1]*rz[0]);
     c[0] += -62.9076799556678*(rx[6]*ry[3]*rz[0]);
@@ -2746,17 +2677,10 @@ double type1_ang_nuc_l<9>(const int i, const int j, const int k,
 }
 template <> __device__
 double type1_ang_nuc_l<10>(const int i, const int j, const int k,
-                            double unitr[3]){
+                            double* rx, double* ry, double* rz,
+                            double* c_buf){
     constexpr int l = 10;
-    double rx[l+1], ry[l+1], rz[l+1];
-    rx[0] = ry[0] = rz[0] = 1.0;
-    for (int li = 1; li <= l; li++) {
-        rx[li] = rx[li - 1] * unitr[0];
-        ry[li] = ry[li - 1] * unitr[1];
-        rz[li] = rz[li - 1] * unitr[2];
-    }
-
-    double c[2*l+1];
+    double* c = c_buf;
     for (int m = 0; m < 2*l+1; m++) c[m] = 0.0;
     c[0] += 7.673951182219901*(rx[9]*ry[1]*rz[0]);
     c[0] += -92.08741418663881*(rx[7]*ry[3]*rz[0]);

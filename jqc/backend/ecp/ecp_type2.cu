@@ -281,8 +281,19 @@ void type2_cart(double* __restrict__ gctr,
     constexpr int BLKI = (LIC1+1)/2 * LCC1;
     constexpr int BLKJ = (LJC1+1)/2 * LCC1;
 
+    extern __shared__ char shared_mem[];
+
+    // Allocate omegai from shared memory
+    double* omegai = reinterpret_cast<double*>(shared_mem);
+    size_t omegai_size = LI1*(LI1+1)*(LI1+2)/6 * BLKI;
+    size_t omegai_offset = omegai_size * sizeof(double);
+
+    // Allocate omegaj from shared memory
+    double* omegaj = reinterpret_cast<double*>(shared_mem + omegai_offset);
+    size_t omegaj_size = LJ1*(LJ1+1)*(LJ1+2)/6 * BLKJ;
+    size_t omegaj_offset = omegai_offset + omegaj_size * sizeof(double);
+
     double rca[3];
-    __shared__ double omegai[LI1*(LI1+1)*(LI1+2)/6 * BLKI]; // up to 12600 Bytes
     rca[0] = rc[0] - ri[0];
     rca[1] = rc[1] - ri[1];
     rca[2] = rc[2] - ri[2];
@@ -290,7 +301,6 @@ void type2_cart(double* __restrict__ gctr,
     const double dca = norm3d(rca[0], rca[1], rca[2]);
 
     double rcb[3];
-    __shared__ double omegaj[LJ1*(LJ1+1)*(LJ1+2)/6 * BLKJ]; // up to 12600 Bytes
     rcb[0] = rc[0] - rj[0];
     rcb[1] = rc[1] - rj[1];
     rcb[2] = rc[2] - rj[2];
@@ -308,8 +318,12 @@ void type2_cart(double* __restrict__ gctr,
     double radj[LJC1];
     type2_facs_rad<0, LJ+LC>(radj, dcb, cej, npj);
 
-    __shared__ double rad_all[(LI+LJ+1) * LIC1 * LJC1];
-    set_shared_memory(rad_all, (LI+LJ+1)*LIC1*LJC1);
+    // Allocate rad_all from shared memory
+    double* rad_all = reinterpret_cast<double*>(shared_mem + omegaj_offset);
+    size_t rad_all_size = (LI+LJ+1) * LIC1 * LJC1;
+    size_t rad_all_offset = omegaj_offset + rad_all_size * sizeof(double);
+
+    set_shared_memory(rad_all, rad_all_size);
 
     double ur = 0.0;
     // Each ECP shell has multiple powers and primitive basis
@@ -335,11 +349,19 @@ void type2_cart(double* __restrict__ gctr,
     constexpr int nfi = (LI+1) * (LI+2) / 2;
     constexpr int nfj = (LJ+1) * (LJ+2) / 2;
 
-    __shared__ double angi[LI1*nfi*LIC1]; // up to 5400 Bytes, further compression
-    __shared__ double angj[LJ1*nfj*LJC1];
+    // Allocate angi from shared memory
+    double* angi = reinterpret_cast<double*>(shared_mem + rad_all_offset);
+    size_t angi_size = LI1*nfi*LIC1;
+    size_t angi_offset = rad_all_offset + angi_size * sizeof(double);
+
+    // Allocate angj from shared memory
+    double* angj = reinterpret_cast<double*>(shared_mem + angi_offset);
+    size_t angj_size = LJ1*nfj*LJC1;
+    size_t angj_offset = angi_offset + angj_size * sizeof(double);
 
     // ECP Type2 normalization factor - basis layout already includes normalization
-    constexpr double fac = 16.0 * M_PI * M_PI;
+    // Additional factor of (4*pi)^2 from angular integration
+    constexpr double fac = 16.0 * M_PI * M_PI * (16.0 * M_PI * M_PI);
 
     constexpr int nreg = (nfi*nfj + THREADS - 1)/THREADS;
     double reg_gctr[nreg];
@@ -350,8 +372,11 @@ void type2_cart(double* __restrict__ gctr,
     // Pre-calculate fi and fj to reduce shared memory usage in type2_ang calls
     constexpr int nfi_3 = nfi * 3;
     constexpr int nfj_3 = nfj * 3;
-    __shared__ double fi[nfi_3];
-    __shared__ double fj[nfj_3];
+
+    // Allocate fi and fj from shared memory
+    double* fi = reinterpret_cast<double*>(shared_mem + angj_offset);
+    size_t fi_offset = angj_offset + nfi_3 * sizeof(double);
+    double* fj = reinterpret_cast<double*>(shared_mem + fi_offset);
 
     cache_fac<LI>(fi, rca);
     cache_fac<LJ>(fj, rcb);

@@ -50,6 +50,7 @@ void type2_ang_nuc_l<0>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[0]*0.28209479177387814;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -57,7 +58,6 @@ void type2_ang_nuc_l<0>(double buf[(LC+1)*(LC+2)/2], double *c,
         buf[m] += nuc * int_unit_xyz(i+pu+0, j+pv+0, k+pw+0);
     }
 
-    for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
 template <> __device__ __forceinline__
@@ -77,6 +77,7 @@ void type2_ang_nuc_l<1>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[0]*0.4886025119029199;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -87,6 +88,7 @@ void type2_ang_nuc_l<1>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[1]*0.4886025119029199;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -97,6 +99,7 @@ void type2_ang_nuc_l<1>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[2]*0.4886025119029199;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -104,7 +107,6 @@ void type2_ang_nuc_l<1>(double buf[(LC+1)*(LC+2)/2], double *c,
         buf[m] += nuc * int_unit_xyz(i+pu+0, j+pv+0, k+pw+1);
     }
 
-    for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
 template <> __device__ __forceinline__
@@ -130,6 +132,7 @@ void type2_ang_nuc_l<2>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[2]*-0.31539156525252;
     nuc += c[4]*0.5462742152960396;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -140,6 +143,7 @@ void type2_ang_nuc_l<2>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[0]*1.0925484305920792;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -150,6 +154,7 @@ void type2_ang_nuc_l<2>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[3]*1.0925484305920792;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -161,6 +166,7 @@ void type2_ang_nuc_l<2>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[2]*-0.31539156525252;
     nuc += c[4]*-0.5462742152960396;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -171,6 +177,7 @@ void type2_ang_nuc_l<2>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[1]*1.0925484305920792;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -181,6 +188,7 @@ void type2_ang_nuc_l<2>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[2]*0.63078313050504;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -188,7 +196,6 @@ void type2_ang_nuc_l<2>(double buf[(LC+1)*(LC+2)/2], double *c,
         buf[m] += nuc * int_unit_xyz(i+pu+0, j+pv+0, k+pw+2);
     }
 
-    for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
 template <> __device__ __forceinline__
@@ -222,6 +229,7 @@ void type2_ang_nuc_l<3>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*-0.4570457994644657;
     nuc += c[6]*0.5900435899266435;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -233,6 +241,7 @@ void type2_ang_nuc_l<3>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[0]*1.7701307697799304;
     nuc += c[2]*-0.4570457994644657;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -244,6 +253,7 @@ void type2_ang_nuc_l<3>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[3]*-1.1195289977703462;
     nuc += c[5]*1.4453057213202771;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -255,6 +265,7 @@ void type2_ang_nuc_l<3>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*-0.4570457994644657;
     nuc += c[6]*-1.7701307697799304;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -265,6 +276,7 @@ void type2_ang_nuc_l<3>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[1]*2.8906114426405543;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -275,6 +287,7 @@ void type2_ang_nuc_l<3>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[4]*1.8281831978578629;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -286,6 +299,7 @@ void type2_ang_nuc_l<3>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[0]*-0.5900435899266435;
     nuc += c[2]*-0.4570457994644657;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -297,6 +311,7 @@ void type2_ang_nuc_l<3>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[3]*-1.1195289977703462;
     nuc += c[5]*-1.4453057213202771;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -307,6 +322,7 @@ void type2_ang_nuc_l<3>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[2]*1.8281831978578629;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -317,6 +333,7 @@ void type2_ang_nuc_l<3>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[3]*0.7463526651802308;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -324,7 +341,6 @@ void type2_ang_nuc_l<3>(double buf[(LC+1)*(LC+2)/2], double *c,
         buf[m] += nuc * int_unit_xyz(i+pu+0, j+pv+0, k+pw+3);
     }
 
-    for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
 template <> __device__ __forceinline__
@@ -371,6 +387,7 @@ void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*-0.47308734787878;
     nuc += c[8]*0.6258357354491761;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -382,6 +399,7 @@ void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[0]*2.5033429417967046;
     nuc += c[2]*-0.94617469575756;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -393,6 +411,7 @@ void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*-2.0071396306718676;
     nuc += c[7]*1.7701307697799304;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -404,6 +423,7 @@ void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*0.6347132814912259;
     nuc += c[8]*-3.755014412695057;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -415,6 +435,7 @@ void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[1]*5.310392309339791;
     nuc += c[3]*-2.0071396306718676;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -426,6 +447,7 @@ void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*-2.5388531259649034;
     nuc += c[6]*2.8385240872726802;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -437,6 +459,7 @@ void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[0]*-2.5033429417967046;
     nuc += c[2]*-0.94617469575756;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -448,6 +471,7 @@ void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*-2.0071396306718676;
     nuc += c[7]*-5.310392309339791;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -458,6 +482,7 @@ void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[2]*5.6770481745453605;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -468,6 +493,7 @@ void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[5]*2.676186174229157;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -480,6 +506,7 @@ void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*0.47308734787878;
     nuc += c[8]*0.6258357354491761;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -491,6 +518,7 @@ void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[1]*-1.7701307697799304;
     nuc += c[3]*-2.0071396306718676;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -502,6 +530,7 @@ void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*-2.5388531259649034;
     nuc += c[6]*-2.8385240872726802;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -512,6 +541,7 @@ void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[3]*2.676186174229157;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -522,6 +552,7 @@ void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[4]*0.8462843753216345;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -529,7 +560,6 @@ void type2_ang_nuc_l<4>(double buf[(LC+1)*(LC+2)/2], double *c,
         buf[m] += nuc * int_unit_xyz(i+pu+0, j+pv+0, k+pw+4);
     }
 
-    for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
 template <> __device__ __forceinline__
@@ -594,6 +624,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[8]*-0.4892382994352504;
     nuc += c[10]*0.6563820568401701;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -606,6 +637,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[2]*-1.467714898305751;
     nuc += c[4]*0.45294665119569694;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -618,6 +650,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*-2.396768392486662;
     nuc += c[9]*2.075662314881041;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -630,6 +663,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[8]*0.9784765988705008;
     nuc += c[10]*-6.563820568401701;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -641,6 +675,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[1]*8.302649259524165;
     nuc += c[3]*-4.793536784973324;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -652,6 +687,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*-5.435359814348363;
     nuc += c[8]*3.913906395482003;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -664,6 +700,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[2]*-0.9784765988705008;
     nuc += c[4]*0.9058933023913939;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -675,6 +712,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*3.508509673602708;
     nuc += c[9]*-12.453973889286248;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -686,6 +724,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[2]*11.741719186446009;
     nuc += c[4]*-5.435359814348363;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -697,6 +736,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*-4.678012898136944;
     nuc += c[7]*4.793536784973324;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -709,6 +749,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[8]*1.467714898305751;
     nuc += c[10]*3.2819102842008507;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -720,6 +761,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[1]*-8.302649259524165;
     nuc += c[3]*-4.793536784973324;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -731,6 +773,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*-5.435359814348363;
     nuc += c[8]*-11.741719186446009;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -741,6 +784,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[3]*9.587073569946648;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -751,6 +795,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[6]*3.6235732095655755;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -763,6 +808,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[2]*0.4892382994352504;
     nuc += c[4]*0.45294665119569694;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -775,6 +821,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*2.396768392486662;
     nuc += c[9]*2.075662314881041;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -786,6 +833,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[2]*-3.913906395482003;
     nuc += c[4]*-5.435359814348363;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -797,6 +845,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*-4.678012898136944;
     nuc += c[7]*-4.793536784973324;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -807,6 +856,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[4]*3.6235732095655755;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -817,6 +867,7 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[5]*0.9356025796273888;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -824,7 +875,6 @@ void type2_ang_nuc_l<5>(double buf[(LC+1)*(LC+2)/2], double *c,
         buf[m] += nuc * int_unit_xyz(i+pu+0, j+pv+0, k+pw+5);
     }
 
-    for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
 template <> __device__ __forceinline__
@@ -914,6 +964,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[10]*-0.5045649007287241;
     nuc += c[12]*0.6831841051919144;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -926,6 +977,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[2]*-2.0182596029148963;
     nuc += c[4]*0.9212052595149236;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -938,6 +990,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[9]*-2.7636157785447706;
     nuc += c[11]*2.3666191622317525;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -951,6 +1004,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[10]*2.52282450364362;
     nuc += c[12]*-10.247761577878716;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -963,6 +1017,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[3]*-8.29084733563431;
     nuc += c[5]*2.913106812593657;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -975,6 +1030,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[8]*-7.369642076119389;
     nuc += c[10]*5.045649007287242;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -986,6 +1042,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[0]*-13.663682103838289;
     nuc += c[4]*1.8424105190298472;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -998,6 +1055,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[9]*5.527231557089541;
     nuc += c[11]*-23.666191622317527;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1009,6 +1067,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[2]*20.182596029148968;
     nuc += c[4]*-14.739284152238778;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1020,6 +1079,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*-11.652427250374627;
     nuc += c[9]*7.369642076119389;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1033,6 +1093,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[10]*2.52282450364362;
     nuc += c[12]*10.247761577878716;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1045,6 +1106,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[3]*-5.527231557089541;
     nuc += c[5]*5.826213625187314;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1056,6 +1118,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*11.442456408173117;
     nuc += c[10]*-30.273894043723452;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1067,6 +1130,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[3]*22.108926228358165;
     nuc += c[5]*-11.652427250374627;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1078,6 +1142,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*-7.628304272115411;
     nuc += c[8]*7.369642076119389;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1090,6 +1155,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[2]*2.0182596029148963;
     nuc += c[4]*0.9212052595149236;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1102,6 +1168,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[9]*8.29084733563431;
     nuc += c[11]*11.833095811158763;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1113,6 +1180,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[2]*-20.182596029148968;
     nuc += c[4]*-14.739284152238778;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1124,6 +1192,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*-11.652427250374627;
     nuc += c[9]*-22.108926228358165;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1134,6 +1203,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[4]*14.739284152238778;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1144,6 +1214,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[7]*4.6609709001498505;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1157,6 +1228,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[10]*-0.5045649007287241;
     nuc += c[12]*-0.6831841051919144;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1169,6 +1241,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[3]*2.7636157785447706;
     nuc += c[5]*2.913106812593657;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1181,6 +1254,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[8]*7.369642076119389;
     nuc += c[10]*5.045649007287242;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1192,6 +1266,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[3]*-7.369642076119389;
     nuc += c[5]*-11.652427250374627;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1203,6 +1278,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*-7.628304272115411;
     nuc += c[8]*-7.369642076119389;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1213,6 +1289,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[5]*4.6609709001498505;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1223,6 +1300,7 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[6]*1.0171072362820548;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1230,7 +1308,6 @@ void type2_ang_nuc_l<6>(double buf[(LC+1)*(LC+2)/2], double *c,
         buf[m] += nuc * int_unit_xyz(i+pu+0, j+pv+0, k+pw+6);
     }
 
-    for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
 template <> __device__ __forceinline__
@@ -1352,6 +1429,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[12]*-0.5189155787202604;
     nuc += c[14]*0.7071627325245963;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1365,6 +1443,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*1.4081304047606462;
     nuc += c[6]*-0.4516580379125866;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1378,6 +1457,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[11]*-3.1134934723215624;
     nuc += c[13]*2.6459606618019;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1391,6 +1471,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[12]*4.670240208482344;
     nuc += c[14]*-14.850417383016522;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1403,6 +1484,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[3]*-12.45397388928625;
     nuc += c[5]*6.637990386674741;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1415,6 +1497,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[10]*-9.38753603173764;
     nuc += c[12]*6.226986944643125;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1428,6 +1511,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*2.3468840079344107;
     nuc += c[6]*-1.35497411373776;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1441,6 +1525,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[11]*15.567467361607811;
     nuc += c[13]*-39.6894099270285;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1453,6 +1538,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*-28.162608095212924;
     nuc += c[6]*10.839792909902078;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1465,6 +1551,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[9]*-17.701307697799308;
     nuc += c[11]*10.378311574405208;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1478,6 +1565,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[12]*2.594577893601302;
     nuc += c[14]*24.75069563836087;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1489,6 +1577,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[1]*-52.919213236038004;
     nuc += c[5]*13.275980773349483;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1501,6 +1590,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[10]*18.77507206347528;
     nuc += c[12]*-62.269869446431244;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1512,6 +1602,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[3]*41.51324629762083;
     nuc += c[5]*-35.402615395598616;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1523,6 +1614,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[8]*-21.679585819804156;
     nuc += c[10]*12.516714708983523;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1536,6 +1628,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*0.4693768015868821;
     nuc += c[6]*-1.35497411373776;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1549,6 +1642,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[11]*15.567467361607811;
     nuc += c[13]*39.6894099270285;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1561,6 +1655,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*-18.77507206347528;
     nuc += c[6]*21.679585819804156;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1572,6 +1667,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*28.679396303042072;
     nuc += c[11]*-62.269869446431244;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1583,6 +1679,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*37.55014412695057;
     nuc += c[6]*-21.679585819804156;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1594,6 +1691,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*-11.47175852121683;
     nuc += c[9]*10.620784618679586;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1607,6 +1705,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[12]*-2.594577893601302;
     nuc += c[14]*-4.950139127672174;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1619,6 +1718,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[3]*12.45397388928625;
     nuc += c[5]*6.637990386674741;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1631,6 +1731,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[10]*28.162608095212924;
     nuc += c[12]*31.134934723215622;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1642,6 +1743,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[3]*-41.51324629762083;
     nuc += c[5]*-35.402615395598616;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1653,6 +1755,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[8]*-21.679585819804156;
     nuc += c[10]*-37.55014412695057;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1663,6 +1766,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[5]*21.241569237359172;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1673,6 +1777,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[8]*5.781222885281109;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1686,6 +1791,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*-0.4693768015868821;
     nuc += c[6]*-0.4516580379125866;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1699,6 +1805,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[11]*-3.1134934723215624;
     nuc += c[13]*-2.6459606618019;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1711,6 +1818,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*9.38753603173764;
     nuc += c[6]*10.839792909902078;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1723,6 +1831,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[9]*17.701307697799308;
     nuc += c[11]*10.378311574405208;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1734,6 +1843,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*-12.516714708983523;
     nuc += c[6]*-21.679585819804156;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1745,6 +1855,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*-11.47175852121683;
     nuc += c[9]*-10.620784618679586;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1755,6 +1866,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[6]*5.781222885281109;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1765,6 +1877,7 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[7]*1.092548430592079;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1772,7 +1885,6 @@ void type2_ang_nuc_l<7>(double buf[(LC+1)*(LC+2)/2], double *c,
         buf[m] += nuc * int_unit_xyz(i+pu+0, j+pv+0, k+pw+7);
     }
 
-    for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
 template <> __device__ __forceinline__
@@ -1934,6 +2046,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[14]*-0.5323327660595425;
     nuc += c[16]*0.72892666017483;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1947,6 +2060,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*1.913666099037323;
     nuc += c[6]*-0.912304516869819;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1960,6 +2074,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[13]*-3.449910622098108;
     nuc += c[15]*2.91570664069932;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1974,6 +2089,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[14]*7.452658724833595;
     nuc += c[16]*-20.40994648489524;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -1987,6 +2103,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*11.1173953976599;
     nuc += c[7]*-3.8164436064573;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2000,6 +2117,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[12]*-11.48199659422394;
     nuc += c[14]*7.452658724833595;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2013,6 +2131,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*1.913666099037323;
     nuc += c[6]*-2.736913550609457;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2026,6 +2145,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[13]*31.04919559888297;
     nuc += c[15]*-61.22983945468572;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2038,6 +2158,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*-45.92798637689575;
     nuc += c[6]*27.36913550609457;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2050,6 +2171,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[11]*-24.70532310591088;
     nuc += c[13]*13.79964248839243;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2062,6 +2184,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[12]*-4.784165247593307;
     nuc += c[16]*51.0248662122381;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2075,6 +2198,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*18.52899232943316;
     nuc += c[7]*-11.4493308193719;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2088,6 +2212,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[12]*57.40998297111968;
     nuc += c[14]*-111.7898808725039;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2100,6 +2225,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*-74.11596931773265;
     nuc += c[7]*30.5315488516584;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2112,6 +2238,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[10]*-36.49218067479276;
     nuc += c[12]*19.13666099037323;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2125,6 +2252,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*-1.913666099037323;
     nuc += c[6]*-2.736913550609457;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2138,6 +2266,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[13]*17.24955311049054;
     nuc += c[15]*102.0497324244762;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2149,6 +2278,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[2]*-149.0531744966719;
     nuc += c[6]*54.73827101218914;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2161,6 +2291,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[11]*49.41064621182176;
     nuc += c[13]*-137.9964248839243;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2172,6 +2303,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*76.54664396149292;
     nuc += c[6]*-72.98436134958553;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2183,6 +2315,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[9]*-36.63785862199007;
     nuc += c[11]*19.7642584847287;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2197,6 +2330,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[14]*-7.452658724833595;
     nuc += c[16]*-20.40994648489524;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2210,6 +2344,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*3.705798465886632;
     nuc += c[7]*-11.4493308193719;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2223,6 +2358,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[12]*57.40998297111968;
     nuc += c[14]*111.7898808725039;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2235,6 +2371,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*-49.41064621182176;
     nuc += c[7]*61.06309770331679;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2246,6 +2383,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[8]*61.06309770331677;
     nuc += c[12]*-114.8199659422394;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2257,6 +2395,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*59.29277545418611;
     nuc += c[7]*-36.63785862199007;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2268,6 +2407,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[8]*-16.28349272088447;
     nuc += c[10]*14.5968722699171;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2281,6 +2421,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*-1.913666099037323;
     nuc += c[6]*-0.912304516869819;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2294,6 +2435,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[13]*-17.24955311049054;
     nuc += c[15]*-20.40994648489524;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2306,6 +2448,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*45.92798637689575;
     nuc += c[6]*27.36913550609457;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2318,6 +2461,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[11]*74.11596931773265;
     nuc += c[13]*68.99821244196217;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2329,6 +2473,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*-76.54664396149292;
     nuc += c[6]*-72.98436134958553;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2340,6 +2485,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[9]*-36.63785862199007;
     nuc += c[11]*-59.29277545418611;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2350,6 +2496,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[6]*29.19374453983421;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2360,6 +2507,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[9]*6.978639737521918;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2374,6 +2522,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[14]*0.5323327660595425;
     nuc += c[16]*0.72892666017483;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2387,6 +2536,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*-3.705798465886632;
     nuc += c[7]*-3.8164436064573;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2400,6 +2550,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[12]*-11.48199659422394;
     nuc += c[14]*-7.452658724833595;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2412,6 +2563,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*24.70532310591088;
     nuc += c[7]*30.5315488516584;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2424,6 +2576,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[10]*36.49218067479276;
     nuc += c[12]*19.13666099037323;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2435,6 +2588,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*-19.7642584847287;
     nuc += c[7]*-36.63785862199007;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2446,6 +2600,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[8]*-16.28349272088447;
     nuc += c[10]*-14.5968722699171;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2456,6 +2611,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[7]*6.978639737521918;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2466,6 +2622,7 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[8]*1.16310662292032;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2473,7 +2630,6 @@ void type2_ang_nuc_l<8>(double buf[(LC+1)*(LC+2)/2], double *c,
         buf[m] += nuc * int_unit_xyz(i+pu+0, j+pv+0, k+pw+8);
     }
 
-    for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
 template <> __device__ __forceinline__
@@ -2681,6 +2837,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[16]*-0.5449054813440533;
     nuc += c[18]*0.7489009518531882;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2695,6 +2852,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*-1.385125560048583;
     nuc += c[8]*0.451093112065591;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2709,6 +2867,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[15]*-3.775215916042701;
     nuc += c[17]*3.177317648954698;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2722,6 +2881,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[16]*10.89810962688107;
     nuc += c[18]*-26.96043426671477;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2735,6 +2895,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*16.31079695491669;
     nuc += c[7]*-8.46325696792098;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2748,6 +2909,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[14]*-13.64659181309252;
     nuc += c[16]*8.718487701504852;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2761,6 +2923,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*-3.693668160129556;
     nuc += c[8]*1.804372448262364;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2775,6 +2938,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[15]*52.85302282459782;
     nuc += c[17]*-88.96489417073154;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2788,6 +2952,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*49.864520161749;
     nuc += c[8]*-18.04372448262364;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2801,6 +2966,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[13]*-32.62159390983339;
     nuc += c[15]*17.61767427486594;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2815,6 +2981,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[16]*-7.628676738816745;
     nuc += c[18]*94.36151993350171;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2828,6 +2995,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*16.31079695491669;
     nuc += c[7]*-25.38977090376294;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2841,6 +3009,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[14]*122.8193263178327;
     nuc += c[16]*-183.0882417316019;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2853,6 +3022,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*-130.4863756393335;
     nuc += c[7]*84.6325696792098;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2865,6 +3035,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[12]*-55.40502240194333;
     nuc += c[14]*27.29318362618504;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2879,6 +3050,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*-2.770251120097167;
     nuc += c[8]*2.706558672393546;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2891,6 +3063,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[13]*-40.77699238729173;
     nuc += c[17]*222.4122354268289;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2904,6 +3077,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*83.107533602915;
     nuc += c[8]*-54.13117344787092;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2917,6 +3091,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[13]*163.1079695491669;
     nuc += c[15]*-264.2651141229891;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2929,6 +3104,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*-166.21506720583;
     nuc += c[8]*72.17489793049457;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2941,6 +3117,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[11]*-67.70605574336784;
     nuc += c[13]*32.62159390983339;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2954,6 +3131,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[16]*-15.25735347763349;
     nuc += c[18]*-62.9076799556678;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2967,6 +3145,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*-16.31079695491669;
     nuc += c[7]*-25.38977090376294;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2980,6 +3159,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[14]*68.23295906546261;
     nuc += c[16]*305.1470695526698;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -2991,6 +3171,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[3]*-352.3534854973187;
     nuc += c[7]*169.2651393584196;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3003,6 +3184,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[12]*110.8100448038867;
     nuc += c[14]*-272.9318362618504;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3014,6 +3196,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*130.4863756393335;
     nuc += c[7]*-135.4121114867357;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3025,6 +3208,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[10]*-57.73991834439565;
     nuc += c[12]*29.54934528103645;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3038,6 +3222,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*-3.899026232312149;
     nuc += c[8]*1.804372448262364;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3052,6 +3237,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[15]*-52.85302282459782;
     nuc += c[17]*-88.96489417073154;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3065,6 +3251,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*16.621506720583;
     nuc += c[8]*-54.13117344787092;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3078,6 +3265,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[13]*163.1079695491669;
     nuc += c[15]*264.2651141229891;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3090,6 +3278,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*-110.8100448038867;
     nuc += c[8]*144.3497958609891;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3101,6 +3290,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[9]*116.1993441900202;
     nuc += c[13]*-195.7295634590003;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3112,6 +3302,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*88.64803584310934;
     nuc += c[8]*-57.73991834439565;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3123,6 +3314,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[9]*-22.1332084171467;
     nuc += c[11]*19.34458735524795;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3137,6 +3329,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[16]*3.814338369408373;
     nuc += c[18]*6.740108566678694;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3150,6 +3343,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*-16.31079695491669;
     nuc += c[7]*-8.46325696792098;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3163,6 +3357,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[14]*-68.23295906546261;
     nuc += c[16]*-61.02941391053396;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3175,6 +3370,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*130.4863756393335;
     nuc += c[7]*84.6325696792098;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3187,6 +3383,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[12]*166.21506720583;
     nuc += c[14]*136.4659181309252;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3198,6 +3395,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*-130.4863756393335;
     nuc += c[7]*-135.4121114867357;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3209,6 +3407,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[10]*-57.73991834439565;
     nuc += c[12]*-88.64803584310934;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3219,6 +3418,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[7]*38.68917471049591;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3229,6 +3429,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[10]*8.248559763485094;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3243,6 +3444,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*0.4617085200161945;
     nuc += c[8]*0.451093112065591;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3257,6 +3459,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[15]*3.775215916042701;
     nuc += c[17]*3.177317648954698;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3270,6 +3473,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*-16.621506720583;
     nuc += c[8]*-18.04372448262364;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3283,6 +3487,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[13]*-32.62159390983339;
     nuc += c[15]*-17.61767427486594;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3295,6 +3500,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*55.40502240194333;
     nuc += c[8]*72.17489793049457;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3307,6 +3513,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[11]*67.70605574336784;
     nuc += c[13]*32.62159390983339;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3318,6 +3525,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*-29.54934528103645;
     nuc += c[8]*-57.73991834439565;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3329,6 +3537,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[9]*-22.1332084171467;
     nuc += c[11]*-19.34458735524795;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3339,6 +3548,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[8]*8.248559763485094;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3349,6 +3559,7 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[9]*1.229622689841484;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3356,7 +3567,6 @@ void type2_ang_nuc_l<9>(double buf[(LC+1)*(LC+2)/2], double *c,
         buf[m] += nuc * int_unit_xyz(i+pu+0, j+pv+0, k+pw+9);
     }
 
-    for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }
 
 template <> __device__ __forceinline__
@@ -3624,6 +3834,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[18]*-0.5567269327204184;
     nuc += c[20]*0.7673951182219901;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3638,6 +3849,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*-1.870976726712969;
     nuc += c[8]*0.9081022627604556;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3652,6 +3864,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[17]*-4.091090733689417;
     nuc += c[19]*3.431895299891715;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3667,6 +3880,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[18]*15.0316271834513;
     nuc += c[20]*-34.53278031998956;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3681,6 +3895,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*-13.89129347445998;
     nuc += c[9]*4.718637772708116;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3695,6 +3910,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[16]*-15.8757639708114;
     nuc += c[18]*10.02108478896753;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3709,6 +3925,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*-3.741953453425937;
     nuc += c[8]*3.632409051041822;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3722,6 +3939,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[17]*81.82181467378834;
     nuc += c[19]*-123.5482307961017;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3735,6 +3953,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*78.58102252194469;
     nuc += c[8]*-43.58890861250187;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3748,6 +3967,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[15]*-41.41583533905566;
     nuc += c[17]*21.81915057967689;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3763,6 +3983,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[18]*-23.38253117425757;
     nuc += c[20]*161.1529748266179;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3776,6 +3997,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*-37.04344926522661;
     nuc += c[9]*18.87455109083247;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3790,6 +4012,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[16]*222.2606955913596;
     nuc += c[18]*-280.590374091091;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3803,6 +4026,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*166.6955216935197;
     nuc += c[9]*-62.91517030277488;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3816,6 +4040,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[14]*-78.58102252194469;
     nuc += c[16]*37.04344926522661;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3828,6 +4053,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*-13.89129347445998;
     nuc += c[8]*5.448613576562733;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3842,6 +4068,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[17]*-57.27527027165184;
     nuc += c[19]*432.4188077863561;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3855,6 +4082,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*78.58102252194469;
     nuc += c[8]*-130.7667258375056;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3868,6 +4096,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[15]*372.742518051501;
     nuc += c[17]*-458.2021621732147;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3880,6 +4109,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*-314.3240900877788;
     nuc += c[8]*217.9445430625093;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3892,6 +4122,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[13]*-111.1303477956798;
     nuc += c[15]*49.6990024068668;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3907,6 +4138,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[18]*-23.38253117425757;
     nuc += c[20]*-161.1529748266179;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3921,6 +4153,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*-27.78258694891996;
     nuc += c[9]*28.3118266362487;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3933,6 +4166,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[14]*-196.4525563048617;
     nuc += c[18]*701.4759352277273;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3946,6 +4180,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*277.8258694891996;
     nuc += c[9]*-188.7455109083247;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3959,6 +4194,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[14]*392.9051126097235;
     nuc += c[16]*-555.6517389783992;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3971,6 +4207,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*-333.3910433870395;
     nuc += c[9]*150.9964087266597;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3983,6 +4220,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[12]*-116.2370896333383;
     nuc += c[14]*52.38734834796313;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -3997,6 +4235,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*3.741953453425937;
     nuc += c[8]*3.632409051041822;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4010,6 +4249,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[17]*-114.5505405433037;
     nuc += c[19]*-288.2792051909041;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4023,6 +4263,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*-78.58102252194469;
     nuc += c[8]*-130.7667258375056;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4036,6 +4277,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[15]*207.0791766952783;
     nuc += c[17]*763.6702702886912;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4047,6 +4289,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[4]*-740.8689853045323;
     nuc += c[8]*435.8890861250187;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4059,6 +4302,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[13]*222.2606955913596;
     nuc += c[15]*-496.990024068668;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4070,6 +4314,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*209.5493933918525;
     nuc += c[8]*-232.4741792666766;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4081,6 +4326,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[11]*-86.28366212951984;
     nuc += c[13]*42.33537058883041;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4096,6 +4342,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[18]*15.0316271834513;
     nuc += c[20]*34.53278031998956;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4109,6 +4356,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[5]*-35.49928743347628;
     nuc += c[9]*18.87455109083247;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4123,6 +4371,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[16]*-222.2606955913596;
     nuc += c[18]*-280.590374091091;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4136,6 +4385,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*55.56517389783991;
     nuc += c[9]*-188.7455109083247;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4149,6 +4399,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[14]*392.9051126097235;
     nuc += c[16]*555.6517389783992;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4161,6 +4412,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*-222.2606955913596;
     nuc += c[9]*301.9928174533194;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4172,6 +4424,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[10]*203.6035159919149;
     nuc += c[14]*-314.3240900877788;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4183,6 +4436,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*127.0061117664912;
     nuc += c[9]*-86.28366212951984;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4194,6 +4448,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[10]*-29.08621657027356;
     nuc += c[12]*24.9079477785725;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4208,6 +4463,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*1.870976726712969;
     nuc += c[8]*0.9081022627604556;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4222,6 +4478,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[17]*28.63763513582592;
     nuc += c[19]*30.88705769902543;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4235,6 +4492,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*-78.58102252194469;
     nuc += c[8]*-43.58890861250187;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4248,6 +4506,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[15]*-207.0791766952783;
     nuc += c[17]*-152.7340540577382;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4260,6 +4519,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*314.3240900877788;
     nuc += c[8]*217.9445430625093;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4272,6 +4532,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[13]*333.3910433870395;
     nuc += c[15]*248.495012034334;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4283,6 +4544,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[6]*-209.5493933918525;
     nuc += c[8]*-232.4741792666766;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4294,6 +4556,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[11]*-86.28366212951984;
     nuc += c[13]*-127.0061117664912;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4304,6 +4567,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[8]*49.815895557145;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4314,6 +4578,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[11]*9.587073569946648;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4329,6 +4594,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[18]*-0.5567269327204184;
     nuc += c[20]*-0.7673951182219901;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4343,6 +4609,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*4.630431158153326;
     nuc += c[9]*4.718637772708116;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4357,6 +4624,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[16]*15.8757639708114;
     nuc += c[18]*10.02108478896753;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4370,6 +4638,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*-55.56517389783991;
     nuc += c[9]*-62.91517030277488;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4383,6 +4652,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[14]*-78.58102252194469;
     nuc += c[16]*-37.04344926522661;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4395,6 +4665,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*111.1303477956798;
     nuc += c[9]*150.9964087266597;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4407,6 +4678,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[12]*116.2370896333383;
     nuc += c[14]*52.38734834796313;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4418,6 +4690,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[7]*-42.33537058883041;
     nuc += c[9]*-86.28366212951984;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4429,6 +4702,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc += c[10]*-29.08621657027356;
     nuc += c[12]*-24.9079477785725;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4439,6 +4713,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[9]*9.587073569946648;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4449,6 +4724,7 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
     nuc = 0.0;
     nuc += c[10]*1.292720736456603;
 
+    #pragma unroll 1
     for (int m = 0; m < (LC+1)*(LC+2)/2; m++){
         const int pv = _cart_pow_y[m];
         const int pw = _cart_pow_z[m];
@@ -4456,5 +4732,4 @@ void type2_ang_nuc_l<10>(double buf[(LC+1)*(LC+2)/2], double *c,
         buf[m] += nuc * int_unit_xyz(i+pu+0, j+pv+0, k+pw+10);
     }
 
-    for (int m = 0; m < (LC+1)*(LC+2)/2; m++) buf[m] *= 4.0 * M_PI;
 }

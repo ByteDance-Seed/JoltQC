@@ -65,7 +65,7 @@ void type1_cart_kernel(double* __restrict__ gctr,
     constexpr int LI1_MAX = LIT + 1;
     constexpr int LJ1_MAX = LJT + 1;
     constexpr int RAD_ANG_SIZE = LIJ3;
-    constexpr int RAD_ALL_SIZE = LIJ1 * 10;  // Simplified for type1
+    constexpr int RAD_ALL_SIZE = LIJ1 * LIJ1;
 
     size_t offset = 0;
     double* rad_ang = reinterpret_cast<double*>(shared_mem_pool + offset);

@@ -46,7 +46,7 @@ void type2_cart_ip1(double* __restrict__ gctr,
     const int ioff = ao_loc[ish];
     const int joff = ao_loc[jsh];
     const int ecp_id = ecpbas[ECP_ATOM_ID+ecploc[ksh]*BAS_SLOTS];
-    gctr += 3*ecp_id*nao*nao + ioff*nao + joff;
+    gctr += ioff*nao + joff + 3*ecp_id*nao*nao;
 
     constexpr int nfi = (LI+1) * (LI+2) / 2;
     constexpr int nfj = (LJ+1) * (LJ+2) / 2;
@@ -68,14 +68,17 @@ void type2_cart_ip1(double* __restrict__ gctr,
 
     // Allocate buffer and remaining shared memory for kernel
     double* buf = reinterpret_cast<double*>(shared_mem + gctr_offset);
-    char* kernel_shared_mem = shared_mem + gctr_offset + NFI_MAX * NFJ_MAX * sizeof(double);
+    char* kernel_shared_mem = shared_mem + gctr_offset + 3 * NFI_MAX * NFJ_MAX * sizeof(double);
 
-    type2_cart_kernel<LI+1, LJ, LC, 1, 0>(buf, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+    type2_cart_kernel<LI+1, LJ, LC, 1, 0>(buf, ish, jsh, ksh, ecpbas, ecploc,
+        coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
     __syncthreads();
     _li_down<LI, LJ>(gctr_smem, buf);
     if constexpr (LI > 0){
         // Companion LI-1 for orderi=0 stage
-        type2_cart_kernel<LI-1, LJ, LC, 0, 0>(buf, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+        set_shared_memory(buf, 3 * NFI_MAX * NFJ_MAX);
+        type2_cart_kernel<LI-1, LJ, LC, 0, 0>(buf, ish, jsh, ksh, ecpbas, ecploc,
+            coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
         __syncthreads();
         _li_up<LI, LJ>(gctr_smem, buf);
     }

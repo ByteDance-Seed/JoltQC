@@ -47,7 +47,7 @@ void type1_cart_ip1(double* __restrict__ gctr,
     const int ioff = ao_loc[ish];
     const int joff = ao_loc[jsh];
     const int ecp_id = ecpbas[ECP_ATOM_ID+ecploc[ksh]*BAS_SLOTS];
-    gctr += 3*ecp_id*nao*nao + ioff*nao + joff;
+    gctr += ioff*nao + joff + 3*ecp_id*nao*nao;
     
     constexpr int nfi = (LI+1) * (LI+2) / 2;
     constexpr int nfj = (LJ+1) * (LJ+2) / 2;
@@ -67,7 +67,7 @@ void type1_cart_ip1(double* __restrict__ gctr,
 
     // Allocate buffer and kernel shared memory
     double* buf = reinterpret_cast<double*>(shared_mem + gctr_offset);
-    char* kernel_shared_mem = shared_mem + gctr_offset + nfi_max * nfj_max * sizeof(double);
+    char* kernel_shared_mem = shared_mem + gctr_offset + 3 * nfi_max * nfj_max * sizeof(double);
 
     // Accumulate derivative contributions with respect to AO i.
     // j-side contributions are accumulated via (j,i) tasks in host tasking (full tasks).
@@ -78,6 +78,7 @@ void type1_cart_ip1(double* __restrict__ gctr,
 
     if constexpr (LI > 0){
         // Use LI-1 for orderi=0 companion
+        set_shared_memory(buf, 3 * nfi_max * nfj_max);
         type1_cart_kernel<LI-1, LJ, 0, 0>(buf, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
         __syncthreads();
         _li_up<LI, LJ>(gctr_smem, buf);

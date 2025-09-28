@@ -72,6 +72,20 @@ void type1_rad_ang(double* __restrict__ rad_ang,
         unitr[2] = r[2] * norm_r;
     }
 
+    // Allocate buffers large enough for the maximum l value used in type1_ang_nuc_l functions (l=10)
+    // This ensures we don't have illegal memory access when functions access rx[10], ry[10], rz[10]
+    constexpr int max_l = 10;
+    double rx[max_l+1], ry[max_l+1], rz[max_l+1];
+    double c_buf[2*max_l+1];
+
+    // Initialize power arrays up to max_l
+    rx[0] = ry[0] = rz[0] = 1.0;
+    for (int i = 1; i <= max_l; i++) {
+        rx[i] = rx[i-1] * unitr[0];
+        ry[i] = ry[i-1] * unitr[1];
+        rz[i] = rz[i-1] * unitr[2];
+    }
+
     // loop over i+j+k<=LIJ
     // TODO: find a closed form?
     for (int n = threadIdx.x; n < (LIJ+1)*(LIJ+1)*(LIJ+1); n+=blockDim.x){
@@ -84,12 +98,12 @@ void type1_rad_ang(double* __restrict__ rad_ang,
         // need_even to ensure (i+j+k+lmb) is even
         double s = 0.0;
         const double *prad = rad_all + (i+j+k)*(LIJ+1);
-        if constexpr(LIJ >= 0) s += prad[0] * type1_ang_nuc_l<0>(i, j, k, unitr);
-        if constexpr(LIJ >= 2) s += prad[2] * type1_ang_nuc_l<2>(i, j, k, unitr);
-        if constexpr(LIJ >= 4) s += prad[4] * type1_ang_nuc_l<4>(i, j, k, unitr);
-        if constexpr(LIJ >= 6) s += prad[6] * type1_ang_nuc_l<6>(i, j, k, unitr);
-        if constexpr(LIJ >= 8) s += prad[8] * type1_ang_nuc_l<8>(i, j, k, unitr);
-        if constexpr(LIJ >= 10)s += prad[10]* type1_ang_nuc_l<10>(i, j, k, unitr);
+        if constexpr(LIJ >= 0) s += prad[0] * type1_ang_nuc_l<0>(i, j, k, rx, ry, rz, c_buf);
+        if constexpr(LIJ >= 2) s += prad[2] * type1_ang_nuc_l<2>(i, j, k, rx, ry, rz, c_buf);
+        if constexpr(LIJ >= 4) s += prad[4] * type1_ang_nuc_l<4>(i, j, k, rx, ry, rz, c_buf);
+        if constexpr(LIJ >= 6) s += prad[6] * type1_ang_nuc_l<6>(i, j, k, rx, ry, rz, c_buf);
+        if constexpr(LIJ >= 8) s += prad[8] * type1_ang_nuc_l<8>(i, j, k, rx, ry, rz, c_buf);
+        if constexpr(LIJ >= 10)s += prad[10]* type1_ang_nuc_l<10>(i, j, k, rx, ry, rz, c_buf);
         //rad_ang[i*(LIJ+1)*(LIJ+1) + j*(LIJ+1) + k] += fac*s;
         atomicAdd(rad_ang + i*(LIJ+1)*(LIJ+1) + j*(LIJ+1) + k, fac*s);
     }
@@ -104,11 +118,11 @@ void type1_rad_ang(double* __restrict__ rad_ang,
         // need_even to ensure (i+j+k+lmb) is even
         double s = 0.0;
         const double *prad = rad_all + (i+j+k)*(LIJ+1);
-        if constexpr(LIJ >= 1) s += prad[1] * type1_ang_nuc_l<1>(i, j, k, unitr);
-        if constexpr(LIJ >= 3) s += prad[3] * type1_ang_nuc_l<3>(i, j, k, unitr);
-        if constexpr(LIJ >= 5) s += prad[5] * type1_ang_nuc_l<5>(i, j, k, unitr);
-        if constexpr(LIJ >= 7) s += prad[7] * type1_ang_nuc_l<7>(i, j, k, unitr);
-        if constexpr(LIJ >= 9) s += prad[9] * type1_ang_nuc_l<9>(i, j, k, unitr);
+        if constexpr(LIJ >= 1) s += prad[1] * type1_ang_nuc_l<1>(i, j, k, rx, ry, rz, c_buf);
+        if constexpr(LIJ >= 3) s += prad[3] * type1_ang_nuc_l<3>(i, j, k, rx, ry, rz, c_buf);
+        if constexpr(LIJ >= 5) s += prad[5] * type1_ang_nuc_l<5>(i, j, k, rx, ry, rz, c_buf);
+        if constexpr(LIJ >= 7) s += prad[7] * type1_ang_nuc_l<7>(i, j, k, rx, ry, rz, c_buf);
+        if constexpr(LIJ >= 9) s += prad[9] * type1_ang_nuc_l<9>(i, j, k, rx, ry, rz, c_buf);
         //rad_ang[i*(LIJ+1)*(LIJ+1) + j*(LIJ+1) + k] += fac*s;
         atomicAdd(rad_ang + i*(LIJ+1)*(LIJ+1) + j*(LIJ+1) + k, fac*s);
     }
@@ -165,8 +179,15 @@ void type1_cart(double* __restrict__ gctr,
     }
 
     constexpr int LIJ1 = LI+LJ+1;
-    __shared__ double rad_ang[LIJ1*LIJ1*LIJ1];
-    __shared__ double rad_all[LIJ1*LIJ1];
+    extern __shared__ char shared_mem[];
+
+    // Allocate rad_ang from shared memory
+    double* rad_ang = reinterpret_cast<double*>(shared_mem);
+    size_t rad_ang_offset = LIJ1*LIJ1*LIJ1 * sizeof(double);
+
+    // Allocate rad_all from shared memory
+    double* rad_all = reinterpret_cast<double*>(shared_mem + rad_ang_offset);
+
     set_shared_memory(rad_ang, LIJ1*LIJ1*LIJ1);
 
     // ECP Type1 normalization factor - basis layout already includes normalization
@@ -200,8 +221,13 @@ void type1_cart(double* __restrict__ gctr,
 
     constexpr int nfi = (LI+1) * (LI+2) / 2;
     constexpr int nfj = (LJ+1) * (LJ+2) / 2;
-    __shared__ double fi[3*nfi];
-    __shared__ double fj[3*nfj];
+
+    // Allocate fi and fj from shared memory
+    size_t rad_all_offset = rad_ang_offset + LIJ1*LIJ1 * sizeof(double);
+    double* fi = reinterpret_cast<double*>(shared_mem + rad_all_offset);
+    size_t fi_offset = rad_all_offset + 3*nfi * sizeof(double);
+    double* fj = reinterpret_cast<double*>(shared_mem + fi_offset);
+
     cache_fac<LI>(fi, rca);
     cache_fac<LJ>(fj, rcb);
     __syncthreads();
