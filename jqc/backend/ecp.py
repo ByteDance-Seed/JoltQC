@@ -79,13 +79,22 @@ def _estimate_type1_shared_memory(li: int, lj: int, precision: str = 'fp64') -> 
     # Only double precision is supported
     dtype_size = 8
 
+    # Actual memory layout in type1_cart kernel:
+    # 1. rad_ang: LIJ1^3 doubles
+    # 2. rad_all: LIJ1^2 doubles
+    # 3. fi: 3*nfi doubles
+    # 4. fj: 3*nfj doubles
+
     lij1 = li + lj + 1
-    lij3 = lij1 * lij1 * lij1
+    nfi = (li + 1) * (li + 2) // 2
+    nfj = (lj + 1) * (lj + 2) // 2
 
-    fi_size = (li + 1) * (li + 2) // 2 * 3
-    fj_size = (lj + 1) * (lj + 2) // 2 * 3
+    rad_ang_size = lij1 * lij1 * lij1
+    rad_all_size = lij1 * lij1
+    fi_size = 3 * nfi
+    fj_size = 3 * nfj
 
-    total_doubles = lij3 + lij1 * lij1 + fi_size + fj_size
+    total_doubles = rad_ang_size + rad_all_size + fi_size + fj_size
 
     return total_doubles * dtype_size
 
@@ -137,25 +146,38 @@ def _estimate_type1_ipip_shared_memory(li: int, lj: int, variant: str, precision
     """
     dtype_size = 8
 
-    # IPIP kernels need larger buffers and intermediate storage
+    # Actual memory layout in Type1 IPIP kernels:
+    # [buf1][buf][kernel_shared_mem] - all separate and additive
+
     if variant == 'ipipv':
-        # ipipv needs storage for mixed derivatives
-        nfi_max = (li + 2) * (li + 3) // 2  # LI+1 for intermediate
-        nfj_max = (lj + 2) * (lj + 3) // 2  # LJ+1 for intermediate
+        # ipipv: buf1 uses (LI+3)*(LI+4)/2 * (LJ+1)*(LJ+2)/2
+        nfi2_max = (li + 3) * (li + 4) // 2  # LI+2 for buf1
+        nfj_max = (lj + 1) * (lj + 2) // 2   # LJ for buf1
+        buf1_size = nfi2_max * nfj_max
+
+        # buf uses 3 * (LI+2)*(LI+3)/2 * (LJ+1)*(LJ+2)/2
+        nfi1_max = (li + 2) * (li + 3) // 2  # LI+1 for buf
+        buf_size = 3 * nfi1_max * nfj_max
+
+        # kernel_shared_mem uses type1_cart_kernel with LI+2, LJ
+        kernel_memory = _estimate_type1_shared_memory(li + 2, lj, precision) // dtype_size
+
     else:  # ipvip
-        nfi_max = (li + 3) * (li + 4) // 2  # LI+2 for intermediate
-        nfj_max = (lj + 1) * (lj + 2) // 2  # LJ for intermediate
+        # ipvip: buf1 uses (LI+2)*(LI+3)/2 * (LJ+2)*(LJ+3)/2
+        nfi1_max = (li + 2) * (li + 3) // 2  # LI+1 for buf1
+        nfj1_max = (lj + 2) * (lj + 3) // 2  # LJ+1 for buf1
+        buf1_size = nfi1_max * nfj1_max
 
-    # Multiple buffer stages needed
-    buf1_size = nfi_max * nfj_max
-    buf_size = 3 * (li + 1) * (li + 2) // 2 * (lj + 1) * (lj + 2) // 2
+        # buf uses 3 * (LI+1)*(LI+2)/2 * (LJ+2)*(LJ+3)/2
+        nfi_max = (li + 1) * (li + 2) // 2   # LI for buf
+        buf_size = 3 * nfi_max * nfj1_max
 
-    # Plus base kernel memory with higher angular momentum
-    base_li = li + 2 if variant == 'ipvip' else li + 1
-    base_lj = lj + 1 if variant == 'ipipv' else lj
-    base_memory = _estimate_type1_shared_memory(base_li, base_lj, precision) // dtype_size
+        # kernel_shared_mem uses type1_cart_kernel with LI+1, LJ+1
+        kernel_memory = _estimate_type1_shared_memory(li + 1, lj + 1, precision) // dtype_size
 
-    total_doubles = base_memory + buf1_size + buf_size
+    # Total memory: buf1 + buf + kernel_memory (all separate)
+    total_doubles = buf1_size + buf_size + kernel_memory
+
     return total_doubles * dtype_size
 
 
@@ -174,36 +196,39 @@ def _estimate_type2_shared_memory(li: int, lj: int, lc: int, precision: str = 'f
     """
     dtype_size = 8
 
-    # Arrays from type2_cart_kernel template
-    LI1_MAX = li + 1
-    LJ1_MAX = lj + 1
-    LIJ1_MAX = LI1_MAX + lj
-    NFI_MAX = LI1_MAX * (LI1_MAX + 1) // 2
-    NFJ_MAX = LJ1_MAX * (LJ1_MAX + 1) // 2
-    LIC1_MAX = LI1_MAX + lc
-    LJC1_MAX = LJ1_MAX + lc
+    # Actual memory layout in type2_cart kernel:
+    # 1. omegai: LI1*(LI1+1)*(LI1+2)/6 * BLKI
+    # 2. omegaj: LJ1*(LJ1+1)*(LJ1+2)/6 * BLKJ
+    # 3. rad_all: (LI+LJ+1) * LIC1 * LJC1
+    # 4. angi: LI1*nfi*LIC1
+    # 5. angj: LJ1*nfj*LJC1
+    # 6. fi: 3*nfi
+    # 7. fj: 3*nfj
+
+    LI1 = li + 1
+    LJ1 = lj + 1
+    LIC1 = li + lc + 1
+    LJC1 = lj + lc + 1
     LCC1 = 2 * lc + 1
 
-    # Omega arrays (largest contributors)
-    MAX_BLKI = (LIC1_MAX + 1) // 2 * LCC1
-    MAX_BLKJ = (LJC1_MAX + 1) // 2 * LCC1
-    OMEGA_I_SIZE = LI1_MAX * (LI1_MAX + 1) * (LI1_MAX + 2) // 6 * MAX_BLKI
-    OMEGA_J_SIZE = LJ1_MAX * (LJ1_MAX + 1) * (LJ1_MAX + 2) // 6 * MAX_BLKJ
+    nfi = (li + 1) * (li + 2) // 2
+    nfj = (lj + 1) * (lj + 2) // 2
 
-    # Radial and angular arrays
-    RAD_ALL_SIZE = LIJ1_MAX * LIC1_MAX * LJC1_MAX
-    ANGI_SIZE = LI1_MAX * LIC1_MAX * NFI_MAX
-    ANGJ_SIZE = LJ1_MAX * LJC1_MAX * NFJ_MAX
+    # BLKI and BLKJ as defined in the kernel
+    BLKI = (LIC1 + 1) // 2 * LCC1
+    BLKJ = (LJC1 + 1) // 2 * LCC1
 
-    # fi and fj arrays
-    FI_SIZE = LI1_MAX * (LI1_MAX + 1) // 2 * 3
-    FJ_SIZE = LJ1_MAX * (LJ1_MAX + 1) // 2 * 3
+    # Actual array sizes
+    omegai_size = LI1 * (LI1 + 1) * (LI1 + 2) // 6 * BLKI
+    omegaj_size = LJ1 * (LJ1 + 1) * (LJ1 + 2) // 6 * BLKJ
+    rad_all_size = (li + lj + 1) * LIC1 * LJC1
+    angi_size = LI1 * nfi * LIC1
+    angj_size = LJ1 * nfj * LJC1
+    fi_size = 3 * nfi
+    fj_size = 3 * nfj
 
-    # Buffer array
-    BUF_SIZE = NFI_MAX * NFJ_MAX
-
-    total_doubles = (OMEGA_I_SIZE + OMEGA_J_SIZE + RAD_ALL_SIZE +
-                    ANGI_SIZE + ANGJ_SIZE + FI_SIZE + FJ_SIZE + BUF_SIZE)
+    total_doubles = (omegai_size + omegaj_size + rad_all_size +
+                    angi_size + angj_size + fi_size + fj_size)
 
     return total_doubles * dtype_size
 
@@ -257,30 +282,40 @@ def _estimate_type2_ipip_shared_memory(li: int, lj: int, lc: int, variant: str, 
     """
     dtype_size = 8
 
-    # IPIP kernels need larger buffers and intermediate storage
-    if variant == 'ipipv':
-        # ipipv: LI+3, LJ for main computation
-        nfi2_max = (li + 4) * (li + 5) // 2  # LI+3 for intermediate
-        nfj_max = (lj + 1) * (lj + 2) // 2   # LJ for intermediate
-        base_li, base_lj = li + 3, lj
-    else:  # ipvip
-        # ipvip: LI+2, LJ+2 for main computation
-        nfi2_max = (li + 3) * (li + 4) // 2  # LI+2 for intermediate
-        nfj1_max = (lj + 3) * (lj + 4) // 2  # LJ+2 for intermediate
-        base_li, base_lj = li + 2, lj + 2
+    # Actual memory layout in IPIP kernels:
+    # [buf1][kernel_shared_mem (which overlaps with buf space)]
+    # The buf array reuses the kernel_shared_mem space, so we take the maximum of the two
 
-    # Multiple buffer stages needed
     if variant == 'ipipv':
+        # ipipv: buf1 uses (LI+3)*(LI+4)/2 * (LJ+1)*(LJ+2)/2
+        nfi2_max = (li + 3) * (li + 4) // 2   # LI+2 for buf1
+        nfj_max = (lj + 1) * (lj + 2) // 2    # LJ for buf1
         buf1_size = nfi2_max * nfj_max
-        buf_size = 3 * (li + 2) * (li + 3) // 2 * nfj_max
-    else:
-        buf1_size = nfi2_max * nfj1_max
-        buf_size = 3 * (li + 1) * (li + 2) // 2 * nfj1_max
 
-    # Plus base kernel memory with higher angular momentum
-    base_memory = _estimate_type2_shared_memory(base_li, base_lj, lc, precision) // dtype_size
+        # buf reuses kernel space, size is 3*(LI+2)*(LI+3)/2 * (LJ+1)*(LJ+2)/2
+        nfi1_max = (li + 2) * (li + 3) // 2
+        buf_size = 3 * nfi1_max * nfj_max
 
-    total_doubles = base_memory + buf1_size + buf_size
+        # kernel_shared_mem uses type2_cart_kernel with LI+2, LJ, LC
+        kernel_memory = _estimate_type2_shared_memory(li + 2, lj, lc, precision) // dtype_size
+
+    else:  # ipvip
+        # ipvip: buf1 uses (LI+2)*(LI+3)/2 * (LJ+2)*(LJ+3)/2
+        nfi1_max = (li + 2) * (li + 3) // 2   # LI+1 for buf1
+        nfj1_max = (lj + 2) * (lj + 3) // 2   # LJ+1 for buf1
+        buf1_size = nfi1_max * nfj1_max
+
+        # buf reuses kernel space, size is 3*(LI+1)*(LI+2)/2 * (LJ+2)*(LJ+3)/2
+        nfi_max = (li + 1) * (li + 2) // 2
+        buf_size = 3 * nfi_max * nfj1_max
+
+        # kernel_shared_mem uses type2_cart_kernel with LI+1, LJ+1, LC
+        kernel_memory = _estimate_type2_shared_memory(li + 1, lj + 1, lc, precision) // dtype_size
+
+    # Total memory: buf1 + max(kernel_memory, buf_size)
+    overlapping_memory = max(kernel_memory, buf_size)
+    total_doubles = buf1_size + overlapping_memory
+
     return total_doubles * dtype_size
 
 def _compile_ecp_type2_kernel(li: int, lj: int, lc: int, precision: str = 'fp64'):
