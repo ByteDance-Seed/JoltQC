@@ -102,7 +102,8 @@ void cache_fac(double *fx, const double ri[3]){
 
 __device__
 void block_reduce(double val, double* __restrict__ d_out) {
-    __shared__ double warp_sums[THREADS / 32];
+    // Support up to 32 warps (max 1024 threads per block)
+    __shared__ double warp_sums[32];
     unsigned int tid = threadIdx.x;
     unsigned int warp_id = tid / 32;
     unsigned int lane_id = tid % 32;
@@ -120,15 +121,15 @@ void block_reduce(double val, double* __restrict__ d_out) {
 
     // Step 3: Reduce across warps (only first warp participates)
     if (warp_id == 0) {
-        val = (tid < (THREADS / 32)) ? warp_sums[tid] : 0.0;
+        const unsigned int num_warps = (blockDim.x + 31) / 32;
+        double acc = (tid < num_warps) ? warp_sums[tid] : 0.0;
+        // Now reduce acc across the first warp using shuffles
         for (unsigned int offset = warpSize/2; offset > 0; offset /= 2) {
-            val += __shfl_down_sync(0xffffffff, val, offset);
+            acc += __shfl_down_sync(0xffffffff, acc, offset);
         }
-    }
-
-    // Step 4: First thread writes final result to global memory
-    if (tid == 0) {
-        d_out[0] += val;
+        if (tid == 0) {
+            d_out[0] += acc;
+        }
     }
     __syncthreads();
 }

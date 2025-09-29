@@ -70,7 +70,7 @@ void type1_cart_ipipv(double* __restrict__ gctr,
     type1_cart_kernel<LI+2, LJ, 2, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, 
         coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
     __syncthreads();
-    for (int i = threadIdx.x; i < 3*nfi1_max*nfj_max; i+=THREADS){
+    for (int i = threadIdx.x; i < 3*nfi1_max*nfj_max; i+=blockDim.x){
         buf[i] = 0.0;
     }
     __syncthreads();
@@ -87,7 +87,7 @@ void type1_cart_ipipv(double* __restrict__ gctr,
     __syncthreads();
 
     if constexpr (LI > 0){
-        for (int i = threadIdx.x; i < 3*nfi1_max*nfj_max; i+=THREADS){
+        for (int i = threadIdx.x; i < 3*nfi1_max*nfj_max; i+=blockDim.x){
             buf[i] = 0.0;
         }
         __syncthreads();

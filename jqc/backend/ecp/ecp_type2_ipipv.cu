@@ -56,22 +56,26 @@ void type2_cart_ipipv(double* __restrict__ gctr,
 
     constexpr int nfi2_max = (LI+3)*(LI+4)/2;
     constexpr int nfj_max = (LJ+1)*(LJ+2)/2;
+    constexpr int nfi1_max = (LI+2)*(LI+3)/2;
     extern __shared__ char shared_mem[];
 
-    // Allocate buf1 and other arrays from dynamic shared memory
+    // Allocate buf1 first
     double* buf1 = reinterpret_cast<double*>(shared_mem);
     size_t buf1_offset = nfi2_max * nfj_max * sizeof(double);
-    char* kernel_shared_mem = shared_mem + buf1_offset;
+
+    // Allocate buf BEFORE kernel_shared_mem to avoid overlap
+    double* buf = reinterpret_cast<double*>(shared_mem + buf1_offset);
+    size_t buf_offset = buf1_offset + 3 * nfi1_max * nfj_max * sizeof(double);
+
+    // Allocate kernel_shared_mem after buf
+    char* kernel_shared_mem = shared_mem + buf_offset;
 
     // LI+2 for orderi=2
     type2_cart_kernel<LI+2, LJ, LC, 2, 0>(
-        buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, 
+        buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp,
         atm, env, npi, npj, kernel_shared_mem);
     __syncthreads();
 
-    // Optimize buf allocation for better reuse
-    constexpr int nfi1_max = (LI+2)*(LI+3)/2;
-    double* buf = reinterpret_cast<double*>(shared_mem + buf1_offset);
     set_shared_memory(buf, 3*nfi1_max*nfj_max);
     _li_down<LI+1, LJ>(buf, buf1);
     __syncthreads();

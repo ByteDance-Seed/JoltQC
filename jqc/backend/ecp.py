@@ -128,7 +128,15 @@ def _estimate_type1_ip_shared_memory(li: int, lj: int, precision: str = 'fp64') 
     base_memory = _estimate_type1_shared_memory(li+1, lj, precision) // dtype_size
 
     total_doubles = base_memory + gctr_smem_size + buf_size
-    return total_doubles * dtype_size
+    total_bytes = total_doubles * dtype_size
+
+    # Raise error if shared memory exceeds 96KB limit
+    if total_bytes > 96 * 1024:
+        raise RuntimeError(f"Shared memory requirement {total_bytes} bytes ({total_bytes/1024:.1f} KB) "
+                          f"exceeds 96KB limit for angular momentum combination. "
+                          f"Consider using smaller basis sets or enabling global memory fallback.")
+
+    return total_bytes
 
 
 def _estimate_type1_ipip_shared_memory(li: int, lj: int, variant: str, precision: str = 'fp64') -> int:
@@ -263,7 +271,15 @@ def _estimate_type2_ip_shared_memory(li: int, lj: int, lc: int, precision: str =
     base_memory = _estimate_type2_shared_memory(li + 1, lj, lc, precision) // dtype_size
 
     total_doubles = gctr_smem_size + buf_size + base_memory
-    return total_doubles * dtype_size
+    total_bytes = total_doubles * dtype_size
+
+    # Raise error if shared memory exceeds 96KB limit
+    if total_bytes > 96 * 1024:
+        raise RuntimeError(f"Shared memory requirement {total_bytes} bytes ({total_bytes/1024:.1f} KB) "
+                          f"exceeds 96KB limit for angular momentum combination. "
+                          f"Consider using smaller basis sets or enabling global memory fallback.")
+
+    return total_bytes
 
 
 def _estimate_type2_ipip_shared_memory(li: int, lj: int, lc: int, variant: str, precision: str = 'fp64') -> int:
@@ -312,9 +328,8 @@ def _estimate_type2_ipip_shared_memory(li: int, lj: int, lc: int, variant: str, 
         # kernel_shared_mem uses type2_cart_kernel with LI+1, LJ+1, LC
         kernel_memory = _estimate_type2_shared_memory(li + 1, lj + 1, lc, precision) // dtype_size
 
-    # Total memory: buf1 + max(kernel_memory, buf_size)
-    overlapping_memory = max(kernel_memory, buf_size)
-    total_doubles = buf1_size + overlapping_memory
+    # Total memory: buf1 + buf_size + kernel_memory (no longer overlapping after fix)
+    total_doubles = buf1_size + buf_size + kernel_memory
 
     return total_doubles * dtype_size
 
@@ -381,11 +396,11 @@ constexpr int LC = {lc};
         npi = args[-2]    # npi is second-to-last argument
         npj = args[-1]    # npj is last argument
         block_size = 128
-        grid_size = ntasks
+        grid_size = int(ntasks)
 
         # Calculate dynamic shared memory size for type2_cart
         shared_mem_size = _estimate_type2_shared_memory(li, lj, lc, precision)
-        kernel_args = args[:-2] + (npi, npj)
+        kernel_args = args[:-2] + (int(npi), int(npj))
         kernel((grid_size,), (block_size,), kernel_args, shared_mem=shared_mem_size)
 
     # Cache the compiled kernel
@@ -459,11 +474,11 @@ constexpr int LJ = {lj};
         npi = args[-2]    # npi is second-to-last argument
         npj = args[-1]    # npj is last argument
         block_size = 128
-        grid_size = ntasks
+        grid_size = int(ntasks)
 
         # Calculate dynamic shared memory size for type1_cart
         shared_mem_size = _estimate_type1_shared_memory(li, lj, precision)
-        kernel_args = args[:-2] + (npi, npj)
+        kernel_args = args[:-2] + (int(npi), int(npj))
         kernel((grid_size,), (block_size,), kernel_args, shared_mem=shared_mem_size)
 
     # Cache the compiled kernel
@@ -531,27 +546,42 @@ constexpr int LJ = {lj};
         npi = args[-2]    # npi is second-to-last argument
         npj = args[-1]    # npj is last argument
         block_size = 128
-        grid_size = ntasks
+        grid_size = int(ntasks)
 
         # Calculate dynamic shared memory size
         shared_mem_size = _estimate_type1_ip_shared_memory(li, lj, precision)
 
+        # Configure kernel for larger shared memory if needed
+        if shared_mem_size > 0:
+            device = cp.cuda.Device()
+            props = device.attributes
+            default_limit = props['MaxSharedMemoryPerBlock']
+
+            if shared_mem_size > default_limit:
+                # Set kernel to allow larger shared memory usage
+                try:
+                    kernel.max_dynamic_shared_size_bytes = shared_mem_size
+                except:
+                    # If we can't set larger shared memory, fall back to global memory
+                    shared_mem_size = 0
+
+
         # Pass original args (excluding npi, npj) plus npi, npj to kernel
-        kernel_args = args[:-2] + (npi, npj)
+        kernel_args = args[:-2] + (int(npi), int(npj))
         kernel((grid_size,), (block_size,), kernel_args, shared_mem=shared_mem_size)
 
     _ecp_kernel_cache[cache_key] = kernel_wrapper
     return kernel_wrapper
 
 
-def _compile_ecp_type2_ip_kernel(li: int, lj: int, lc: int, precision: str = 'fp64'):
+def _compile_ecp_type2_ip_kernel(li: int, lj: int, lk: int, precision: str = 'fp64'):
     """
     Compile ECP Type2 IP (first derivative) kernel for specific angular momentum combination
 
     Args:
         li: Angular momentum of first basis function
         lj: Angular momentum of second basis function
-        lc: Angular momentum of ECP center
+        lk: Angular momentum of ECP center
         precision: Floating point precision ('fp64', 'fp32', 'mixed')
 
     Returns:
@@ -561,7 +591,8 @@ def _compile_ecp_type2_ip_kernel(li: int, lj: int, lc: int, precision: str = 'fp
     dtype = get_cp_type(precision)
     dtype_cuda = "float" if dtype == cp.float32 else "double"
 
-    cache_key = (li, lj, lc, 'type2_ip', precision)
+
+    cache_key = (li, lj, lk, 'type2_ip', precision)
 
     if cache_key in _ecp_kernel_cache:
         return _ecp_kernel_cache[cache_key]
@@ -571,7 +602,7 @@ def _compile_ecp_type2_ip_kernel(li: int, lj: int, lc: int, precision: str = 'fp
 using DataType = {dtype_cuda};
 constexpr int LI = {li};
 constexpr int LJ = {lj};
-constexpr int LC = {lc};
+constexpr int LC = {lk};
 """
 
     # Read the CUDA source
@@ -605,13 +636,29 @@ constexpr int LC = {lc};
         npi = args[-2]    # npi is second-to-last argument
         npj = args[-1]    # npj is last argument
         block_size = 128
-        grid_size = ntasks
+        grid_size = int(ntasks)  # Ensure grid_size is a Python int
 
         # Calculate dynamic shared memory size
-        shared_mem_size = _estimate_type2_ip_shared_memory(li, lj, lc, precision)
+        shared_mem_size = _estimate_type2_ip_shared_memory(li, lj, lk, precision)
 
-        # Pass original args (excluding npi, npj) plus npi, npj to kernel
-        kernel_args = args[:-2] + (npi, npj)
+        # Configure kernel for larger shared memory if needed
+        if shared_mem_size > 0:
+            device = cp.cuda.Device()
+            props = device.attributes
+            default_limit = props['MaxSharedMemoryPerBlock']
+
+            if shared_mem_size > default_limit:
+                # Set kernel to allow larger shared memory usage
+                try:
+                    kernel.max_dynamic_shared_size_bytes = shared_mem_size
+                except:
+                    # If we can't set larger shared memory, fall back to global memory
+                    shared_mem_size = 0
+
+        # Ensure proper types for kernel arguments
+        kernel_args = args[:-2] + (int(npi), int(npj))
+
+
         kernel((grid_size,), (block_size,), kernel_args, shared_mem=shared_mem_size)
 
     _ecp_kernel_cache[cache_key] = kernel_wrapper
@@ -683,27 +730,27 @@ constexpr int LJ = {lj};
         npi = args[-2]    # npi is second-to-last argument
         npj = args[-1]    # npj is last argument
         block_size = 128
-        grid_size = ntasks
+        grid_size = int(ntasks)
 
         # Calculate dynamic shared memory size
         shared_mem_size = _estimate_type1_ipip_shared_memory(li, lj, variant, precision)
 
         # Pass original args (excluding npi, npj) plus npi, npj to kernel
-        kernel_args = args[:-2] + (npi, npj)
+        kernel_args = args[:-2] + (int(npi), int(npj))
         kernel((grid_size,), (block_size,), kernel_args, shared_mem=shared_mem_size)
 
     _ecp_kernel_cache[cache_key] = kernel_wrapper
     return kernel_wrapper
 
 
-def _compile_ecp_type2_ipip_kernel(li: int, lj: int, lc: int, variant: str, precision: str = 'fp64'):
+def _compile_ecp_type2_ipip_kernel(li: int, lj: int, lk: int, variant: str, precision: str = 'fp64'):
     """
     Compile ECP Type2 IPIP (second derivative) kernel for specific angular momentum combination
 
     Args:
         li: Angular momentum of first basis function
         lj: Angular momentum of second basis function
-        lc: Angular momentum of ECP center
+        lk: Angular momentum of ECP center
         variant: IPIP variant ('ipipv' or 'ipvip')
         npi: Number of primitives for shell i
         npj: Number of primitives for shell j
@@ -716,7 +763,8 @@ def _compile_ecp_type2_ipip_kernel(li: int, lj: int, lc: int, variant: str, prec
     dtype = get_cp_type(precision)
     dtype_cuda = "float" if dtype == cp.float32 else "double"
 
-    cache_key = (li, lj, lc, variant, 'type2_ipip', precision)
+
+    cache_key = (li, lj, lk, variant, 'type2_ipip', precision)
 
     if cache_key in _ecp_kernel_cache:
         return _ecp_kernel_cache[cache_key]
@@ -726,7 +774,7 @@ def _compile_ecp_type2_ipip_kernel(li: int, lj: int, lc: int, variant: str, prec
 using DataType = {dtype_cuda};
 constexpr int LI = {li};
 constexpr int LJ = {lj};
-constexpr int LC = {lc};
+constexpr int LC = {lk};
 """
 
     # Read the CUDA source - use the appropriate file for the variant
@@ -764,13 +812,13 @@ constexpr int LC = {lc};
         npi = args[-2]    # npi is second-to-last argument
         npj = args[-1]    # npj is last argument
         block_size = 128
-        grid_size = ntasks
+        grid_size = int(ntasks)  # Ensure grid_size is a Python int
 
         # Calculate dynamic shared memory size
-        shared_mem_size = _estimate_type2_ipip_shared_memory(li, lj, lc, variant, precision)
+        shared_mem_size = _estimate_type2_ipip_shared_memory(li, lj, lk, variant, precision)
 
-        # Pass original args (excluding npi, npj) plus npi, npj to kernel
-        kernel_args = args[:-2] + (npi, npj)
+        # Ensure proper types for kernel arguments
+        kernel_args = args[:-2] + (int(npi), int(npj))
         kernel((grid_size,), (block_size,), kernel_args, shared_mem=shared_mem_size)
 
     _ecp_kernel_cache[cache_key] = kernel_wrapper
@@ -864,7 +912,7 @@ def get_ecp_ip(mol_or_basis_layout, ip_type='ip', ecp_atoms=None, precision: str
     atm = cp.asarray(splitted_mol._atm, dtype=cp.int32)
     env = cp.asarray(splitted_mol._env, dtype=dtype)
     ao_loc = cp.asarray(basis_layout.ao_loc, dtype=cp.int32)
-    nao = int(ao_loc[-1])
+    nao = int(ao_loc[-1].item())
 
     ecpbas = cp.asarray(sorted_ecpbas, dtype=cp.int32)
     ecploc = cp.asarray(ecp_loc, dtype=cp.int32)
@@ -874,6 +922,9 @@ def get_ecp_ip(mol_or_basis_layout, ip_type='ip', ecp_atoms=None, precision: str
     # For now, keep backward compatibility with flattened format for kernel interface
     n_ecp_atoms = len(ecp_atoms)
     mat1_flat = cp.zeros((3*n_ecp_atoms, nao, nao), dtype=dtype)
+    # Ensure device arrays for coords and coeff/exp
+    coords_dev = cp.asarray(basis_layout.coords, dtype=dtype)
+    ce_dev = cp.asarray(basis_layout.ce, dtype=dtype)
 
     # Kernel types are selected automatically by lk; no env toggles
 
@@ -906,20 +957,22 @@ def get_ecp_ip(mol_or_basis_layout, ip_type='ip', ecp_atoms=None, precision: str
                 if not tasks:
                     continue
 
-                tasks = cp.asarray(tasks, dtype=cp.int32, order='F')
+                # Convert tasks to the format expected by the kernel:
+                # [ish0, ish1, ..., jsh0, jsh1, ..., ksh0, ksh1, ...]
                 ntasks = len(tasks)
+                tasks = cp.asarray(tasks, dtype=cp.int32, order='F')  # Shape: (ntasks, 3)
 
                 # Choose appropriate IP kernel based on ECP type
                 if lk < 0:
                     _compile_ecp_type1_ip_kernel(li, lj, precision)(
                         mat1_flat, ao_loc, nao, tasks, ntasks, ecpbas, ecploc,
-                        basis_layout.coords, basis_layout.ce, atm, env, npi, npj
+                        coords_dev, ce_dev, atm, env, npi, npj
                     )
                 else:
                     # Type2 IP kernel for semi-local channels
                     _compile_ecp_type2_ip_kernel(li, lj, lk, precision)(
                         mat1_flat, ao_loc, nao, tasks, ntasks, ecpbas, ecploc,
-                        basis_layout.coords, basis_layout.ce, atm, env, npi, npj
+                        coords_dev, ce_dev, atm, env, npi, npj
                     )
     result = cp.zeros((n_ecp_atoms, 3, nao_orig, nao_orig), dtype=dtype)
 
@@ -994,7 +1047,7 @@ def get_ecp_ipip(mol_or_basis_layout, ip_type='ipipv', ecp_atoms=None, precision
     atm = cp.asarray(splitted_mol._atm, dtype=cp.int32)
     env = cp.asarray(splitted_mol._env, dtype=dtype)
     ao_loc = cp.asarray(basis_layout.ao_loc, dtype=cp.int32)
-    nao = int(ao_loc[-1])
+    nao = int(ao_loc[-1].item())
 
     ecpbas = cp.asarray(sorted_ecpbas, dtype=cp.int32)
     ecploc = cp.asarray(ecp_loc, dtype=cp.int32)
@@ -1004,6 +1057,9 @@ def get_ecp_ipip(mol_or_basis_layout, ip_type='ipipv', ecp_atoms=None, precision
     # For now, keep backward compatibility with flattened format for kernel interface
     n_ecp_atoms = len(ecp_atoms)
     mat1_flat = cp.zeros((9*n_ecp_atoms, nao, nao), dtype=dtype)
+    # Ensure device arrays for coords and coeff/exp
+    coords_dev = cp.asarray(basis_layout.coords, dtype=dtype)
+    ce_dev = cp.asarray(basis_layout.ce, dtype=dtype)
 
     # Compute ECP IPIP integrals for each basis group combination and ECP type
     # Use full (i,j) combinations to capture both i- and j-side contributions
@@ -1033,21 +1089,20 @@ def get_ecp_ipip(mol_or_basis_layout, ip_type='ipipv', ecp_atoms=None, precision
 
                 if not tasks:
                     continue
-
-                tasks = cp.asarray(tasks, dtype=cp.int32, order='F')
                 ntasks = len(tasks)
+                tasks = cp.asarray(tasks, dtype=cp.int32, order='F')  # Shape: (ntasks, 3)
 
                 # Choose appropriate IPIP kernel based on ECP type
                 if lk < 0:
                     _compile_ecp_type1_ipip_kernel(li, lj, ip_type, precision)(
                         mat1_flat, ao_loc, nao, tasks, ntasks, ecpbas, ecploc,
-                        basis_layout.coords, basis_layout.ce, atm, env, npi, npj
+                        coords_dev, ce_dev, atm, env, npi, npj
                     )
                 else:
                     # Type2 IPIP kernel for semi-local channels
                     _compile_ecp_type2_ipip_kernel(li, lj, lk, ip_type, precision)(
                         mat1_flat, ao_loc, nao, tasks, ntasks, ecpbas, ecploc,
-                        basis_layout.coords, basis_layout.ce, atm, env, npi, npj
+                        coords_dev, ce_dev, atm, env, npi, npj
                     )
 
     result = cp.zeros((n_ecp_atoms, 9, nao_orig, nao_orig), dtype=dtype)
@@ -1182,13 +1237,16 @@ def get_ecp(mol_or_basis_layout, precision: str = 'fp64') -> cp.ndarray:
     # Use AO offsets with padding entries (dims for padded shells are zero)
     # This matches how tasks index shells in the grouped layout
     ao_loc = cp.asarray(basis_layout.ao_loc, dtype=cp.int32)
-    nao = int(ao_loc[-1])
+    nao = int(ao_loc[-1].item())
 
     ecpbas = cp.asarray(sorted_ecpbas, dtype=cp.int32)
     ecploc = cp.asarray(ecp_loc, dtype=cp.int32)
 
     # Initialize result matrix in splitted_mol basis
     mat1 = cp.zeros((nao, nao), dtype=dtype)
+    # Ensure device arrays for coords and coeff/exp
+    coords_dev = cp.asarray(basis_layout.coords, dtype=dtype)
+    ce_dev = cp.asarray(basis_layout.ce, dtype=dtype)
 
     # Compute ECP integrals for each basis group combination and ECP type
     # Following gpu4pyscf's triple loop pattern
@@ -1220,20 +1278,23 @@ def get_ecp(mol_or_basis_layout, precision: str = 'fp64') -> cp.ndarray:
                 if not tasks:
                     continue
 
-                tasks = cp.asarray(tasks, dtype=cp.int32, order='F')
+                # Convert tasks to the format expected by the kernel:
+                # [ish0, ish1, ..., jsh0, jsh1, ..., ksh0, ksh1, ...]
                 ntasks = len(tasks)
+                tasks = cp.asarray(tasks, dtype=cp.int32, order='F')  # Shape: (ntasks, 3)
+
                 # Choose appropriate kernel based on ECP type
                 if lk < 0:
                     _compile_ecp_type1_kernel(li, lj, precision)(
                         mat1, ao_loc, nao, tasks, ntasks, ecpbas, ecploc,
-                        basis_layout.coords, basis_layout.ce,
+                        coords_dev, ce_dev,
                         atm, env, npi, npj
                     )
                 else:
                     # Type2 kernel for semi-local channels
                     _compile_ecp_type2_kernel(li, lj, lk, precision)(
                         mat1, ao_loc, nao, tasks, ntasks, ecpbas, ecploc,
-                        basis_layout.coords, basis_layout.ce, atm, env, npi, npj
+                        coords_dev, ce_dev, atm, env, npi, npj
                     )
 
     # Transform result from splitted_mol basis back to original mol basis

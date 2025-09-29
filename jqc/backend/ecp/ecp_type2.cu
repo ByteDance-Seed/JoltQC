@@ -205,7 +205,7 @@ void type2_ang(double* __restrict__ facs, const double* __restrict__ fi, const d
     constexpr int BLK = (LC1+1)/2 * LCC1;
 
     // reset shared memory buffer
-    for (int i = threadIdx.x; i < L1*LC1*NF; i+=THREADS){
+    for (int i = threadIdx.x; i < L1*LC1*NF; i+=blockDim.x){
         facs[i] = 0.0;
     }
     __syncthreads();
@@ -368,7 +368,7 @@ void type2_cart(double* __restrict__ gctr,
     // Additional factor of (4*pi)^2 from angular integration
     constexpr double fac = 16.0 * M_PI * M_PI * (16.0 * M_PI * M_PI);
 
-    constexpr int nreg = (nfi*nfj + THREADS - 1)/THREADS;
+    const int nreg = (nfi*nfj + THREADS - 1)/THREADS;
     double reg_gctr[nreg];
     for (int i = 0; i < nreg; i++){
         reg_gctr[i] = 0.0;
@@ -397,7 +397,7 @@ void type2_cart(double* __restrict__ gctr,
         constexpr int PT = 4;  // tile size in p
         constexpr int QT = 4;  // tile size in q
         for (int b = 0; b < nreg; b++){
-            const int ij = b * THREADS + threadIdx.x;
+            const int ij = b * blockDim.x + threadIdx.x;
             if (ij >= nfi*nfj){
                 continue;
             }
@@ -442,7 +442,7 @@ void type2_cart(double* __restrict__ gctr,
     const int ioff = ao_loc[ish];
     const int joff = ao_loc[jsh];
     for (int b = 0; b < nreg; b++){
-        const int ij = b * THREADS + threadIdx.x;
+        const int ij = b * blockDim.x + threadIdx.x;
         if (ij < nfi*nfj){
             const int i = ij % nfi;
             const int j = ij / nfi;

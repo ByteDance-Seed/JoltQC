@@ -141,13 +141,15 @@ class KnownValues(unittest.TestCase):
         self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
         assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6
 
-    def test_ecp_cart_ipipv(self):
+    def test_ecp_cart_ipipnuc(self):
+        """Second derivatives: CPU ipipnuc vs GPU 'ipipv' path (cart)."""
         h1_cpu = mol_cart.intor('ECPscalar_ipipnuc', comp=9)
         h1_gpu = get_ecp_ipip(mol_cart, 'ipipv').sum(axis=0).get()
         self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
         assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6
 
-    def test_ecp_cart_ipvip_cart(self):
+    def test_ecp_cart_ipnucip(self):
+        """Second derivatives: CPU ipnucip vs GPU 'ipvip' path (cart)."""
         h1_cpu = mol_cart.intor('ECPscalar_ipnucip', comp=9)
         h1_gpu = get_ecp_ipip(mol_cart, 'ipvip').sum(axis=0).get()
         self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
@@ -169,13 +171,15 @@ class KnownValues(unittest.TestCase):
         self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
         assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6
 
-    def test_ecp_sph_ipipv(self):
+    def test_ecp_sph_ipipnuc(self):
+        """Second derivatives: CPU ipipnuc vs GPU 'ipipv' path (sph)."""
         h1_cpu = mol_sph.intor('ECPscalar_ipipnuc', comp=9)
         h1_gpu = get_ecp_ipip(mol_sph, 'ipipv').sum(axis=0).get()
         self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")
         assert np.linalg.norm(h1_cpu - h1_gpu) < 1e-6
 
-    def test_ecp_sph_ipvip(self):
+    def test_ecp_sph_ipnucip(self):
+        """Second derivatives: CPU ipnucip vs GPU 'ipvip' path (sph)."""
         h1_cpu = mol_sph.intor('ECPscalar_ipnucip', comp=9)
         h1_gpu = get_ecp_ipip(mol_sph, 'ipvip').sum(axis=0).get()
         self._log(f"norm: {np.linalg.norm(h1_cpu - h1_gpu):.3e}")

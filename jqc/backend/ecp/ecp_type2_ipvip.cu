@@ -56,22 +56,26 @@ void type2_cart_ipvip(double* __restrict__ gctr,
 
     constexpr int nfi1_max = (LI+2)*(LI+3)/2;
     constexpr int nfj1_max = (LJ+2)*(LJ+3)/2;
+    constexpr int nfi_max = (LI+1)*(LI+2)/2;
     extern __shared__ char shared_mem[];
 
-    // Allocate buf1 and other arrays from dynamic shared memory
+    // Allocate buf1 first
     double* buf1 = reinterpret_cast<double*>(shared_mem);
     size_t buf1_offset = nfi1_max * nfj1_max * sizeof(double);
-    char* kernel_shared_mem = shared_mem + buf1_offset;
+
+    // Allocate buf BEFORE kernel_shared_mem to avoid overlap
+    double* buf = reinterpret_cast<double*>(shared_mem + buf1_offset);
+    size_t buf_offset = buf1_offset + 3 * nfi_max * nfj1_max * sizeof(double);
+
+    // Allocate kernel_shared_mem after buf
+    char* kernel_shared_mem = shared_mem + buf_offset;
 
     // LI+1, LJ+1 for mixed order
     type2_cart_kernel<LI+1, LJ+1, LC, 1, 1>(
-        buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, 
+        buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp,
         atm, env, npi, npj, kernel_shared_mem);
     __syncthreads();
 
-    // Optimize buf allocation for better reuse
-    constexpr int nfi_max = (LI+1)*(LI+2)/2;
-    double* buf = reinterpret_cast<double*>(shared_mem + buf1_offset);
     set_shared_memory(buf, 3*nfi_max*nfj1_max);
     _li_down<LI, LJ+1>(buf, buf1);
     __syncthreads();
@@ -81,7 +85,7 @@ void type2_cart_ipvip(double* __restrict__ gctr,
     if constexpr (LI > 0){
         // LI-1, LJ+1 companion
         type2_cart_kernel<LI-1, LJ+1, LC, 0, 1>(
-            buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, 
+            buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp,
             atm, env, npi, npj, kernel_shared_mem);
         __syncthreads();
         set_shared_memory(buf, 3*nfi_max*nfj1_max);
@@ -94,7 +98,7 @@ void type2_cart_ipvip(double* __restrict__ gctr,
     if constexpr (LJ > 0){
         // LI+1, LJ-1 branch
         type2_cart_kernel<LI+1, LJ-1, LC, 1, 0>(
-            buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, 
+            buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp,
             atm, env, npi, npj, kernel_shared_mem);
         __syncthreads();
         set_shared_memory(buf, 3*nfi_max*nfj1_max);
@@ -105,7 +109,7 @@ void type2_cart_ipvip(double* __restrict__ gctr,
         if constexpr (LI > 0){
             // LI-1, LJ-1 companion
             type2_cart_kernel<LI-1, LJ-1, LC, 0, 0>(
-                buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp, 
+                buf1, ish, jsh, ksh, ecpbas, ecploc, coords, coeff_exp,
                 atm, env, npi, npj, kernel_shared_mem);
             __syncthreads();
             set_shared_memory(buf, 3*nfi_max*nfj1_max);
