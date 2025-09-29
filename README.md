@@ -89,7 +89,7 @@ See more examples in the examples/ directory.
 | **J/K Potentials** | Coulomb/exchange matrix construction | FP64 (default), FP32, Mixed |
 | **DFT Density** | Electron density evaluation on grids | FP64, FP32, Mixed (default) |
 | **XC Potentials** | Exchange-correlation evaluation | FP64, FP32, Mixed (default) |
-
+| **ECP & Derivatives** | Effective Core Potentials | FP64 only |
 
 ![JoltQC vs GPU4PySCF Speedup](benchmarks/media/jqc_vs_gpu4pyscf_speedup.png)
 
