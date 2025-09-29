@@ -552,21 +552,6 @@ constexpr int LJ = {lj};
         block_size = 128
         grid_size = int(ntasks)
 
-        # Configure kernel for larger shared memory if needed
-        if shared_mem_size > 0:
-            device = cp.cuda.Device()
-            props = device.attributes
-            default_limit = props['MaxSharedMemoryPerBlock']
-
-            if shared_mem_size > default_limit:
-                # Set kernel to allow larger shared memory usage
-                try:
-                    kernel.max_dynamic_shared_size_bytes = shared_mem_size
-                except:
-                    # If we can't set larger shared memory, fall back to global memory
-                    shared_mem_size = 0
-
-
         # Pass original args (excluding npi, npj) plus npi, npj to kernel
         kernel_args = args[:-2] + (int(npi), int(npj))
         kernel((grid_size,), (block_size,), kernel_args, shared_mem=shared_mem_size)
@@ -916,8 +901,6 @@ def get_ecp_ip(mol_or_basis_layout, ip_type='ip', ecp_atoms=None, precision: str
     # Ensure device arrays for coords and coeff/exp
     coords_dev = cp.asarray(basis_layout.coords, dtype=dtype)
     ce_dev = cp.asarray(basis_layout.ce, dtype=dtype)
-
-    # Kernel types are selected automatically by lk; no env toggles
 
     # Compute ECP IP integrals for each basis group combination and ECP type
     # Use full (i,j) combinations to capture both i- and j-side contributions

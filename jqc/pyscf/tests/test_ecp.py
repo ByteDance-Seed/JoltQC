@@ -7,15 +7,6 @@ from pyscf import gto
 
 from jqc.backend.ecp import get_ecp, get_ecp_ip, get_ecp_ipip
 
-# Skip module if no CUDA device is available
-try:
-    _ndev = cp.cuda.runtime.getDeviceCount()
-except Exception:
-    _ndev = 0
-if _ndev == 0:
-    pytestmark = pytest.mark.skip(reason="No CUDA device available for ECP tests")
-
-
 def setUpModule():
     global mol_cart, mol_sph, cu1_basis
     cu1_basis = gto.basis.parse(

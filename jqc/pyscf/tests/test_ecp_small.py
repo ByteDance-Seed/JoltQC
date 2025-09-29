@@ -21,21 +21,12 @@ from pyscf import gto
 
 from jqc.backend.ecp import get_ecp, get_ecp_ip, get_ecp_ipip
 
-# Skip module if no CUDA device is available
-try:
-    _ndev = cp.cuda.runtime.getDeviceCount()
-except Exception:
-    _ndev = 0
-if _ndev == 0:
-    pytestmark = pytest.mark.skip(reason="No CUDA device available for ECP tests")
-
-
 def setUpModule():
     global mol_type1, mol_type2, cu1_basis_small
     # Modified basis with only S, P, D functions (no F, G) to reduce shared memory usage
     cu1_basis_small = gto.basis.parse(
         '''
-     H    S
+     H    G
            1.8000000              1.0000000
      H    S
            2.8000000              0.0210870             -0.0045400              0.0000000
@@ -60,15 +51,13 @@ Na ul
     # Type2 ECP: semi-local S, P, D channels (no F, G)
     na_ecp_type2 = gto.basis.parse_ecp('''
 Na nelec 10
-Na ul
-2       1.0                   0.5
 Na S
 2      13.652203             732.2692
 2       6.826101              26.484721
 Na P
 2      10.279868             299.489474
 2       5.139934              26.466234
-Na D
+Na G
 2       7.349859             124.457595
 2       3.674929              14.035995
         ''')
