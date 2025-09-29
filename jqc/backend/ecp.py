@@ -388,6 +388,10 @@ constexpr int LC = {lc};
             f"-DPRIM_STRIDE={PRIM_STRIDE}", f"-DCOORD_STRIDE={COORD_STRIDE}")
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function('type2_cart')
+    
+    # Calculate dynamic shared memory size for type2_cart
+    shared_mem_size = _estimate_type2_shared_memory(li, lj, lc, precision)
+    kernel.max_dynamic_shared_size_bytes = max(48*1024, shared_mem_size)
 
     # Create wrapper function following JoltQC style
     def kernel_wrapper(*args):
@@ -398,8 +402,6 @@ constexpr int LC = {lc};
         block_size = 128
         grid_size = int(ntasks)
 
-        # Calculate dynamic shared memory size for type2_cart
-        shared_mem_size = _estimate_type2_shared_memory(li, lj, lc, precision)
         kernel_args = args[:-2] + (int(npi), int(npj))
         kernel((grid_size,), (block_size,), kernel_args, shared_mem=shared_mem_size)
 
@@ -454,14 +456,15 @@ constexpr int LJ = {lj};
     # Inject constexpr values at the beginning of the source
     cuda_source = const_injection + '\n' + cuda_source
 
-    # Only double precision is supported; no fp32 constant replacements
-
     # Compile module following JoltQC pattern
     opts = (*_get_compile_options(),
             f"-DPRIM_STRIDE={PRIM_STRIDE}", f"-DCOORD_STRIDE={COORD_STRIDE}")
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function('type1_cart')
-    # print(li, lj, npi, npj, kernel.num_regs, kernel.local_size_bytes, kernel.shared_size_bytes/1024)
+    
+    # Calculate dynamic shared memory size for type1_cart
+    shared_mem_size = _estimate_type1_shared_memory(li, lj, precision)
+    kernel.max_dynamic_shared_size_bytes = max(48*1024, shared_mem_size)
     if (kernel.local_size_bytes > 2048):
         warnings.warn(
             f"High local memory usage detected in type1_cart kernel: {kernel.local_size_bytes} bytes"
@@ -476,8 +479,6 @@ constexpr int LJ = {lj};
         block_size = 128
         grid_size = int(ntasks)
 
-        # Calculate dynamic shared memory size for type1_cart
-        shared_mem_size = _estimate_type1_shared_memory(li, lj, precision)
         kernel_args = args[:-2] + (int(npi), int(npj))
         kernel((grid_size,), (block_size,), kernel_args, shared_mem=shared_mem_size)
 
@@ -528,13 +529,16 @@ constexpr int LJ = {lj};
     cuda_source = cuda_source.replace('using DataType = double;', '')
     cuda_source = const_injection + '\n' + cuda_source
 
-    # Only double precision is supported; no fp32 constant replacements
-
     # Compile module
     opts = (*_get_compile_options(),
             f"-DPRIM_STRIDE={PRIM_STRIDE}", f"-DCOORD_STRIDE={COORD_STRIDE}")
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function('type1_cart_ip1')
+    
+    # Calculate dynamic shared memory size
+    shared_mem_size = _estimate_type1_ip_shared_memory(li, lj, precision)
+    kernel.max_dynamic_shared_size_bytes = max(48*1024, shared_mem_size)
+
     if (kernel.local_size_bytes > 2048):
         warnings.warn(
             f"High local memory usage detected in type1_cart_ip1 kernel: {kernel.local_size_bytes} bytes"
@@ -547,9 +551,6 @@ constexpr int LJ = {lj};
         npj = args[-1]    # npj is last argument
         block_size = 128
         grid_size = int(ntasks)
-
-        # Calculate dynamic shared memory size
-        shared_mem_size = _estimate_type1_ip_shared_memory(li, lj, precision)
 
         # Configure kernel for larger shared memory if needed
         if shared_mem_size > 0:
@@ -625,6 +626,11 @@ constexpr int LC = {lk};
             f"-DPRIM_STRIDE={PRIM_STRIDE}", f"-DCOORD_STRIDE={COORD_STRIDE}")
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function('type2_cart_ip1')
+    
+    # Calculate dynamic shared memory size
+    shared_mem_size = _estimate_type2_ip_shared_memory(li, lj, lk, precision)
+    kernel.max_dynamic_shared_size_bytes = max(48*1024, shared_mem_size)
+
     if (kernel.local_size_bytes > 2048):
         warnings.warn(
             f"High local memory usage detected in type2_cart_ip1 kernel: {kernel.local_size_bytes} bytes"
@@ -638,26 +644,8 @@ constexpr int LC = {lk};
         block_size = 128
         grid_size = int(ntasks)  # Ensure grid_size is a Python int
 
-        # Calculate dynamic shared memory size
-        shared_mem_size = _estimate_type2_ip_shared_memory(li, lj, lk, precision)
-
-        # Configure kernel for larger shared memory if needed
-        if shared_mem_size > 0:
-            device = cp.cuda.Device()
-            props = device.attributes
-            default_limit = props['MaxSharedMemoryPerBlock']
-
-            if shared_mem_size > default_limit:
-                # Set kernel to allow larger shared memory usage
-                try:
-                    kernel.max_dynamic_shared_size_bytes = shared_mem_size
-                except:
-                    # If we can't set larger shared memory, fall back to global memory
-                    shared_mem_size = 0
-
         # Ensure proper types for kernel arguments
         kernel_args = args[:-2] + (int(npi), int(npj))
-
 
         kernel((grid_size,), (block_size,), kernel_args, shared_mem=shared_mem_size)
 
@@ -719,6 +707,11 @@ constexpr int LJ = {lj};
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel_name = f'type1_cart_{variant}'
     kernel = mod.get_function(kernel_name)
+    
+    # Calculate dynamic shared memory size
+    shared_mem_size = _estimate_type1_ipip_shared_memory(li, lj, variant, precision)
+    kernel.max_dynamic_shared_size_bytes = max(48*1024, shared_mem_size)
+
     if (kernel.local_size_bytes > 2048):
         warnings.warn(
             f"High local memory usage detected in {kernel_name} kernel: {kernel.local_size_bytes} bytes"
@@ -731,9 +724,6 @@ constexpr int LJ = {lj};
         npj = args[-1]    # npj is last argument
         block_size = 128
         grid_size = int(ntasks)
-
-        # Calculate dynamic shared memory size
-        shared_mem_size = _estimate_type1_ipip_shared_memory(li, lj, variant, precision)
 
         # Pass original args (excluding npi, npj) plus npi, npj to kernel
         kernel_args = args[:-2] + (int(npi), int(npj))
@@ -800,6 +790,10 @@ constexpr int LC = {lk};
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel_name = f'type2_cart_{variant}'
     kernel = mod.get_function(kernel_name)
+    
+    # Calculate dynamic shared memory size
+    shared_mem_size = _estimate_type2_ipip_shared_memory(li, lj, lk, variant, precision)
+    kernel.max_dynamic_shared_size_bytes = max(48*1024, shared_mem_size)
 
     if (kernel.local_size_bytes > 2048):
         warnings.warn(
@@ -813,9 +807,6 @@ constexpr int LC = {lk};
         npj = args[-1]    # npj is last argument
         block_size = 128
         grid_size = int(ntasks)  # Ensure grid_size is a Python int
-
-        # Calculate dynamic shared memory size
-        shared_mem_size = _estimate_type2_ipip_shared_memory(li, lj, lk, variant, precision)
 
         # Ensure proper types for kernel arguments
         kernel_args = args[:-2] + (int(npi), int(npj))
