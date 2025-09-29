@@ -24,17 +24,8 @@
 #################################################################
 
 import pyscf
-import importlib
+
 from jqc.backend.ecp import get_ecp, get_ecp_ip, get_ecp_ipip
-
-ecp_module = importlib.import_module("gpu4pyscf.gto.ecp")
-
-# Replace module-level functions with JoltQC implementations
-ecp_module.get_ecp = get_ecp
-ecp_module.get_ecp_ip = get_ecp_ip
-ecp_module.get_ecp_ipip = get_ecp_ipip
-
-print("✓ Global monkey patch applied - all future imports will use JoltQC ECP implementations")
 
 # Import GPU4PySCF modules
 from gpu4pyscf import scf, grad, hessian
@@ -82,10 +73,6 @@ print("\n3. Hessian Calculation:")
 print("-" * 30)
 h = hessian.RHF(mf)
 hess_result = h.kernel()
-print("Hessian diagonal elements:")
-coord_labels = ['Cu-x', 'Cu-y', 'Cu-z', 'H-x', 'H-y', 'H-z']
-for i, label in enumerate(coord_labels):
-    print(f"{label:4s}: {float(hess_result[i,i]):8.5f}")
 
 print("\n" + "=" * 60)
 print("ECP patching example completed successfully!")
