@@ -42,7 +42,14 @@ from jqc.pyscf.basis import BasisLayout
 
 # dm_to_mol and dm_from_mol are now methods of BasisLayout class
 
-__all__ = ["build_grids", "generate_rks_kernel"]
+__all__ = [
+    "build_grids",
+    "generate_rks_kernel",
+    "generate_nr_rks",
+    "generate_get_rho",
+    "generate_nr_nlc_vxc",
+    "generate_get_veff"
+]
 
 ao_cutoff = 1e-13
 GROUP_BOX_SIZE = 3.0
@@ -128,7 +135,7 @@ def build_grids(grids, mol=None, with_non0tab=False, sort_grids=True, **kwargs):
     quadrature_weights = cp.empty(grids.coords.shape[0])
     p0 = p1 = 0
     for ia in range(mol.natm):
-        _r, vol = atom_grids_tab[mol.atom_symbol(ia)]
+        _, vol = atom_grids_tab[mol.atom_symbol(ia)]
         p0, p1 = p1, p1 + vol.size
         atm_idx[p0:p1] = ia
         quadrature_weights[p0:p1] = cp.asarray(vol)
@@ -266,7 +273,7 @@ def generate_get_rho(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32
     )
 
-    def get_rho(mol, dm, grids, *args, **kwargs):
+    def get_rho(mol, dm, grids, *_args, **_kwargs):
         dm = cp.asarray(dm)
         rho = rho_fun(mol, grids, "LDA", dm)
         return rho[0]
@@ -275,6 +282,9 @@ def generate_get_rho(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
 
 def generate_rks_kernel(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    log_cutoff_fp32 = np.log(cutoff_fp32).astype(np.float32)
+    log_cutoff_fp64 = np.log(cutoff_fp64).astype(np.float32)
+    log_cutoff_max = np.log(1e100).astype(np.float32)
 
     _cache = {"dm_prev": 0, "rho_prev": 0, "wv_prev": 0, "vxcmat_prev": 0}
 
@@ -295,49 +305,7 @@ def generate_rks_kernel(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             excsum: exchange correlation energy
             vxcmat: vxc matrix
         """
-        # Generate basis layout from mol
-        basis_layout = BasisLayout.from_mol(mol, alignment=1)
-
-        # Cache frequently accessed properties to reduce overhead
-        _, _, angs, nprims = basis_layout.bas_info
-        ce_fp32 = basis_layout.ce_fp32
-        coords_fp32 = basis_layout.coords_fp32
-        ce_fp64 = basis_layout.ce_fp64
-        coords_fp64 = basis_layout.coords_fp64
-        ao_loc = cp.asarray(basis_layout.ao_loc)
-        nbas = basis_layout.nbasis
-        group_key, group_offset = basis_layout.group_info
-
-        # Pre-compute constants
-        nao = int(ao_loc[-1])
-        log_ao_cutoff = math.log(ao_cutoff)
-
-        log_cutoff_fp32 = np.log(cutoff_fp32).astype(np.float32)
-        log_cutoff_fp64 = np.log(cutoff_fp64).astype(np.float32)
-        log_cutoff_max = np.log(1e100).astype(np.float32)
         logger = lib.logger.new_logger(mol, mol.verbose)
-
-        def compute_ao_sparsity(grid_coords, log_aodm_cutoff):
-            """Helper function to compute AO sparsity pattern - avoids code duplication"""
-            n_groups = len(group_offset) - 1
-            ao_sparsity = {}
-            for i in range(n_groups):
-                ish0, ish1 = group_offset[i], group_offset[i + 1]
-                x = coords_fp32[ish0:ish1]
-                ce = ce_fp32[ish0:ish1]
-                a = angs[ish0].item()
-                n = nprims[ish0].item()
-                logidx, nnz = estimate_log_aovalue(
-                    grid_coords,
-                    x,
-                    ce,
-                    a,
-                    n,
-                    log_cutoff=log_aodm_cutoff,
-                    shell_base=int(ish0),
-                )
-                ao_sparsity[i] = (logidx, nnz)
-            return ao_sparsity
 
         cputime_start = time.perf_counter()
         dm_prev = _cache["dm_prev"]
@@ -395,10 +363,6 @@ def generate_rks_kernel(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         # Pre-compute constants
         nao = int(ao_loc[-1])
         log_ao_cutoff = math.log(ao_cutoff)
-
-        log_cutoff_fp32 = np.log(cutoff_fp32).astype(np.float32)
-        log_cutoff_fp64 = np.log(cutoff_fp64).astype(np.float32)
-        log_cutoff_max = np.log(1e100).astype(np.float32)
 
         def compute_ao_sparsity(grid_coords, log_aodm_cutoff):
             """Helper function to compute AO sparsity pattern - avoids code duplication"""
@@ -519,10 +483,6 @@ def generate_rks_kernel(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         # Pre-compute constants
         nao = int(ao_loc[-1])
         log_ao_cutoff = math.log(ao_cutoff)
-
-        log_cutoff_fp32 = np.log(cutoff_fp32).astype(np.float32)
-        log_cutoff_fp64 = np.log(cutoff_fp64).astype(np.float32)
-        log_cutoff_max = np.log(1e100).astype(np.float32)
 
         def compute_ao_sparsity(grid_coords, log_aodm_cutoff):
             """Helper function to compute AO sparsity pattern - avoids code duplication"""
@@ -680,20 +640,3 @@ def generate_nr_nlc_vxc(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     return nr_nlc_vxc
 
 
-def create_tasks(l_ctr_bas_loc, ovlp, cutoff=1e-13):
-    n_groups = len(l_ctr_bas_loc) - 1
-    tasks = {}
-    for i in range(n_groups):
-        for j in range(i + 1):
-            ish0, ish1 = l_ctr_bas_loc[i], l_ctr_bas_loc[i + 1]
-            jsh0, jsh1 = l_ctr_bas_loc[j], l_ctr_bas_loc[j + 1]
-            mask = ovlp[ish0:ish1, jsh0:jsh1] > cp.log(cutoff)
-            if i == j:
-                mask = cp.tril(mask)
-            pairs = cp.argwhere(mask)
-            if pairs.shape[0] == 0:
-                continue
-            pairs[:, 0] += ish0
-            pairs[:, 1] += jsh0
-            tasks[i, j] = cp.asarray(pairs, dtype=np.int32)
-    return tasks

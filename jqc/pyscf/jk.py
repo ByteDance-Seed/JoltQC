@@ -91,6 +91,9 @@ def generate_get_veff():
 
 
 def generate_jk_kernel(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    # Pre-compute log cutoffs
+    log_cutoff_fp64 = np.float32(math.log(cutoff_fp64))
+    log_cutoff_fp32 = np.float32(math.log(cutoff_fp32))
 
     def get_jk(
         mol_ref,
@@ -133,10 +136,6 @@ def generate_jk_kernel(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         ao_loc = cp.asarray(basis_layout.ao_loc)
 
         nao = int(ao_loc[-1])
-
-        # Pre-compute log cutoffs
-        log_cutoff_fp64 = np.float32(math.log(cutoff_fp64))
-        log_cutoff_fp32 = np.float32(math.log(cutoff_fp32))
 
         group_key, group_offset = group_info
         uniq_l = group_key[:, 0]

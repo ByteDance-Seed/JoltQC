@@ -1,8 +1,8 @@
 import unittest
 import numpy as np
 import pyscf
-
 from gpu4pyscf import dft
+
 import jqc.pyscf
 
 
