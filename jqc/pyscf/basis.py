@@ -43,6 +43,7 @@ representations to maintain compatibility with the original molecule's AO indexi
 """
 
 import ctypes
+import functools
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Optional, Tuple
@@ -273,6 +274,7 @@ class BasisLayout:
         return self.coords
 
     @classmethod
+    @functools.lru_cache(maxsize=128)
     def from_mol(cls, mol, alignment: int = 4, dtype=np.float64) -> "BasisLayout":
         """
         Creates a BasisLayout from a molecule using split basis functions.

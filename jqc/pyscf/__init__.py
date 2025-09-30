@@ -105,9 +105,8 @@ def apply(obj, config: Optional[Dict[str, Any]] = None):
     from jqc.pyscf.basis import BasisLayout
     from jqc.pyscf.rks import build_grids
 
-    # Generate basis layouts once and reuse them
+    # Generate basis layout for RKS operations only
     layout_rks = BasisLayout.from_mol(mol, alignment=1)
-    layout_jk = BasisLayout.from_mol(mol, alignment=TILE)
 
     if obj.istype("RKS"):
         get_rho = _rks.generate_get_rho(
@@ -125,24 +124,24 @@ def apply(obj, config: Optional[Dict[str, Any]] = None):
             layout_rks, cutoff_fp32=dft_cutoff_fp32, cutoff_fp64=dft_cutoff_fp64
         )
         obj._numint.nr_nlc_vxc = MethodType(nr_nlc_vxc, obj._numint)
-
-    if not obj.istype("DFRHF"):
+    
+    if obj.istype("RHF") or obj.istype("RKS"):
         # TODO: cache intermediate variables
         if hasattr(obj, "get_jk"):
             get_jk = _jk.generate_jk_kernel(
-                layout_jk, cutoff_fp32=jk_cutoff_fp32, cutoff_fp64=jk_cutoff_fp64
+                cutoff_fp32=jk_cutoff_fp32, cutoff_fp64=jk_cutoff_fp64
             )
             obj.get_jk = get_jk
 
         if hasattr(obj, "get_j"):
             get_j = _jk.generate_get_j(
-                layout_jk, cutoff_fp32=jk_cutoff_fp32, cutoff_fp64=jk_cutoff_fp64
+                layout_rks, cutoff_fp32=jk_cutoff_fp32, cutoff_fp64=jk_cutoff_fp64
             )
             obj.get_j = get_j
 
         if hasattr(obj, "get_k"):
             get_k = _jk.generate_get_k(
-                layout_jk, cutoff_fp32=jk_cutoff_fp32, cutoff_fp64=jk_cutoff_fp64
+                layout_rks, cutoff_fp32=jk_cutoff_fp32, cutoff_fp64=jk_cutoff_fp64
             )
             obj.get_k = get_k
 

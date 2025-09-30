@@ -33,6 +33,7 @@ from jqc.backend.jk import gen_jk_kernel
 from jqc.backend.jk_tasks import MAX_PAIR_SIZE, QUEUE_DEPTH, gen_screen_jk_tasks_kernel
 from jqc.backend.linalg_helper import inplace_add_transpose, max_block_pooling
 from jqc.constants import TILE
+from jqc.pyscf.basis import BasisLayout
 
 __all__ = [
     "get_j",
@@ -49,7 +50,7 @@ PAIR_CUTOFF = 1e-13
 
 def generate_get_j(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     get_jk_kernel = generate_jk_kernel(
-        basis_layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32
+        cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32
     )
 
     def get_jk(*args, **kwargs):
@@ -60,7 +61,7 @@ def generate_get_j(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
 def generate_get_k(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     get_jk_kernel = generate_jk_kernel(
-        basis_layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32
+        cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32
     )
 
     def get_jk(*args, **kwargs):
@@ -71,7 +72,7 @@ def generate_get_k(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
 def generate_get_jk(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     get_jk_kernel = generate_jk_kernel(
-        basis_layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32
+        cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32
     )
 
     def get_jk(*args, **kwargs):
@@ -95,41 +96,7 @@ def generate_get_veff():
     return get_veff
 
 
-def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    # Cache frequently accessed properties to reduce overhead
-    group_info = basis_layout.group_info
-    nbas = basis_layout.nbasis
-    mol = basis_layout._mol
-    ce_fp32 = basis_layout.ce_fp32
-    coords_fp32 = basis_layout.coords_fp32
-    ce_fp64 = basis_layout.ce_fp64
-    coords_fp64 = basis_layout.coords_fp64
-    ao_loc = cp.asarray(basis_layout.ao_loc)
-
-    nao = int(ao_loc[-1])
-
-    # Pre-compute log cutoffs
-    log_cutoff_fp64 = np.float32(math.log(cutoff_fp64))
-    log_cutoff_fp32 = np.float32(math.log(cutoff_fp32))
-
-    group_key, group_offset = group_info
-    uniq_l = group_key[:, 0]
-    l_symb = [lib.param.ANGULAR[i] for i in uniq_l]
-    n_groups = basis_layout.ngroups
-
-    info = cp.empty(4, dtype=np.uint32)
-    #cutoff = np.log(PAIR_CUTOFF)  # - log_max_dm / 2
-    #tile_pairs = make_tile_pairs(group_offset, q_matrix, cutoff)
-
-    tasks = [
-        (i, j, k, l)
-        for i in range(n_groups)
-        for j in range(i + 1)
-        for k in range(i + 1)
-        for l in range(k + 1)
-    ]
-
-    group_key = [key.tolist() for key in group_key]
+def generate_jk_kernel(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
     def get_jk(
         mol_ref,
@@ -158,7 +125,42 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         if omega is not None:
             assert omega >= 0.0, "short ranged J/K not supported"
 
-        assert mol_ref == mol, "mol_ref must be the same as mol"
+        # Generate basis_layout from mol_ref
+        basis_layout = BasisLayout.from_mol(mol_ref)
+
+        # Cache frequently accessed properties to reduce overhead
+        group_info = basis_layout.group_info
+        nbas = basis_layout.nbasis
+        mol = basis_layout._mol
+        ce_fp32 = basis_layout.ce_fp32
+        coords_fp32 = basis_layout.coords_fp32
+        ce_fp64 = basis_layout.ce_fp64
+        coords_fp64 = basis_layout.coords_fp64
+        ao_loc = cp.asarray(basis_layout.ao_loc)
+
+        nao = int(ao_loc[-1])
+
+        # Pre-compute log cutoffs
+        log_cutoff_fp64 = np.float32(math.log(cutoff_fp64))
+        log_cutoff_fp32 = np.float32(math.log(cutoff_fp32))
+
+        group_key, group_offset = group_info
+        uniq_l = group_key[:, 0]
+        l_symb = [lib.param.ANGULAR[i] for i in uniq_l]
+        n_groups = basis_layout.ngroups
+
+        info = cp.empty(4, dtype=np.uint32)
+
+        tasks = [
+            (i, j, k, l)
+            for i in range(n_groups)
+            for j in range(i + 1)
+            for k in range(i + 1)
+            for l in range(k + 1)
+        ]
+
+        group_key = [key.tolist() for key in group_key]
+
         cputime_start = time.perf_counter()
 
         logger = lib.logger.new_logger(mol, mol.verbose)
