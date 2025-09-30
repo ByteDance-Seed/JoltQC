@@ -127,7 +127,7 @@ def build_grids(grids, mol=None, with_non0tab=False, sort_grids=True, **kwargs):
     quadrature_weights = cp.empty(grids.coords.shape[0])
     p0 = p1 = 0
     for ia in range(mol.natm):
-        r, vol = atom_grids_tab[mol.atom_symbol(ia)]
+        _r, vol = atom_grids_tab[mol.atom_symbol(ia)]
         p0, p1 = p1, p1 + vol.size
         atm_idx[p0:p1] = ia
         quadrature_weights[p0:p1] = cp.asarray(vol)

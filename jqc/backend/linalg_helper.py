@@ -21,13 +21,13 @@ __all__ = ["inplace_add_transpose", "l2_block_pooling", "max_block_pooling"]
 compile_options = ("-std=c++17", "--use_fast_math", "--minimal")
 
 
-def inplace_add_transpose(A: cp.ndarray):
+def inplace_add_transpose(mat: cp.ndarray):
     """In-place A <- A + A.T for the last two dimensions of a CuPy array."""
     assert (
-        A.ndim >= 2 and A.shape[-1] == A.shape[-2]
+        mat.ndim >= 2 and mat.shape[-1] == mat.shape[-2]
     ), "Last two dimensions must be square"
-    assert A.dtype == cp.float64, "Kernel currently only supports float64"
-    n = A.shape[-1]
+    assert mat.dtype == cp.float64, "Kernel currently only supports float64"
+    n = mat.shape[-1]
 
     _kernel = cp.RawKernel(
         r"""
@@ -59,15 +59,15 @@ void add_transpose_inplace(double* A, int batch_size, int n) {
         compile_options,
     )
 
-    batch_size = int(np.prod(A.shape[:-2]))
+    batch_size = int(np.prod(mat.shape[:-2]))
     threads = (16, 16, 1)
     blocks = (
         (n + threads[0] - 1) // threads[0],
         (n + threads[1] - 1) // threads[1],
         batch_size,
     )
-    _kernel(blocks, threads, (A, batch_size, n))
-    return A
+    _kernel(blocks, threads, (mat, batch_size, n))
+    return mat
 
 
 def max_block_pooling(matrix: cp.ndarray, offsets: cp.ndarray) -> cp.ndarray:
@@ -139,20 +139,23 @@ def max_block_pooling(matrix: cp.ndarray, offsets: cp.ndarray) -> cp.ndarray:
 
     kernel = cp.RawKernel(kernel_code, kernel_name, options=compile_options)
 
-    N = matrix.shape[-1]
-    matrix = matrix.reshape([-1, N, N])
+    n_dim = matrix.shape[-1]
+    matrix = matrix.reshape([-1, n_dim, n_dim])
     batch_size = matrix.shape[0]
-    K = offsets.shape[0] - 1
+    k_blocks = offsets.shape[0] - 1
 
     offsets_dev = cp.asarray(offsets, dtype=cp.int32)
-    out = cp.empty((K * K,), dtype=matrix.dtype)
+    out = cp.empty((k_blocks * k_blocks,), dtype=matrix.dtype)
 
     threads = (16, 16)
-    blocks = ((K + threads[0] - 1) // threads[0], (K + threads[1] - 1) // threads[1])
+    blocks = (
+        (k_blocks + threads[0] - 1) // threads[0],
+        (k_blocks + threads[1] - 1) // threads[1],
+    )
 
-    kernel(blocks, threads, (matrix, offsets_dev, out, batch_size, N, K))
+    kernel(blocks, threads, (matrix, offsets_dev, out, batch_size, n_dim, k_blocks))
 
-    return out.reshape((K, K))
+    return out.reshape((k_blocks, k_blocks))
 
 
 def l2_block_pooling(matrix: cp.ndarray, offsets: cp.ndarray) -> cp.ndarray:
@@ -212,17 +215,20 @@ def l2_block_pooling(matrix: cp.ndarray, offsets: cp.ndarray) -> cp.ndarray:
 
     kernel = cp.RawKernel(kernel_code, "block_max_kernel", options=compile_options)
 
-    N = matrix.shape[-1]
-    matrix = matrix.reshape([-1, N, N])
+    n_dim = matrix.shape[-1]
+    matrix = matrix.reshape([-1, n_dim, n_dim])
     batch_size = matrix.shape[0]
-    K = offsets.shape[0] - 1
+    k_blocks = offsets.shape[0] - 1
 
     offsets_dev = cp.asarray(offsets, dtype=cp.int32)
-    out = cp.empty((K * K,), dtype=cp.float64)
+    out = cp.empty((k_blocks * k_blocks,), dtype=cp.float64)
 
     threads = (16, 16)
-    blocks = ((K + threads[0] - 1) // threads[0], (K + threads[1] - 1) // threads[1])
+    blocks = (
+        (k_blocks + threads[0] - 1) // threads[0],
+        (k_blocks + threads[1] - 1) // threads[1],
+    )
 
-    kernel(blocks, threads, (matrix, offsets_dev, out, batch_size, N, K))
+    kernel(blocks, threads, (matrix, offsets_dev, out, batch_size, n_dim, k_blocks))
 
-    return out.reshape((K, K))
+    return out.reshape((k_blocks, k_blocks))

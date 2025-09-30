@@ -19,6 +19,8 @@ Global constants used throughout the jqc package.
 
 # Maximum angular momentum supported
 LMAX = 4
+# ECP maximum angular momentum (alias for clarity in ECP modules)
+MAX_L_ECP = LMAX
 
 # Maximum number of primitive Gaussians per contracted Gaussian
 NPRIM_MAX = 3
@@ -38,4 +40,11 @@ TILE = 4
 
 MAX_SMEM = 48 * 1024  # Maximum shared memory per block in bytes
 
-__all__ = ["COORD_STRIDE", "LMAX", "NPRIM_MAX", "PRIM_STRIDE", "TILE"]
+__all__ = [
+    "COORD_STRIDE",
+    "LMAX",
+    "MAX_L_ECP",
+    "NPRIM_MAX",
+    "PRIM_STRIDE",
+    "TILE",
+]

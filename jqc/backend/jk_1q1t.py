@@ -26,7 +26,7 @@ from jqc.backend.cuda_scripts import jk_1q1t_cuda_code, rys_roots_code, rys_root
 from jqc.backend.util import generate_lookup_table
 from jqc.constants import COORD_STRIDE, NPRIM_MAX, PRIM_STRIDE
 
-__all__ = ["gen_jk_kernel"]
+__all__ = ["gen_kernel"]
 
 THREADS = 256
 compile_options = ("-std=c++17", "--use_fast_math", "--minimal")
