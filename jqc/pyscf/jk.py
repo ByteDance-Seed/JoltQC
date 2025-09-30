@@ -48,10 +48,8 @@ GROUP_SIZE = 256
 PAIR_CUTOFF = 1e-13
 
 
-def generate_get_j(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    get_jk_kernel = generate_jk_kernel(
-        cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32
-    )
+def generate_get_j(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    get_jk_kernel = generate_jk_kernel(cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
 
     def get_jk(*args, **kwargs):
         return get_jk_kernel(*args, with_j=True, with_k=False, **kwargs)[0]
@@ -59,10 +57,8 @@ def generate_get_j(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     return get_jk
 
 
-def generate_get_k(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    get_jk_kernel = generate_jk_kernel(
-        cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32
-    )
+def generate_get_k(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    get_jk_kernel = generate_jk_kernel(cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
 
     def get_jk(*args, **kwargs):
         return get_jk_kernel(*args, with_j=False, with_k=True, **kwargs)[1]
@@ -70,10 +66,8 @@ def generate_get_k(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     return get_jk
 
 
-def generate_get_jk(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    get_jk_kernel = generate_jk_kernel(
-        cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32
-    )
+def generate_get_jk(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    get_jk_kernel = generate_jk_kernel(cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
 
     def get_jk(*args, **kwargs):
         return get_jk_kernel(*args, **kwargs)

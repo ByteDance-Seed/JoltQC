@@ -35,8 +35,8 @@ def get_default_config() -> Dict[str, Any]:
         },
         "dft": {
             "cutoff_fp32": 1e-13,  # Default for DFT operations
-            "cutoff_fp64": 1e-6,   # Default for DFT operations
-        }
+            "cutoff_fp64": 1e-6,  # Default for DFT operations
+        },
     }
 
 
@@ -102,29 +102,25 @@ def apply(obj, config: Optional[Dict[str, Any]] = None):
     # Lazy imports to avoid initializing CUDA at import time
     from jqc.pyscf import jk as _jk
     from jqc.pyscf import rks as _rks
-    from jqc.pyscf.basis import BasisLayout
     from jqc.pyscf.rks import build_grids
-
-    # Generate basis layout for RKS operations only
-    layout_rks = BasisLayout.from_mol(mol, alignment=1)
 
     if obj.istype("RKS"):
         get_rho = _rks.generate_get_rho(
-            layout_rks, cutoff_fp32=dft_cutoff_fp32, cutoff_fp64=dft_cutoff_fp64
+            cutoff_fp32=dft_cutoff_fp32, cutoff_fp64=dft_cutoff_fp64
         )
         obj._numint.get_rho = get_rho
 
         obj.grids.build = MethodType(build_grids, obj.grids)
         nr_rks = _rks.generate_nr_rks(
-            layout_rks, cutoff_fp32=dft_cutoff_fp32, cutoff_fp64=dft_cutoff_fp64
+            cutoff_fp32=dft_cutoff_fp32, cutoff_fp64=dft_cutoff_fp64
         )
         obj._numint.nr_rks = MethodType(nr_rks, obj._numint)
 
         nr_nlc_vxc = _rks.generate_nr_nlc_vxc(
-            layout_rks, cutoff_fp32=dft_cutoff_fp32, cutoff_fp64=dft_cutoff_fp64
+            cutoff_fp32=dft_cutoff_fp32, cutoff_fp64=dft_cutoff_fp64
         )
         obj._numint.nr_nlc_vxc = MethodType(nr_nlc_vxc, obj._numint)
-    
+
     if obj.istype("RHF") or obj.istype("RKS"):
         # TODO: cache intermediate variables
         if hasattr(obj, "get_jk"):
@@ -135,13 +131,13 @@ def apply(obj, config: Optional[Dict[str, Any]] = None):
 
         if hasattr(obj, "get_j"):
             get_j = _jk.generate_get_j(
-                layout_rks, cutoff_fp32=jk_cutoff_fp32, cutoff_fp64=jk_cutoff_fp64
+                cutoff_fp32=jk_cutoff_fp32, cutoff_fp64=jk_cutoff_fp64
             )
             obj.get_j = get_j
 
         if hasattr(obj, "get_k"):
             get_k = _jk.generate_get_k(
-                layout_rks, cutoff_fp32=jk_cutoff_fp32, cutoff_fp64=jk_cutoff_fp64
+                cutoff_fp32=jk_cutoff_fp32, cutoff_fp64=jk_cutoff_fp64
             )
             obj.get_k = get_k
 

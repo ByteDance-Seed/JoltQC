@@ -278,7 +278,7 @@ def generate_rks_kernel(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
     _cache = {"dm_prev": 0, "rho_prev": 0, "wv_prev": 0, "vxcmat_prev": 0}
 
-    def rks_fun(ni, mol, grids, xc_code, dm, **kwargs):
+    def rks_fun(ni, mol, grids, xc_code, dm):
         """rks kernel for PySCF, with incremental DFT implementation
 
         Args:
@@ -328,7 +328,13 @@ def generate_rks_kernel(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 a = angs[ish0].item()
                 n = nprims[ish0].item()
                 logidx, nnz = estimate_log_aovalue(
-                    grid_coords, x, ce, a, n, log_cutoff=log_aodm_cutoff, shell_base=int(ish0)
+                    grid_coords,
+                    x,
+                    ce,
+                    a,
+                    n,
+                    log_cutoff=log_aodm_cutoff,
+                    shell_base=int(ish0),
                 )
                 ao_sparsity[i] = (logidx, nnz)
             return ao_sparsity
@@ -405,7 +411,13 @@ def generate_rks_kernel(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 a = angs[ish0].item()
                 n = nprims[ish0].item()
                 logidx, nnz = estimate_log_aovalue(
-                    grid_coords, x, ce, a, n, log_cutoff=log_aodm_cutoff, shell_base=int(ish0)
+                    grid_coords,
+                    x,
+                    ce,
+                    a,
+                    n,
+                    log_cutoff=log_aodm_cutoff,
+                    shell_base=int(ish0),
                 )
                 ao_sparsity[i] = (logidx, nnz)
             return ao_sparsity
@@ -523,7 +535,13 @@ def generate_rks_kernel(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 a = angs[ish0].item()
                 n = nprims[ish0].item()
                 logidx, nnz = estimate_log_aovalue(
-                    grid_coords, x, ce, a, n, log_cutoff=log_aodm_cutoff, shell_base=int(ish0)
+                    grid_coords,
+                    x,
+                    ce,
+                    a,
+                    n,
+                    log_cutoff=log_aodm_cutoff,
+                    shell_base=int(ish0),
                 )
                 ao_sparsity[i] = (logidx, nnz)
             return ao_sparsity
@@ -615,7 +633,7 @@ def generate_nr_nlc_vxc(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     # Cache for incremental computation
     _cache = {"dm_prev": 0, "rho_prev": 0, "wv_prev": 0, "vmat_prev": 0}
 
-    def nr_nlc_vxc(ni, mol, grids, xc_code, dms, **kwargs):
+    def nr_nlc_vxc(ni, mol, grids, xc_code, dms):
         # Get cached values
         dm_prev = _cache["dm_prev"]
         rho_prev = _cache["rho_prev"]

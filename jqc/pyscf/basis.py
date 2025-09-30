@@ -562,7 +562,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
 
     # Store info at basis level
     bas_info = (ce, coords, angs, nprims)
-    '''
+    """
     group_size = 256
     splitted_group_key = []
     splitted_group_offset = []
@@ -573,7 +573,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     splitted_group_offset.append(group_offset[-1])
     group_key = np.asarray(splitted_group_key)
     group_offset = np.asarray(splitted_group_offset)
-    '''
+    """
     group_key = np.asarray(group_key)
     group_offset = np.asarray(group_offset)
     return bas_info, to_split_map, pad_id, (group_key, group_offset)

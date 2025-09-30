@@ -21,9 +21,7 @@ import pyscf
 from pyscf import gto
 from pyscf.scf.hf import get_jk
 
-from jqc.constants import TILE
 from jqc.pyscf import jk
-from jqc.pyscf.basis import BasisLayout
 
 
 def setUpModule():
@@ -63,7 +61,6 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
 
-        basis_layout = BasisLayout.from_mol(mol_sph, alignment=TILE)
         get_jk_jit = jk.generate_jk_kernel()
         vj, vk = get_jk_jit(mol_sph, dm, hermi=1)
         vj1 = vj.get()
@@ -81,7 +78,6 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
 
-        basis_layout = BasisLayout.from_mol(mol, alignment=TILE)
         get_jk_jit = jk.generate_jk_kernel()
         vj, vk = get_jk_jit(mol, dm, hermi=1)
         vj1 = vj.get()
@@ -98,10 +94,7 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
 
-        basis_layout = BasisLayout.from_mol(mol, alignment=TILE)
-        get_jk_jit = jk.generate_jk_kernel(
-            cutoff_fp32=1e-13, cutoff_fp64=1e100
-        )
+        get_jk_jit = jk.generate_jk_kernel(cutoff_fp32=1e-13, cutoff_fp64=1e100)
         vj, vk = get_jk_jit(mol, dm, hermi=1)
         vj1 = vj.get()
         vk1 = vk.get()
@@ -117,7 +110,6 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(3, nao, nao)
         dm = dm + dm.transpose([0, 2, 1])
 
-        basis_layout = BasisLayout.from_mol(mol, alignment=TILE)
         get_jk_jit = jk.generate_jk_kernel()
         vj, vk = get_jk_jit(mol, dm, hermi=1)
         vj1 = vj.get()
@@ -134,7 +126,6 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
 
-        basis_layout = BasisLayout.from_mol(mol, alignment=TILE)
         get_jk_jit = jk.generate_jk_kernel()
         vj, _ = get_jk_jit(mol, dm, hermi=1, with_j=True, with_k=False)
         vj1 = vj.get()
@@ -148,7 +139,6 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
 
-        basis_layout = BasisLayout.from_mol(mol, alignment=TILE)
         get_jk_jit = jk.generate_jk_kernel()
         _, vk = get_jk_jit(mol, dm, hermi=1, with_j=False, with_k=True)
         vk1 = vk.get()
@@ -162,10 +152,7 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
 
-        basis_layout = BasisLayout.from_mol(mol, alignment=TILE)
-        get_jk_jit = jk.generate_jk_kernel(
-            cutoff_fp32=1e-13, cutoff_fp64=1e100
-        )
+        get_jk_jit = jk.generate_jk_kernel(cutoff_fp32=1e-13, cutoff_fp64=1e100)
         _, vk = get_jk_jit(mol, dm, hermi=1, with_j=False, with_k=True, omega=0.3)
         vk1 = vk.get()
         ref = get_jk(mol, dm, hermi=1, omega=0.3)
@@ -192,7 +179,6 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
 
-        basis_layout = BasisLayout.from_mol(mol_with_omega, alignment=TILE)
         get_jk_jit = jk.generate_jk_kernel()
         vj, vk = get_jk_jit(mol_with_omega, dm, hermi=1, omega=omega)
         vj1 = vj.get()
@@ -219,7 +205,6 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
 
-        basis_layout = BasisLayout.from_mol(mol_apart, alignment=TILE)
         get_jk_jit = jk.generate_jk_kernel()
         vj, vk = get_jk_jit(mol_apart, dm, hermi=1)
         vj1 = vj.get()

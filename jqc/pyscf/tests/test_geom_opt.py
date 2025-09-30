@@ -7,7 +7,6 @@ molecules with different coordinates.
 """
 
 import numpy as np
-import pytest
 from pyscf import gto
 
 from jqc.pyscf.jk import generate_jk_kernel
@@ -24,7 +23,7 @@ class TestGeometryOptimization:
         molecules = []
 
         for r in bond_lengths:
-            mol = gto.M(atom=f'H 0 0 0; H 0 0 {r}', basis='sto-3g', verbose=0)
+            mol = gto.M(atom=f"H 0 0 0; H 0 0 {r}", basis="sto-3g", verbose=0)
             molecules.append(mol)
 
         return molecules
@@ -46,8 +45,8 @@ class TestGeometryOptimization:
             vj, vk = get_jk(mol, dm, hermi=1)
 
             # Convert to numpy
-            vj_np = vj.get() if hasattr(vj, 'get') else vj
-            vk_np = vk.get() if hasattr(vk, 'get') else vk
+            vj_np = vj.get() if hasattr(vj, "get") else vj
+            vk_np = vk.get() if hasattr(vk, "get") else vk
 
             results.append((vj_np, vk_np))
             print(f"Geometry {i+1}: VJ shape = {vj_np.shape}, VK shape = {vk_np.shape}")
@@ -62,10 +61,18 @@ class TestGeometryOptimization:
         vj2, vk2 = results[1]
         vj3, vk3 = results[2]
 
-        assert np.linalg.norm(vj1 - vj2) > 1e-8, "VJ matrices should differ for different geometries"
-        assert np.linalg.norm(vk1 - vk2) > 1e-8, "VK matrices should differ for different geometries"
-        assert np.linalg.norm(vj2 - vj3) > 1e-8, "VJ matrices should differ for different geometries"
-        assert np.linalg.norm(vk2 - vk3) > 1e-8, "VK matrices should differ for different geometries"
+        assert (
+            np.linalg.norm(vj1 - vj2) > 1e-8
+        ), "VJ matrices should differ for different geometries"
+        assert (
+            np.linalg.norm(vk1 - vk2) > 1e-8
+        ), "VK matrices should differ for different geometries"
+        assert (
+            np.linalg.norm(vj2 - vj3) > 1e-8
+        ), "VJ matrices should differ for different geometries"
+        assert (
+            np.linalg.norm(vk2 - vk3) > 1e-8
+        ), "VK matrices should differ for different geometries"
 
     def test_rks_kernel_generation(self):
         """Test RKS kernel can be generated successfully."""
@@ -91,7 +98,9 @@ class TestGeometryOptimization:
         # Check that all layouts have the same number of basis functions
         # since they have the same atoms and basis set
         for i, layout in enumerate(layouts):
-            assert layout._mol.nao == molecules[0].nao, f"Inconsistent nao for geometry {i+1}"
+            assert (
+                layout._mol.nao == molecules[0].nao
+            ), f"Inconsistent nao for geometry {i+1}"
             assert layout.nbasis > 0, f"No basis functions for geometry {i+1}"
 
         # Cache should have entries
