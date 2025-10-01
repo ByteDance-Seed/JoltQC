@@ -130,7 +130,7 @@ class TestGeometryOptimization(unittest.TestCase):
         mol2.stdout.close()
 
     def test_geometry_optimization(self):
-        """Test actual geometry optimization with JoltQC"""
+        """Test actual geometry optimization with JoltQC and compare with PySCF"""
         # Start with a slightly distorted water molecule
         atom = """
         O       0.0000000000    -0.0000000000     0.1300000000
@@ -138,46 +138,56 @@ class TestGeometryOptimization(unittest.TestCase):
         H       0.8000000000     0.0000000000    -0.5200000000
         """
 
-        mol = pyscf.M(atom=atom, basis="sto-3g", output="/dev/null", verbose=0)
+        mol_jolt = pyscf.M(atom=atom, basis="sto-3g", output="/dev/null", verbose=0)
+        mol_pyscf = pyscf.M(atom=atom, basis="sto-3g", output="/dev/null", verbose=0)
 
         # Create RKS object with JoltQC
-        mf = dft.RKS(mol, xc="PBE")
-        mf.grids.level = 2  # Lower level for speed
-        mf.conv_tol = 1e-6
-        mf.max_cycle = 20
+        mf_jolt = dft.RKS(mol_jolt, xc="PBE")
+        mf_jolt.grids.level = 2  # Lower level for speed
+        mf_jolt.conv_tol = 1e-6
+        mf_jolt.max_cycle = 20
+        mf_jolt = jqc.pyscf.apply(mf_jolt)
 
-        # Apply JoltQC
-        mf_jolt = jqc.pyscf.apply(mf)
-
-        # Get initial energy
-        e_initial = mf_jolt.kernel()
+        # Create reference RKS object with PySCF (GPU4PySCF)
+        mf_pyscf = dft.RKS(mol_pyscf, xc="PBE").to_gpu()
+        mf_pyscf.grids.level = 2
+        mf_pyscf.conv_tol = 1e-6
+        mf_pyscf.max_cycle = 20
 
         # Perform geometry optimization with JoltQC (reduced steps for speed)
         from pyscf.geomopt.geometric_solver import optimize
-        mol_opt = optimize(mf_jolt, maxsteps=5)
+        mol_opt_jolt = optimize(mf_jolt, maxsteps=5)
 
-        # Get final energy
-        mf_final = dft.RKS(mol_opt, xc="PBE")
-        mf_final.grids.level = 2
-        mf_final = jqc.pyscf.apply(mf_final)
-        e_final = mf_final.kernel()
+        # Perform geometry optimization with PySCF reference
+        mol_opt_pyscf = optimize(mf_pyscf, maxsteps=5)
 
-        # Note: Energy may not always decrease in limited steps with distorted starting geometry
-        # The main goal is to test that geometry optimization runs successfully with JoltQC
-        assert abs(e_final - e_initial) < 1.0, f"Energy change should be reasonable: {e_initial:.8f} -> {e_final:.8f}"
+        # Get final energies
+        mf_final_jolt = dft.RKS(mol_opt_jolt, xc="PBE")
+        mf_final_jolt.grids.level = 2
+        mf_final_jolt = jqc.pyscf.apply(mf_final_jolt)
+        e_final_jolt = mf_final_jolt.kernel()
+
+        mf_final_pyscf = dft.RKS(mol_opt_pyscf, xc="PBE").to_gpu()
+        mf_final_pyscf.grids.level = 2
+        e_final_pyscf = mf_final_pyscf.kernel()
+
+        # Compare final energies
+        energy_diff = abs(e_final_jolt - e_final_pyscf)
+        assert energy_diff < 1e-6, f"Final energies should match: JoltQC={e_final_jolt:.8f}, PySCF={e_final_pyscf:.8f}, diff={energy_diff:.2e}"
+
+        # Compare final geometries
+        coords_jolt = mol_opt_jolt.atom_coords()
+        coords_pyscf = mol_opt_pyscf.atom_coords()
+        coord_diff = np.linalg.norm(coords_jolt - coords_pyscf)
+        assert coord_diff < 1e-4, f"Final geometries should match: diff={coord_diff:.2e}"
 
         # Verify that geometry changed during optimization
-        initial_coords = mol.atom_coords()
-        final_coords = mol_opt.atom_coords()
-        coord_diff = np.linalg.norm(initial_coords - final_coords)
-        assert coord_diff > 1e-6, f"Geometry should change during optimization: {coord_diff:.2e}"
+        initial_coords = mol_jolt.atom_coords()
+        geom_change = np.linalg.norm(initial_coords - coords_jolt)
+        assert geom_change > 1e-6, f"Geometry should change during optimization: {geom_change:.2e}"
 
-        # Verify that JoltQC kernels are still applied after optimization
-        assert hasattr(mf_final, "get_jk")
-        assert hasattr(mf_final._numint, "get_rho")
-        assert hasattr(mf_final._numint, "nr_rks")
-
-        mol.stdout.close()
+        mol_jolt.stdout.close()
+        mol_pyscf.stdout.close()
 
     def test_pyscf_scanner(self):
         """Test PySCF scanner functionality with JoltQC"""
@@ -234,10 +244,6 @@ class TestGeometryOptimization(unittest.TestCase):
 
         # Verify that the last energy matches the scanner's e_tot
         assert abs(energies[-1] - scanner.e_tot) < 1e-10, "Scanner e_tot should match last computed energy"
-
-        # Verify that JoltQC kernels are still applied in the scanner
-        assert hasattr(scanner, "get_jk"), "Scanner should retain JoltQC kernels"
-        assert hasattr(scanner._numint, "get_rho"), "Scanner should retain JoltQC kernels"
 
         mol1.stdout.close()
 
@@ -346,10 +352,6 @@ class TestGeometryOptimization(unittest.TestCase):
             scanner_grad = scanner_grad[1]  # Extract gradient if it's a tuple
         grad_diff_attr = np.linalg.norm(gradients_jolt[-1] - scanner_grad)
         assert grad_diff_attr < 1e-10, f"Scanner de should match last computed gradient: {grad_diff_attr:.2e}"
-
-        # Verify that JoltQC kernels are preserved in the gradient scanner's base method
-        assert hasattr(grad_scanner.base, "get_jk"), "Gradient scanner base should retain JoltQC kernels"
-        assert hasattr(grad_scanner.base._numint, "get_rho"), "Gradient scanner base should retain JoltQC kernels"
 
         mol1.stdout.close()
 
