@@ -16,12 +16,19 @@
 
 import unittest
 
+import cupy as cp
 import numpy as np
 import pyscf
 from pyscf import gto
 from pyscf.scf.hf import get_jk
+from gpu4pyscf import scf
 
-from jqc.pyscf import jk
+import jqc.pyscf
+
+
+def _to_numpy(x):
+    """Convert CuPy array to NumPy array if needed."""
+    return cp.asnumpy(x) if isinstance(x, cp.ndarray) else x
 
 
 def setUpModule():
@@ -61,10 +68,12 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
 
-        get_jk_jit = jk.generate_jk_kernel()
-        vj, vk = get_jk_jit(mol_sph, dm, hermi=1)
-        vj1 = vj.get()
-        vk1 = vk.get()
+        # Apply JoltQC to a temporary RHF object to get access to get_jk
+        mf_temp = scf.RHF(mol_sph)
+        jqc.pyscf.apply(mf_temp)
+        vj, vk = mf_temp.get_jk(mol_sph, dm, hermi=1)
+        vj1 = _to_numpy(vj)
+        vk1 = _to_numpy(vk)
         ref = get_jk(mol_sph, dm, hermi=1)
         mol_sph.stdout.close()
         print("vj diff with double precision:", abs(vj1 - ref[0]).max())
@@ -78,10 +87,12 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
 
-        get_jk_jit = jk.generate_jk_kernel()
-        vj, vk = get_jk_jit(mol, dm, hermi=1)
-        vj1 = vj.get()
-        vk1 = vk.get()
+        # Apply JoltQC to a temporary RHF object to get access to get_jk
+        mf_temp = scf.RHF(mol)
+        jqc.pyscf.apply(mf_temp)
+        vj, vk = mf_temp.get_jk(mol, dm, hermi=1)
+        vj1 = _to_numpy(vj)
+        vk1 = _to_numpy(vk)
         ref = get_jk(mol, dm, hermi=1)
         print("vj diff with double precision:", abs(vj1 - ref[0]).max())
         print("vk diff with double precision:", abs(vk1 - ref[1]).max())
@@ -94,10 +105,13 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
 
-        get_jk_jit = jk.generate_jk_kernel(cutoff_fp32=1e-13, cutoff_fp64=1e100)
-        vj, vk = get_jk_jit(mol, dm, hermi=1)
-        vj1 = vj.get()
-        vk1 = vk.get()
+        # Apply JoltQC with single precision settings
+        mf_temp = scf.RHF(mol)
+        config = {"jk": {"cutoff_fp32": 1e-13, "cutoff_fp64": 1e100}}
+        jqc.pyscf.apply(mf_temp, config=config)
+        vj, vk = mf_temp.get_jk(mol, dm, hermi=1)
+        vj1 = _to_numpy(vj)
+        vk1 = _to_numpy(vk)
         ref = get_jk(mol, dm, hermi=1)
         print("vj diff with single precision:", abs(vj1 - ref[0]).max())
         print("vk diff with single precision:", abs(vk1 - ref[1]).max())
@@ -110,10 +124,12 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(3, nao, nao)
         dm = dm + dm.transpose([0, 2, 1])
 
-        get_jk_jit = jk.generate_jk_kernel()
-        vj, vk = get_jk_jit(mol, dm, hermi=1)
-        vj1 = vj.get()
-        vk1 = vk.get()
+        # Apply JoltQC to a temporary RHF object to get access to get_jk
+        mf_temp = scf.RHF(mol)
+        jqc.pyscf.apply(mf_temp)
+        vj, vk = mf_temp.get_jk(mol, dm, hermi=1)
+        vj1 = _to_numpy(vj)
+        vk1 = _to_numpy(vk)
         ref = get_jk(mol, dm, hermi=1)
         print("vj diff with multiple DMs:", abs(vj1 - ref[0]).max())
         print("vk diff with multiple DMs:", abs(vk1 - ref[1]).max())
@@ -126,9 +142,11 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
 
-        get_jk_jit = jk.generate_jk_kernel()
-        vj, _ = get_jk_jit(mol, dm, hermi=1, with_j=True, with_k=False)
-        vj1 = vj.get()
+        # Apply JoltQC to a temporary RHF object to get access to get_jk
+        mf_temp = scf.RHF(mol)
+        jqc.pyscf.apply(mf_temp)
+        vj, _ = mf_temp.get_jk(mol, dm, hermi=1, with_j=True, with_k=False)
+        vj1 = _to_numpy(vj)
         ref = get_jk(mol, dm, hermi=1, with_j=True, with_k=False)
         print("vj diff in JK kernel:", abs(vj1 - ref[0]).max())
         assert abs(vj1 - ref[0]).max() < 1e-7
@@ -139,9 +157,11 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
 
-        get_jk_jit = jk.generate_jk_kernel()
-        _, vk = get_jk_jit(mol, dm, hermi=1, with_j=False, with_k=True)
-        vk1 = vk.get()
+        # Apply JoltQC to a temporary RHF object to get access to get_jk
+        mf_temp = scf.RHF(mol)
+        jqc.pyscf.apply(mf_temp)
+        _, vk = mf_temp.get_jk(mol, dm, hermi=1, with_j=False, with_k=True)
+        vk1 = _to_numpy(vk)
         ref = get_jk(mol, dm, hermi=1)
         print("vk diff in JK kernel:", abs(vk1 - ref[1]).max())
         assert abs(vk1 - ref[1]).max() < 1e-7
@@ -152,9 +172,12 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
 
-        get_jk_jit = jk.generate_jk_kernel(cutoff_fp32=1e-13, cutoff_fp64=1e100)
-        _, vk = get_jk_jit(mol, dm, hermi=1, with_j=False, with_k=True, omega=0.3)
-        vk1 = vk.get()
+        # Apply JoltQC with single precision settings
+        mf_temp = scf.RHF(mol)
+        config = {"jk": {"cutoff_fp32": 1e-13, "cutoff_fp64": 1e100}}
+        jqc.pyscf.apply(mf_temp, config=config)
+        _, vk = mf_temp.get_jk(mol, dm, hermi=1, with_j=False, with_k=True, omega=0.3)
+        vk1 = _to_numpy(vk)
         ref = get_jk(mol, dm, hermi=1, omega=0.3)
         print("vk diff in JK kernel:", abs(vk1 - ref[1]).max())
         assert abs(vk1 - ref[1]).max() < 1e-3
@@ -179,10 +202,12 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
 
-        get_jk_jit = jk.generate_jk_kernel()
-        vj, vk = get_jk_jit(mol_with_omega, dm, hermi=1, omega=omega)
-        vj1 = vj.get()
-        vk1 = vk.get()
+        # Apply JoltQC to a temporary RHF object to get access to get_jk
+        mf_temp = scf.RHF(mol_with_omega)
+        jqc.pyscf.apply(mf_temp)
+        vj, vk = mf_temp.get_jk(mol_with_omega, dm, hermi=1, omega=omega)
+        vj1 = _to_numpy(vj)
+        vk1 = _to_numpy(vk)
         ref = get_jk(mol_with_omega, dm, hermi=1, omega=omega)
         mol_with_omega.stdout.close()
         assert abs(vj1 - ref[0]).max() < 1e-7
@@ -205,10 +230,12 @@ class KnownValues(unittest.TestCase):
         dm = np.random.rand(nao, nao)
         dm = dm.dot(dm.T)
 
-        get_jk_jit = jk.generate_jk_kernel()
-        vj, vk = get_jk_jit(mol_apart, dm, hermi=1)
-        vj1 = vj.get()
-        vk1 = vk.get()
+        # Apply JoltQC to a temporary RHF object to get access to get_jk
+        mf_temp = scf.RHF(mol_apart)
+        jqc.pyscf.apply(mf_temp)
+        vj, vk = mf_temp.get_jk(mol_apart, dm, hermi=1)
+        vj1 = _to_numpy(vj)
+        vk1 = _to_numpy(vk)
         ref = get_jk(mol_apart, dm, hermi=1)
         mol_apart.stdout.close()
         assert abs(vj1 - ref[0]).max() < 1e-7

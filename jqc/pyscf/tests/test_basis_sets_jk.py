@@ -64,7 +64,11 @@ class BasisSetJKTests(unittest.TestCase):
         dm = dm.dot(dm.T)
 
         # JoltQC calculation
-        get_jk_jit = jk.generate_jk_kernel()
+        from jqc.pyscf.basis import BasisLayout
+        from jqc.constants import TILE
+        basis_layout_jk = BasisLayout.from_mol(mol_test, alignment=TILE)
+
+        get_jk_jit = jk.generate_jk_kernel(basis_layout_jk)
         vj, vk = get_jk_jit(mol_test, dm, hermi=1)
         vj_jolt = vj.get()
         vk_jolt = vk.get()

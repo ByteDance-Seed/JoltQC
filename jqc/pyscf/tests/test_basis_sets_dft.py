@@ -80,8 +80,15 @@ class BasisSetDFTTests(unittest.TestCase):
         # JoltQC calculation
         mf_jolt = dft.RKS(mol_test, xc="PBE")
         mf_jolt.grids.level = 3  # Lower grid level for speed
-        mf_jolt.get_jk = jk.generate_jk_kernel()
-        nr_rks = rks.generate_nr_rks()
+
+        # Generate basis layouts
+        from jqc.pyscf.basis import BasisLayout
+        from jqc.constants import TILE
+        basis_layout_jk = BasisLayout.from_mol(mol_test, alignment=TILE)
+        basis_layout_rks = BasisLayout.from_mol(mol_test, alignment=1)
+
+        mf_jolt.get_jk = jk.generate_jk_kernel(basis_layout_jk)
+        nr_rks = rks.generate_nr_rks(basis_layout_rks)
         mf_jolt._numint.nr_rks = MethodType(nr_rks, mf_jolt._numint)
         e_jolt = mf_jolt.kernel()
 
@@ -113,8 +120,15 @@ class BasisSetDFTTests(unittest.TestCase):
         # JoltQC calculation
         mf_jolt = dft.RKS(mol_test, xc="B3LYP")
         mf_jolt.grids.level = 3  # Lower grid level for speed
-        mf_jolt.get_jk = jk.generate_jk_kernel()
-        nr_rks = rks.generate_nr_rks()
+
+        # Generate basis layouts
+        from jqc.pyscf.basis import BasisLayout
+        from jqc.constants import TILE
+        basis_layout_jk = BasisLayout.from_mol(mol_test, alignment=TILE)
+        basis_layout_rks = BasisLayout.from_mol(mol_test, alignment=1)
+
+        mf_jolt.get_jk = jk.generate_jk_kernel(basis_layout_jk)
+        nr_rks = rks.generate_nr_rks(basis_layout_rks)
         mf_jolt._numint.nr_rks = MethodType(nr_rks, mf_jolt._numint)
         e_jolt = mf_jolt.kernel()
 
@@ -155,8 +169,15 @@ class BasisSetDFTTests(unittest.TestCase):
                     # JoltQC calculation
                     mf_jolt = dft.RKS(mol_test, xc=xc)
                     mf_jolt.grids.level = 2  # Lower grid level for speed
-                    mf_jolt.get_jk = jk.generate_jk_kernel()
-                    nr_rks = rks.generate_nr_rks()
+
+                    # Generate basis layouts
+                    from jqc.pyscf.basis import BasisLayout
+                    from jqc.constants import TILE
+                    basis_layout_jk = BasisLayout.from_mol(mol_test, alignment=TILE)
+                    basis_layout_rks = BasisLayout.from_mol(mol_test, alignment=1)
+
+                    mf_jolt.get_jk = jk.generate_jk_kernel(basis_layout_jk)
+                    nr_rks = rks.generate_nr_rks(basis_layout_rks)
                     mf_jolt._numint.nr_rks = MethodType(nr_rks, mf_jolt._numint)
                     e_jolt = mf_jolt.kernel()
 

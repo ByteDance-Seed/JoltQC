@@ -48,8 +48,8 @@ GROUP_SIZE = 256
 PAIR_CUTOFF = 1e-13
 
 
-def generate_get_j(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    get_jk_kernel = generate_jk_kernel(cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
+def generate_get_j(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    get_jk_kernel = generate_jk_kernel(basis_layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
 
     def get_jk(*args, **kwargs):
         return get_jk_kernel(*args, with_j=True, with_k=False, **kwargs)[0]
@@ -57,8 +57,8 @@ def generate_get_j(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     return get_jk
 
 
-def generate_get_k(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    get_jk_kernel = generate_jk_kernel(cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
+def generate_get_k(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    get_jk_kernel = generate_jk_kernel(basis_layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
 
     def get_jk(*args, **kwargs):
         return get_jk_kernel(*args, with_j=False, with_k=True, **kwargs)[1]
@@ -66,8 +66,8 @@ def generate_get_k(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     return get_jk
 
 
-def generate_get_jk(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
-    get_jk_kernel = generate_jk_kernel(cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
+def generate_get_jk(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+    get_jk_kernel = generate_jk_kernel(basis_layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32)
 
     def get_jk(*args, **kwargs):
         return get_jk_kernel(*args, **kwargs)
@@ -90,10 +90,20 @@ def generate_get_veff():
     return get_veff
 
 
-def generate_jk_kernel(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     # Pre-compute log cutoffs
     log_cutoff_fp64 = np.float32(math.log(cutoff_fp64))
     log_cutoff_fp32 = np.float32(math.log(cutoff_fp32))
+
+    # Cache basis_layout data to avoid re-extracting on every call
+    group_info = basis_layout.group_info
+    nbas = basis_layout.nbasis
+    mol = basis_layout._mol
+    ce_fp32 = basis_layout.ce_fp32
+    coords_fp32 = basis_layout.coords_fp32
+    ce_fp64 = basis_layout.ce_fp64
+    coords_fp64 = basis_layout.coords_fp64
+    ao_loc = cp.asarray(basis_layout.ao_loc)
 
     def get_jk(
         mol_ref,
@@ -109,7 +119,7 @@ def generate_jk_kernel(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         Compute J, K matrices, compatible with jk.get_jk in PySCF
 
         Args:
-            mol_ref: pyscf Mole object
+            mol_ref: pyscf Mole object (for compatibility, uses pre-generated basis_layout)
             dm: density matrix
             hermi: hermiticity of the density matrix
             vhfopt: vhfopt object
@@ -121,19 +131,6 @@ def generate_jk_kernel(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         assert with_j or with_k
         if omega is not None:
             assert omega >= 0.0, "short ranged J/K not supported"
-
-        # Generate basis_layout from mol_ref
-        basis_layout = BasisLayout.from_mol(mol_ref)
-
-        # Cache frequently accessed properties to reduce overhead
-        group_info = basis_layout.group_info
-        nbas = basis_layout.nbasis
-        mol = basis_layout._mol
-        ce_fp32 = basis_layout.ce_fp32
-        coords_fp32 = basis_layout.coords_fp32
-        ce_fp64 = basis_layout.ce_fp64
-        coords_fp64 = basis_layout.coords_fp64
-        ao_loc = cp.asarray(basis_layout.ao_loc)
 
         nao = int(ao_loc[-1])
 

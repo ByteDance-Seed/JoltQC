@@ -261,16 +261,16 @@ def generate_get_veff():
     return get_veff
 
 
-def generate_nr_rks(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+def generate_nr_rks(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     rks_fun, _, _ = generate_rks_kernel(
-        cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32
+        basis_layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32
     )
     return rks_fun
 
 
-def generate_get_rho(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+def generate_get_rho(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     _, rho_fun, _ = generate_rks_kernel(
-        cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32
+        basis_layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32
     )
 
     def get_rho(mol, dm, grids, *_args, **_kwargs):
@@ -281,12 +281,22 @@ def generate_get_rho(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     return get_rho
 
 
-def generate_rks_kernel(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     log_cutoff_fp32 = np.log(cutoff_fp32).astype(np.float32)
     log_cutoff_fp64 = np.log(cutoff_fp64).astype(np.float32)
     log_cutoff_max = np.log(1e100).astype(np.float32)
 
     _cache = {"dm_prev": 0, "rho_prev": 0, "wv_prev": 0, "vxcmat_prev": 0}
+
+    # Extract and cache basis_layout data once to avoid repeated property access
+    _, _, angs, nprims = basis_layout.bas_info
+    ce_fp32 = basis_layout.ce_fp32
+    coords_fp32 = basis_layout.coords_fp32
+    ce_fp64 = basis_layout.ce_fp64
+    coords_fp64 = basis_layout.coords_fp64
+    ao_loc = cp.asarray(basis_layout.ao_loc)
+    nbas = basis_layout.nbasis
+    group_key, group_offset = basis_layout.group_info
 
     def rks_fun(ni, mol, grids, xc_code, dm):
         """rks kernel for PySCF, with incremental DFT implementation
@@ -347,19 +357,6 @@ def generate_rks_kernel(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         return nelec, excsum, vxcmat
 
     def rho_fun(mol, grids, xctype, dm):
-        # Generate basis layout from mol
-        basis_layout = BasisLayout.from_mol(mol, alignment=1)
-
-        # Cache frequently accessed properties to reduce overhead
-        _, _, angs, nprims = basis_layout.bas_info
-        ce_fp32 = basis_layout.ce_fp32
-        coords_fp32 = basis_layout.coords_fp32
-        ce_fp64 = basis_layout.ce_fp64
-        coords_fp64 = basis_layout.coords_fp64
-        ao_loc = cp.asarray(basis_layout.ao_loc)
-        nbas = basis_layout.nbasis
-        group_key, group_offset = basis_layout.group_info
-
         # Pre-compute constants
         nao = int(ao_loc[-1])
         log_ao_cutoff = math.log(ao_cutoff)
@@ -467,19 +464,6 @@ def generate_rks_kernel(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         return rho
 
     def vxc_fun(mol, grids, xctype, wv):
-        # Generate basis layout from mol
-        basis_layout = BasisLayout.from_mol(mol, alignment=1)
-
-        # Cache frequently accessed properties to reduce overhead
-        _, _, angs, nprims = basis_layout.bas_info
-        ce_fp32 = basis_layout.ce_fp32
-        coords_fp32 = basis_layout.coords_fp32
-        ce_fp64 = basis_layout.ce_fp64
-        coords_fp64 = basis_layout.coords_fp64
-        ao_loc = cp.asarray(basis_layout.ao_loc)
-        nbas = basis_layout.nbasis
-        group_key, group_offset = basis_layout.group_info
-
         # Pre-compute constants
         nao = int(ao_loc[-1])
         log_ao_cutoff = math.log(ao_cutoff)
@@ -584,9 +568,9 @@ def generate_rks_kernel(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     return rks_fun, rho_fun, vxc_fun
 
 
-def generate_nr_nlc_vxc(cutoff_fp64=1e-13, cutoff_fp32=1e-13):
+def generate_nr_nlc_vxc(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     _, rho_fun, vxc_fun = generate_rks_kernel(
-        cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32
+        basis_layout, cutoff_fp64=cutoff_fp64, cutoff_fp32=cutoff_fp32
     )
     from gpu4pyscf.dft import xc_deriv
 

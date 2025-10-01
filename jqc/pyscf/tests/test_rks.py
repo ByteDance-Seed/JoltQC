@@ -22,6 +22,7 @@ import pytest
 import pyscf
 from pyscf import gto
 
+import jqc.pyscf
 from jqc.pyscf import rks
 
 from gpu4pyscf import dft
@@ -86,7 +87,10 @@ class KnownValues(unittest.TestCase):
         dm = dm.dot(dm.T)
         xctype = "LDA"
 
-        _, rho_kern, vxc_kern = rks.generate_rks_kernel()
+        # Generate basis layout and RKS kernel
+        from jqc.pyscf.basis import BasisLayout
+        basis_layout_rks = BasisLayout.from_mol(mol, alignment=1)
+        _, rho_kern, vxc_kern = rks.generate_rks_kernel(basis_layout_rks)
         rho = rho_kern(mol, grids, xctype, dm)
 
         ao_gpu = ni.eval_ao(mol, grids.coords, deriv=0, transpose=False)
@@ -109,8 +113,11 @@ class KnownValues(unittest.TestCase):
         dm = dm.dot(dm.T)
         xctype = "LDA"
 
+        # Generate basis layout and RKS kernel with single precision
+        from jqc.pyscf.basis import BasisLayout
+        basis_layout_rks = BasisLayout.from_mol(mol, alignment=1)
         _, rho_kern, vxc_kern = rks.generate_rks_kernel(
-            cutoff_fp32=1e-13, cutoff_fp64=1e100
+            basis_layout_rks, cutoff_fp32=1e-13, cutoff_fp64=1e100
         )
         rho = rho_kern(mol, grids, xctype, dm)
 
@@ -133,7 +140,10 @@ class KnownValues(unittest.TestCase):
         dm = dm.dot(dm.T)
         xctype = "GGA"
 
-        _, rho_kern, vxc_kern = rks.generate_rks_kernel()
+        # Generate basis layout and RKS kernel
+        from jqc.pyscf.basis import BasisLayout
+        basis_layout_rks = BasisLayout.from_mol(mol, alignment=1)
+        _, rho_kern, vxc_kern = rks.generate_rks_kernel(basis_layout_rks)
         rho = rho_kern(mol, grids, xctype, dm)
 
         ao_gpu = ni.eval_ao(mol, grids.coords, deriv=1, transpose=False)
@@ -158,7 +168,10 @@ class KnownValues(unittest.TestCase):
         dm = dm.dot(dm.T)
         xctype = "MGGA"
 
-        _, rho_kern, vxc_kern = rks.generate_rks_kernel()
+        # Generate basis layout and RKS kernel
+        from jqc.pyscf.basis import BasisLayout
+        basis_layout_rks = BasisLayout.from_mol(mol, alignment=1)
+        _, rho_kern, vxc_kern = rks.generate_rks_kernel(basis_layout_rks)
         rho = rho_kern(mol, grids, xctype, dm)
 
         ao_gpu = ni.eval_ao(mol, grids.coords, deriv=1, transpose=False)
@@ -188,7 +201,10 @@ class KnownValues(unittest.TestCase):
         dm = cp.random.rand(nao, nao)
         dm = dm + dm.T
 
-        nr_nlc_vxc = rks.generate_nr_nlc_vxc()
+        # Generate basis layout and NLC VXC kernel
+        from jqc.pyscf.basis import BasisLayout
+        basis_layout_rks = BasisLayout.from_mol(mol, alignment=1)
+        nr_nlc_vxc = rks.generate_nr_nlc_vxc(basis_layout_rks)
 
         n, e, v = ni.nr_nlc_vxc(mol, grids, "wb97m-v", dm)
         n_jqc, e_jqc, v_jqc = nr_nlc_vxc(ni, mol, grids, "wb97m-v", dm)
