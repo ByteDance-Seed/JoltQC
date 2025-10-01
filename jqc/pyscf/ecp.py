@@ -23,9 +23,10 @@ import cupy as cp
 from typing import Dict, Any, Optional
 from jqc.backend.ecp import ecp_generator, get_ecp
 
+
 def apply_ecp(
     mol,
-    precision: str = 'fp64',
+    precision: str = "fp64",
     cutoff_fp32: float = 1e-8,
     cutoff_fp64: float = 1e-12,
 ) -> Dict[str, Any]:
@@ -41,11 +42,11 @@ def apply_ecp(
         Dictionary with patched ECP methods
     """
     # Check if molecule has ECP
-    if not hasattr(mol, '_ecpbas') or len(mol._ecpbas) == 0:
+    if not hasattr(mol, "_ecpbas") or len(mol._ecpbas) == 0:
         return {}
 
     # Enforce double precision only
-    if precision != 'fp64':
+    if precision != "fp64":
         raise ValueError("Only double precision ('fp64') is supported for ECP kernels")
 
     # Generate ECP kernels
@@ -61,10 +62,10 @@ def apply_ecp(
 
     # Patch methods
     patched_methods = {
-        'get_ecp': jit_get_ecp,
-        'ecp_kernel': ecp_kernel,
-        'precision': precision,
-        'original_methods': original_methods
+        "get_ecp": jit_get_ecp,
+        "ecp_kernel": ecp_kernel,
+        "precision": precision,
+        "original_methods": original_methods,
     }
 
     return patched_methods
@@ -85,14 +86,14 @@ def patch_ecp_integrals(mol, **kwargs) -> None:
 
     # Apply patches to molecule
     for method_name, method_func in patches.items():
-        if method_name not in ['original_methods', 'ecp_kernel', 'precision']:
+        if method_name not in ["original_methods", "ecp_kernel", "precision"]:
             setattr(mol, method_name, method_func)
 
     # Store metadata
     mol._jqc_ecp_info = {
-        'precision': patches['precision'],
-        'kernel_type': 'ecp_type1',
-        'original_methods': patches['original_methods']
+        "precision": patches["precision"],
+        "kernel_type": "ecp_type1",
+        "original_methods": patches["original_methods"],
     }
 
     print(f"JoltQC ECP: Patched molecule with {patches['precision']} precision kernels")
@@ -105,14 +106,14 @@ def restore_ecp_methods(mol) -> None:
     Args:
         mol: PySCF molecule object
     """
-    if not hasattr(mol, '_jqc_ecp_info'):
+    if not hasattr(mol, "_jqc_ecp_info"):
         return
 
     info = mol._jqc_ecp_info
-    for method_name, original_method in info['original_methods'].items():
+    for method_name, original_method in info["original_methods"].items():
         setattr(mol, method_name, original_method)
 
-    delattr(mol, '_jqc_ecp_info')
+    delattr(mol, "_jqc_ecp_info")
     print("JoltQC ECP: Restored original methods")
 
 
@@ -126,21 +127,22 @@ def ecp_performance_info(mol) -> Dict[str, Any]:
     Returns:
         Dictionary with performance metrics
     """
-    if not hasattr(mol, '_jqc_ecp_info'):
-        return {'status': 'No JoltQC ECP applied'}
+    if not hasattr(mol, "_jqc_ecp_info"):
+        return {"status": "No JoltQC ECP applied"}
 
     info = mol._jqc_ecp_info
     nao = mol.nao_nr()
-    necpbas = len(mol._ecpbas) if hasattr(mol, '_ecpbas') else 0
+    necpbas = len(mol._ecpbas) if hasattr(mol, "_ecpbas") else 0
 
     return {
-        'status': 'JoltQC ECP active',
-        'precision': info['precision'],
-        'kernel_type': info['kernel_type'],
-        'nao': nao,
-        'n_ecp_shells': necpbas,
-        'estimated_memory_mb': nao * nao * 8 / 1024 / 1024,  # Rough estimate
+        "status": "JoltQC ECP active",
+        "precision": info["precision"],
+        "kernel_type": info["kernel_type"],
+        "nao": nao,
+        "n_ecp_shells": necpbas,
+        "estimated_memory_mb": nao * nao * 8 / 1024 / 1024,  # Rough estimate
     }
+
 
 def benchmark_ecp(mol, n_trials: int = 5) -> Dict[str, float]:
     """
@@ -155,13 +157,13 @@ def benchmark_ecp(mol, n_trials: int = 5) -> Dict[str, float]:
     """
     import time
 
-    if not hasattr(mol, '_ecpbas') or len(mol._ecpbas) == 0:
-        return {'error': 'No ECP in molecule'}
+    if not hasattr(mol, "_ecpbas") or len(mol._ecpbas) == 0:
+        return {"error": "No ECP in molecule"}
 
     # Test different precisions
     results = {}
 
-    for precision in ['fp64']:
+    for precision in ["fp64"]:
         times = []
         try:
             for _ in range(n_trials):
@@ -175,12 +177,12 @@ def benchmark_ecp(mol, n_trials: int = 5) -> Dict[str, float]:
                 times.append(end_time - start_time)
 
             results[precision] = {
-                'mean_time': np.mean(times),
-                'std_time': np.std(times),
-                'min_time': np.min(times),
-                'trials': n_trials
+                "mean_time": np.mean(times),
+                "std_time": np.std(times),
+                "min_time": np.min(times),
+                "trials": n_trials,
             }
         except Exception as e:
-            results[precision] = {'error': str(e)}
+            results[precision] = {"error": str(e)}
 
     return results

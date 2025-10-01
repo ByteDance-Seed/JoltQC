@@ -159,7 +159,9 @@ def update_frags(i, j, k, ell, dtype_str):
         tile_pairs[i, j][:256] if (i, j) in tile_pairs else cp.array([], dtype=np.int32)
     )
     tile_kl_mapping = (
-        tile_pairs[k, ell][:256] if (k, ell) in tile_pairs else cp.array([], dtype=np.int32)
+        tile_pairs[k, ell][:256]
+        if (k, ell) in tile_pairs
+        else cp.array([], dtype=np.int32)
     )
 
     li, ip = uniq_l_ctr[i]
@@ -205,9 +207,7 @@ def update_frags(i, j, k, ell, dtype_str):
                 ang, nprim, frags=frag, dtype=dtype, max_shm=max_shm
             )
         except Exception as e:
-            print(
-                f"failed to generate kernel {ang}/{nprim} with frag {frag}: {e}"
-            )
+            print(f"failed to generate kernel {ang}/{nprim} with frag {frag}: {e}")
             continue
 
         # Reset matrices before computation

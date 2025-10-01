@@ -1,8 +1,8 @@
 import unittest
 import numpy as np
 import pyscf
-
 from gpu4pyscf import dft
+
 import jqc.pyscf
 
 
@@ -47,4 +47,3 @@ class KnownValues(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
