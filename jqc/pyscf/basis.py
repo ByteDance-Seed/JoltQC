@@ -274,7 +274,6 @@ class BasisLayout:
         return self.coords
 
     @classmethod
-    @functools.lru_cache(maxsize=128)
     def from_mol(cls, mol, alignment: int = 4, dtype=np.float64) -> "BasisLayout":
         """
         Creates a BasisLayout from a molecule using split basis functions.
