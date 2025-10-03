@@ -138,6 +138,10 @@ void rys_jk(const int nbas,
     const int lsh = (int)sq.w;
     
     DataType fac_sym = active ? PI_FAC : zero;
+    fac_sym *= (jsh <= ish) ? one : zero;
+    fac_sym *= (ksh <= ish) ? one : zero;
+    fac_sym *= (lsh <= ksh) ? one : zero;
+
     fac_sym *= (ish == jsh) ? half : one;
     fac_sym *= (ksh == lsh) ? half : one;
     fac_sym *= (ish*nbas+jsh == ksh*nbas+lsh) ? half : one;

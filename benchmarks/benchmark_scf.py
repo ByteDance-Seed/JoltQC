@@ -19,12 +19,12 @@ from pyscf import lib
 from gpu4pyscf.scf import hf
 import jqc.pyscf
 
-# atom = 'molecules/h2o.xyz'
-atom = "molecules/0031-irregular-nitrogenous.xyz"
+atom = 'molecules/h2o.xyz'
+# atom = "molecules/0031-irregular-nitrogenous.xyz"
 # atom = 'molecules/0084-elongated-halogenated.xyz'
 # atom = 'molecules/0112-elongated-nitrogenous.xyz'
 # atom = 'molecules/0401-globular-nitrogenous.xyz'
-basis = "def2-tzvpp"  #'6-31gs'
+basis = 'sto-3g' #"def2-tzvpp"  #'6-31gs'
 count = 1
 verbose = 0
 cart = 0

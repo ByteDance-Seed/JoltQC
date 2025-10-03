@@ -26,10 +26,10 @@ __all__ = ["cart2sph", "sph2cart"]
 
 compile_options = ("-std=c++17", "--use_fast_math", "--minimal")
 
-with open(f"{code_path}/cuda/cart2sph.cu") as f:
+with open(f"{code_path}/common/cart2sph.cu") as f:
     cart2sph_scripts = f.read()
 
-with open(f"{code_path}/cuda/sph2cart.cu") as f:
+with open(f"{code_path}/common/sph2cart.cu") as f:
     sph2cart_scripts = f.read()
 
 _cart2sph_kernel_cache = {}

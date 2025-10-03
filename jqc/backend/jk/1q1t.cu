@@ -84,15 +84,21 @@ void rys_jk(const int nbas,
         sq = shl_quartet_idx[task_id];
     }
 
-    const int ish = (int)sq.x;
-    const int jsh = (int)sq.y;
-    const int ksh = (int)sq.z;
-    const int lsh = (int)sq.w;
+    int ish = (int)sq.x;
+    int jsh = (int)sq.y;
+    int ksh = (int)sq.z;
+    int lsh = (int)sq.w;
 
     DataType fac_sym = active ? PI_FAC : zero;
+    fac_sym *= (jsh <= ish) ? one : zero;
+    fac_sym *= (ksh <= ish) ? one : zero;
+    fac_sym *= (lsh <= ksh) ? one : zero;
+    fac_sym *= (ksh*nbas+lsh <= ish*nbas+jsh) ? one : zero;
+
     fac_sym *= (ish == jsh) ? half : one;
     fac_sym *= (ksh == lsh) ? half : one;
     fac_sym *= (ish*nbas+jsh == ksh*nbas+lsh) ? half : one;
+    
     DataType4 ri, rj, rk, rl;
     ri.x = __ldg(&coords[ish].x);
     ri.y = __ldg(&coords[ish].y);
