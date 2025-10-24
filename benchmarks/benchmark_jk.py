@@ -61,8 +61,8 @@ basis = gto.basis.parse(
 #H    D
 #      1.2700058226E+00      1
 #      0.2700058226E+00      1
-#O    S
-#      0.02700058226E+00      1
+O    S
+      0.02700058226E+00      1
 O    S
       0.2700058226E+00      1
 #      0.2700058226E+00      1 
@@ -73,13 +73,18 @@ O    S
 """
 )
 
-atom = 'molecules/h2o.xyz'
-# atom = 'molecules/0031-irregular-nitrogenous.xyz'
+atom = '''
+H          0.00000        0.75545       -0.47116
+H          0.00000       -0.75545       -0.47116
+'''
+
+#atom = 'molecules/h2o.xyz'
+atom = 'molecules/0031-irregular-nitrogenous.xyz'
 # atom = 'molecules/0084-elongated-halogenated.xyz'
 # atom = "molecules/0401-globular-nitrogenous.xyz"
 # atom = 'molecules/0753-globular.xyz'
 n_dm = 1
-n_warmup = 3
+n_warmup = 0
 mol = pyscf.M(
     atom=atom,
     basis=basis,  #'6-31g',#'def2-tzvpp',#'6-31g',
@@ -135,7 +140,6 @@ print(f"Time with JQC / FP64, {jqc_time_ms}")
 print(f"Speedup: {gpu4pyscf_time_ms/jqc_time_ms}")
 print("vj diff:", cp.linalg.norm(vj - vj_jit))
 print("vk diff:", cp.linalg.norm(vk - vk_jit))
-exit()
 
 ###### JQC / FP32 #######
 # Warm up

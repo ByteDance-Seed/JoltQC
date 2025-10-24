@@ -98,7 +98,7 @@ void rys_jk(const int nbas,
     fac_sym *= (ish == jsh) ? half : one;
     fac_sym *= (ksh == lsh) ? half : one;
     fac_sym *= (ish*nbas+jsh == ksh*nbas+lsh) ? half : one;
-    
+
     DataType4 ri, rj, rk, rl;
     ri.x = __ldg(&coords[ish].x);
     ri.y = __ldg(&coords[ish].y);

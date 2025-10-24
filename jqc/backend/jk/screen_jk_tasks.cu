@@ -112,7 +112,7 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
         ksh0 = tile_k * TILE;
         lsh0 = tile_l * TILE;
     }
-    // Removed unused ish1/jsh1/ksh1/lsh1 to reduce register pressure
+    
     constexpr int align = 2;
     constexpr int align2 = align*align;
 
@@ -130,12 +130,17 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
         for (int j0 = 0; j0 < TILE; j0 += align){
         for (int k0 = 0; k0 < TILE; k0 += align){
         for (int l0 = 0; l0 < TILE; l0 += align){
-            const int bas_ij = (ish0 + i0) * nbas + (jsh0 + j0);
-            const int bas_kl = (ksh0 + k0) * nbas + (lsh0 + l0);
-            if (bas_ij < bas_kl) continue;
-            if (jsh0 + j0 > ish0 + i0) continue;
-            if (ksh0 + k0 > ish0 + i0) continue;
-            if (lsh0 + l0 > ksh0 + k0) continue;
+            const int ish = ish0 + i0;
+            const int jsh = jsh0 + j0;
+            const int ksh = ksh0 + k0;
+            const int lsh = lsh0 + l0;
+            const int bas_ij = ish * nbas + jsh;
+            const int bas_kl = ksh * nbas + lsh;
+            //if (bas_ij < bas_kl) continue;
+            if (jsh > ish) continue;
+            if (ksh > ish) continue;
+            if (lsh > ksh) continue;
+            
             float dm_kl[align2];
             float dm_ij[align2];
             float dm_jl[align2];
@@ -149,23 +154,24 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
                 const int ish = ish0 + i0 + ii;
                 for (int jj = 0; jj < align; ++jj){
                     const int jsh = jsh0 + j0 + jj;
-                    bool mask = ish < nbas && jsh < nbas;
-                    float dm = mask ? dm_cond[ish * nbas + jsh] : minval;
-                    float q = mask ? q_cond[ish * nbas + jsh] : minval;
+                    const bool mask = ish < nbas && jsh < nbas;
+                    const int ij_sh = ish * nbas + jsh;
+                    const float dm = mask ? dm_cond[ij_sh] : minval;
+                    const float q = mask ? q_cond[ij_sh] : minval;
                     dm_ij[ii*align + jj] = dm;
                     q_ij[ii*align + jj] = q;
                 }
                 if constexpr(do_k){
                     for (int kk = 0; kk < align; ++kk){
                         const int ksh = ksh0 + k0 + kk;
-                        bool mask = ish < nbas && ksh < nbas;
-                        float dm = mask ? dm_cond[ish * nbas + ksh] : minval;
+                        const bool mask = ish < nbas && ksh < nbas;
+                        const float dm = mask ? dm_cond[ish * nbas + ksh] : minval;
                         dm_ik[ii*align + kk] = dm;
                     }
                     for (int ll = 0; ll < align; ++ll){
                         const int lsh = lsh0 + l0 + ll;
-                        bool mask = ish < nbas && lsh < nbas;
-                        float dm = mask ? dm_cond[ish * nbas + lsh] : minval;
+                        const bool mask = ish < nbas && lsh < nbas;
+                        const float dm = mask ? dm_cond[ish * nbas + lsh] : minval;
                         dm_il[ii*align + ll] = dm;
                     }
                 }
@@ -175,15 +181,15 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
                     const int jsh = jsh0 + j0 + jj;
                     for (int kk = 0; kk < align; ++kk){
                         const int ksh = ksh0 + k0 + kk;
-                        bool mask = jsh < nbas && ksh < nbas;
-                        float dm = mask ? dm_cond[jsh * nbas + ksh] : minval;
+                        const bool mask = jsh < nbas && ksh < nbas;
+                        const float dm = mask ? dm_cond[jsh * nbas + ksh] : minval;
                         dm_jk[jj*align + kk] = dm;
                     }
 
                     for (int ll = 0; ll < align; ++ll){
                         const int lsh = lsh0 + l0 + ll;
-                        bool mask = jsh < nbas && lsh < nbas;
-                        float dm = mask ? dm_cond[jsh * nbas + lsh] : minval;
+                        const bool mask = jsh < nbas && lsh < nbas;
+                        const float dm = mask ? dm_cond[jsh * nbas + lsh] : minval;
                         dm_jl[jj*align + ll] = dm;
                     }
                 }
@@ -195,9 +201,9 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
                     const int lsh = lsh0 + l0 + ll;
                     const int kl = kk*align + ll;
                     const int kl_sh = ksh * nbas + lsh;
-                    bool mask = ksh < nbas && lsh < nbas;
-                    float dm = mask ? dm_cond[ksh * nbas + lsh] : minval;
-                    float q = mask ? q_cond[ksh * nbas + lsh] : minval;
+                    const bool mask = ksh < nbas && lsh < nbas;
+                    const float dm = mask ? dm_cond[ksh * nbas + lsh] : minval;
+                    const float q = mask ? q_cond[ksh * nbas + lsh] : minval;
                     dm_kl[kl] = dm;
                     q_kl[kl] = q;
                 }

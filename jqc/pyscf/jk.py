@@ -272,9 +272,6 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                     n_quartets_fp32 = int(info_cpu[1].item())
                     offset = int(info_cpu[2].item())
                     n_quartets_fp64 = QUEUE_DEPTH - offset
-                    print(info_cpu)
-                    print(n_quartets_fp64)
-                    print(dms.shape, nbas, dms_fp32.shape)
 
                     # Launch FP32 and FP64 kernels asynchronously
                     if n_quartets_fp32 > 0:
