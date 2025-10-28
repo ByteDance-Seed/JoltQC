@@ -24,6 +24,7 @@ import cupy as cp
 import numpy as np
 
 from jqc.backend.cuda_scripts import screen_jk_tasks_code
+from jqc.constants import BAS_ALIGN
 
 THREADSX = 16
 THREADSY = 16
@@ -56,6 +57,7 @@ constexpr int threadsx = {THREADSX};
 constexpr int threadsy = {THREADSY};
 constexpr int threads = {THREADSX*THREADSY};
 constexpr int TILE = {tile};
+constexpr int BAS_ALIGN = {BAS_ALIGN};
     """
     mod = cp.RawModule(code=const + screen_jk_tasks_code, options=compile_options)
     kernel = mod.get_function("screen_jk_tasks")

@@ -294,7 +294,8 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     coords_fp32 = basis_layout.coords_fp32
     ce_fp64 = basis_layout.ce_fp64
     coords_fp64 = basis_layout.coords_fp64
-    ao_loc = cp.asarray(basis_layout.ao_loc)
+    # Use ao_loc_no_pad (without padding shells) to match dm_from_mol output size
+    ao_loc = cp.asarray(basis_layout.ao_loc_no_pad)
     nbas = basis_layout.nbasis
     group_key, group_offset = basis_layout.group_info
 

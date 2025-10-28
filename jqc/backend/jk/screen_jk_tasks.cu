@@ -113,7 +113,7 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
         lsh0 = tile_l * TILE;
     }
     
-    constexpr int align = 2;
+    constexpr int align = BAS_ALIGN;
     constexpr int align2 = align*align;
 
     // Fragment-level screening: store fragment indices, not individual items
@@ -137,6 +137,15 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
             const int bas_ij = ish * nbas + jsh;
             const int bas_kl = ksh * nbas + lsh;
             //if (bas_ij < bas_kl) continue;
+
+            // Symmetry constraints applied at fragment level:
+            // Checks (ish, jsh, ksh, lsh) which is the base shell quartet of this fragment.
+            // This initial check filters out entire fragments where the base quartet violates symmetry.
+            //
+            // Note: With BAS_ALIGN > 1, each fragment contains BAS_ALIGN^4 shell quartets.
+            // Some of these may violate symmetry constraints, but they are included in screening
+            // and output to the task queue. The JK kernel (1q1t.cu/1qnt.cu) handles symmetry
+            // by setting fac_sym=0 for invalid quartets (lines 92-96 in 1q1t.cu).
             if (jsh > ish) continue;
             if (ksh > ish) continue;
             if (lsh > ksh) continue;
@@ -260,7 +269,7 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
                 // Fragment needs FP64 precision
                 frag_mask_fp64[frag_word] |= frag_bitmask;
                 count_fp64 += align2*align2;
-            } else {
+            } else if (select_fp32) {
                 // Fragment only needs FP32 precision
                 frag_mask_fp32[frag_word] |= frag_bitmask;
                 count_fp32 += align2*align2;
@@ -284,9 +293,14 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
         return;
     }
 
+    // All threads must participate in global_offset for correct warp-level synchronization
     int offset_fp32 = global_offset(batch_head+1, count_fp32);
+    // FP64 items are stored from right-to-left starting at QUEUE_DEPTH-1
+    // batch_head[2] is initialized to QUEUE_DEPTH, so we need -1 to get the last valid index
+    // atomicAdd returns the old value (QUEUE_DEPTH), and exclusive_block starts at 0 for first thread
+    // Therefore: offset_fp64 = QUEUE_DEPTH + 0 - 1 = QUEUE_DEPTH - 1 (last valid index)
     int offset_fp64 = global_offset(batch_head+2, -count_fp64) - 1;
-    
+
     if (active){
 #pragma unroll
         for (int frag_i = 0; frag_i < frag_size; frag_i++){
@@ -302,6 +316,7 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
 
             if (sel_fp32 || sel_fp64) {
                 // Output all items in this fragment
+                // Symmetry will be checked by JK kernel (1q1t.cu/1qnt.cu) via fac_sym
                 for (int ii = 0; ii < align; ii++){
                 for (int jj = 0; jj < align; jj++){
                 for (int kk = 0; kk < align; kk++){

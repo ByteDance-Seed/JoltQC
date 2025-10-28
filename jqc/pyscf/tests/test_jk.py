@@ -213,6 +213,38 @@ class KnownValues(unittest.TestCase):
         assert abs(vj1 - ref[0]).max() < 1e-7
         assert abs(vk1 - ref[1]).max() < 1e-7
 
+    def test_jk_mixed_precision(self):
+        """Test JK computation with mixed FP32/FP64 precision.
+
+        This test verifies that the mixed precision kernel correctly handles
+        both FP32 and FP64 computations based on screening cutoffs, ensuring
+        that important integrals use FP64 while less critical ones use FP32.
+        """
+        np.random.seed(9)
+        nao = mol.nao
+        dm = np.random.rand(nao, nao)
+        dm = dm.dot(dm.T)
+
+        # Apply JoltQC with mixed precision settings
+        # cutoff_fp32: 1e-13 means integrals with magnitude > 1e-13 use at least FP32
+        # cutoff_fp64: 1e-7 means integrals with magnitude > 1e-7 use FP64
+        # This creates three categories:
+        #   - integrals > 1e-7: computed with FP64
+        #   - integrals between 1e-13 and 1e-7: computed with FP32
+        #   - integrals < 1e-13: skipped
+        mf_temp = scf.RHF(mol)
+        config = {"jk": {"cutoff_fp32": 1e-13, "cutoff_fp64": 1e-7}}
+        jqc.pyscf.apply(mf_temp, config=config)
+        vj, vk = mf_temp.get_jk(mol, dm, hermi=1)
+        vj1 = _to_numpy(vj)
+        vk1 = _to_numpy(vk)
+        ref = get_jk(mol, dm, hermi=1)
+        print("vj diff with mixed precision:", abs(vj1 - ref[0]).max())
+        print("vk diff with mixed precision:", abs(vk1 - ref[1]).max())
+        # Mixed precision should still maintain good accuracy (better than pure FP32)
+        assert abs(vj1 - ref[0]).max() < 1e-7
+        assert abs(vk1 - ref[1]).max() < 1e-7
+
     def test_jk_screening(self):
         mol_apart = pyscf.M(
             atom="""
