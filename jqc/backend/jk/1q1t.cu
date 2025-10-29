@@ -424,10 +424,10 @@ void rys_jk(const int nbas,
         }
     }
 
-    const int i0 = ao_loc[ish];
-    const int j0 = ao_loc[jsh];
-    const int k0 = ao_loc[ksh];
-    const int l0 = ao_loc[lsh];
+    const int i0 = ao_loc[ish] >= nao ? 0 : ao_loc[ish];
+    const int j0 = ao_loc[jsh] >= nao ? 0 : ao_loc[jsh];
+    const int k0 = ao_loc[ksh] >= nao ? 0 : ao_loc[ksh];
+    const int l0 = ao_loc[lsh] >= nao ? 0 : ao_loc[lsh];
 
     constexpr int nfij = nfi*nfj;
     constexpr int nfkl = nfk*nfl;
@@ -435,7 +435,7 @@ void rys_jk(const int nbas,
     constexpr int nfil = nfi*nfl;
     constexpr int nfjk = nfj*nfk;
     constexpr int nfjl = nfj*nfl;
-    
+
     for (int i_dm = 0; i_dm < n_dm; ++i_dm) {
         if constexpr(do_j){
             // ijkl, ij -> kl

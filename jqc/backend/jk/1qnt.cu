@@ -498,10 +498,10 @@ void rys_jk(const int nbas,
         }
     }
 
-    const int i0 = ao_loc[ish];
-    const int j0 = ao_loc[jsh];
-    const int k0 = ao_loc[ksh];
-    const int l0 = ao_loc[lsh];
+    const int i0 = ao_loc[ish] >= nao ? 0 : ao_loc[ish];
+    const int j0 = ao_loc[jsh] >= nao ? 0 : ao_loc[jsh];
+    const int k0 = ao_loc[ksh] >= nao ? 0 : ao_loc[ksh];
+    const int l0 = ao_loc[lsh] >= nao ? 0 : ao_loc[lsh];
 
     DataType *smem = shared_memory + tx;
     const bool ty_active = (ty < nt_active);
