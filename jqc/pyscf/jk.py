@@ -310,9 +310,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         )
                         kern_counts += 1
                         ntasks_fp64 += n_quartets_fp64
-                    if np.isnan(cp.linalg.norm(vj)) or np.isnan(cp.linalg.norm(vk)):
-                        raise RuntimeError("vj contains NaN values")
-                    #print(n_quartets_fp32, n_quartets_fp64, cp.linalg.norm(vj).item(), cp.linalg.norm(vk).item())
+
             if logger.verbose > lib.logger.INFO:
                 end.record()
                 end.synchronize()
@@ -329,8 +327,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
         # Transform results back to molecular basis using BasisLayout methods
         # The remove_padding=True parameter filters out padded basis functions
-        print(cp.linalg.norm(vj).item(), cp.linalg.norm(vk).item())
-        print(nbas, nbas_padded)
+
         if with_j:
             if hermi == 1:
                 vj *= 2.0
