@@ -464,11 +464,18 @@ void rys_jk(const int nbas,
 
                 const int vj_offset = k0 + l0*nao;
                 double *vj_ptr = vj + vj_offset;
+                const int task_i = (task_id / 8) % 2;
+                const int task_j = (task_id / 4) % 2;
 #pragma unroll
                 for (int k = 0; k < nfk; k++){
                     for (int l = 0; l < nfl; l++){
                         const int vj_offset = k + l*nao;
-                        atomicAdd(vj_ptr + vj_offset, (double)vj_lk[l + k*nfl]);
+                        double vj_sum = vj_lk[l + k*nfl];
+                        vj_sum += __shfl_down_sync(0xffffffff, vj_sum, 8);
+                        vj_sum += __shfl_down_sync(0xffffffff, vj_sum, 4);
+                        if (task_i == 0 && task_j == 0) {
+                            atomicAdd(vj_ptr + vj_offset, vj_sum);
+                        }
                     }
                 }
             }
@@ -594,6 +601,8 @@ void rys_jk(const int nbas,
                     }
                     dm_ptr += nao;
                 }
+                const int task_i = (task_id / 8) % 2;
+                const int task_l = task_id % 2;
                 const int vk_offset = j0*nao + k0;
                 double *vk_ptr = vk + vk_offset;
 #pragma unroll
@@ -612,7 +621,12 @@ void rys_jk(const int nbas,
                             off_k += gstride_i;
                         }
                         const int offset = j*nao + k;
-                        atomicAdd(vk_ptr + offset, (double)vk_jk);
+                        double vk_sum = vk_jk;
+                        vk_sum += __shfl_down_sync(0xffffffff, vk_sum, 8);
+                        vk_sum += __shfl_down_sync(0xffffffff, vk_sum, 1);
+                        if (task_i == 0 && task_l == 0){
+                            atomicAdd(vk_ptr + offset, vk_sum);
+                        }
                     }
                 }
             }
@@ -640,14 +654,21 @@ void rys_jk(const int nbas,
                         }
                     }
                 }
-
+                
+                const int task_i = (task_id / 8) % 2;
+                const int task_k = (task_id / 2) % 2;
                 const int vk_offset = j0*nao + l0;
                 double *vk_ptr = vk + vk_offset;
 #pragma unroll
                 for (int j = 0; j < nfj; j++){
                     for (int l = 0; l < nfl; l++){
                         const int vk_offset = j*nao + l;
-                        atomicAdd(vk_ptr + vk_offset, (double)vk_jl[l + j*nfl]);
+                        double vk_sum = vk_jl[l + j*nfl];
+                        vk_sum += __shfl_down_sync(0xffffffff, vk_sum, 8); // reduce i
+                        vk_sum += __shfl_down_sync(0xffffffff, vk_sum, 2); // reduce k
+                        if (task_i == 0 && task_k == 0){
+                            atomicAdd(vk_ptr + vk_offset, vk_sum);
+                        }
                     }
                 }
             }

@@ -293,12 +293,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         )
                         kern_counts += 1
                         ntasks_fp32 += n_quartets_fp32
-                    if (np.isnan(cp.linalg.norm(vj))) or np.isnan(cp.linalg.norm(vk)):
-                        print(i,j,k,l)
-                        print(cp.linalg.norm(vj), cp.linalg.norm(vk))
-                        print(ao_loc)
-                        print(ao_loc)
-                        exit()
+
                     if n_quartets_fp64 > 0:
                         jk_fp64_kernel(
                             nbas,
