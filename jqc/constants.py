@@ -43,7 +43,7 @@ TILE = 4
 # With BAS_ALIGN=2, each fragment contains up to 16 shell quartets, but symmetry
 # constraints are applied at the individual quartet level (not just the base quartet),
 # ensuring only valid quartets are screened and output to the task queue.
-BAS_ALIGN = 1
+BAS_ALIGN = 2
 
 MAX_SMEM = 48 * 1024  # Maximum shared memory per block in bytes
 

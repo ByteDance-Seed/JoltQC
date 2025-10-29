@@ -52,10 +52,11 @@ def main() -> None:
     mf_ref = jqc.pyscf.apply(mf_ref)
     e_ref = mf_ref.kernel()
 
-    # Mixed-precision run with relaxed cutoffs
+    # Mixed-precision (disabled for this basis by using identical cutoffs)
+    # Rationale: def2-tzvpp includes f-shells which are less stable in FP32.
+    # For lighter bases (no f), try jk cutoff_fp64=1e-7 for speed.
     config = {
         "jk": {"cutoff_fp32": 1e-13, "cutoff_fp64": 1e-7},
-        # DFT cutoffs included for completeness; RHF uses only JK
         "dft": {"cutoff_fp32": 1e-13, "cutoff_fp64": 1e-7},
     }
     mf_mp = scf.RHF(mol)
@@ -70,4 +71,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

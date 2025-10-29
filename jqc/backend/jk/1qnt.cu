@@ -25,6 +25,7 @@ constexpr DataType half = .5;
 constexpr DataType one = 1.0;
 constexpr DataType zero = 0.0;
 constexpr int prim_stride = PRIM_STRIDE / 2;
+constexpr DataType max_exp = 36.8; // To avoid overflow in exp(-x)
 
 // Make coordinate stride configurable via COORD_STRIDE
 static_assert(COORD_STRIDE >= 3, "COORD_STRIDE must be >= 3");
@@ -212,7 +213,7 @@ void rys_jk(const int nbas,
                 const DataType inv_aij = one / aij;
                 const DataType aj_aij = aj * inv_aij;
                 const DataType theta_ij = ai * aj_aij;
-                const DataType Kab = exp(-theta_ij * rr_ij);
+                const DataType Kab = theta_ij * rr_ij > max_exp ? 0.0f : exp(-theta_ij * rr_ij);
                 const DataType cicj = fac_sym * ci * cj * Kab;
                 const int idx = ip + jp*npi;
                 reg_cicj[idx] = cicj;
@@ -237,7 +238,7 @@ void rys_jk(const int nbas,
         const DataType inv_akl = one / akl;
         const DataType al_akl = al * inv_akl;
         const DataType theta_kl = ak * al_akl;
-        const DataType Kcd = exp(-theta_kl * rr_kl);
+        const DataType Kcd = theta_kl * rr_kl > max_exp ? 0.0f : exp(-theta_kl * rr_kl);
         const DataType ck = cek.c;
         const DataType cl = cel.c;
         const DataType ckcl = ck * cl * Kcd;
@@ -274,9 +275,10 @@ void rys_jk(const int nbas,
                 inv_aij = one / aij;
                 const DataType aj_aij = aj * inv_aij;
                 const DataType theta_ij = ai * aj_aij;
-                const DataType Kab = exp(-theta_ij * rr_ij);
+                const DataType Kab = theta_ij * rr_ij > max_exp ? 0.0f : exp(-theta_ij * rr_ij);
                 cicj = fac_sym * ci * cj * Kab;
             }
+            
             const DataType aj_aij = aj * inv_aij;
             
             const DataType xij = rjri0 * aj_aij + ri.x;
@@ -301,7 +303,9 @@ void rys_jk(const int nbas,
             rys_roots(rr, rw, ty, gx_stride, theta, omega);
             
             DataType g0xyz;
-            if (ty == 0) g0xyz = ckcl; 
+            if (ty == 0) {
+                g0xyz = ckcl;
+            }
             if (ty == 1) g0xyz = cicj * inv_aij * inv_akl * sqrt(inv_aijkl);
             
             __syncthreads();

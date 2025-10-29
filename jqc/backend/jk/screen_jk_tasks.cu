@@ -260,6 +260,19 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
             const int frag_j = j0 / align;
             const int frag_k = k0 / align;
             const int frag_l = l0 / align;
+
+            // Check if any quartet in this fragment would be out of bounds
+            // Maximum indices in fragment: ish0 + (frag_i+1)*align - 1, etc.
+            const int max_ish = ish0 + (frag_i + 1) * align - 1;
+            const int max_jsh = jsh0 + (frag_j + 1) * align - 1;
+            const int max_ksh = ksh0 + (frag_k + 1) * align - 1;
+            const int max_lsh = lsh0 + (frag_l + 1) * align - 1;
+
+            if (max_ish >= nbas || max_jsh >= nbas || max_ksh >= nbas || max_lsh >= nbas) {
+                // Skip fragment if any quartet would be out of bounds
+                continue;
+            }
+
             const uint64_t frag_idx = ((frag_i * frag_size + frag_j) * frag_size + frag_k) * frag_size + frag_l;
             const uint64_t frag_word = frag_idx >> 6;
             const uint64_t frag_bit = frag_idx & 63;
