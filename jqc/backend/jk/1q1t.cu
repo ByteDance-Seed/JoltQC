@@ -167,7 +167,7 @@ void rys_jk(const int nbas,
                 const DataType inv_aij = one / aij;
                 const DataType aj_aij = aj * inv_aij;
                 const DataType theta_ij = ai * aj_aij;
-                const DataType Kab = theta_ij * rr_ij > max_exp ? 0.0f : exp(-theta_ij * rr_ij);
+                const DataType Kab = exp(-theta_ij * rr_ij);
                 const DataType cicj = fac_sym * ci * cj * Kab;
                 const int idx = ip + jp*npi;
                 reg_cicj[idx] = cicj;
@@ -192,7 +192,7 @@ void rys_jk(const int nbas,
         const DataType inv_akl = one / akl;
         const DataType al_akl = al * inv_akl;
         const DataType theta_kl = ak * al_akl;
-        const DataType Kcd = theta_kl * rr_kl > max_exp ? 0.0f : exp(-theta_kl * rr_kl);
+        const DataType Kcd = exp(-theta_kl * rr_kl);
         const DataType ck = cek.c;
         const DataType cl = cel.c;
         const DataType ckcl = ck * cl * Kcd;
@@ -228,7 +228,7 @@ void rys_jk(const int nbas,
                 inv_aij = one / aij;
                 const DataType aj_aij = aj * inv_aij;
                 const DataType theta_ij = ai * aj_aij;
-                const DataType Kab = theta_ij * rr_ij > max_exp ? 0.0f : exp(-theta_ij * rr_ij);
+                const DataType Kab = exp(-theta_ij * rr_ij);
                 cicj = fac_sym * ci * cj * Kab;
             }
             
