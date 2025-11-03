@@ -14,7 +14,7 @@
 #
 
 """
-1q1t algorithm for JK calculations
+2D algorithm for JK calculations
 """
 
 import warnings
@@ -22,22 +22,21 @@ import warnings
 import cupy as cp
 import numpy as np
 
-from jqc.backend.cuda_scripts import jk_1q1t_code, rys_roots_code, rys_roots_data
+from jqc.backend.cuda_scripts import jk_2d_code, rys_roots_code, rys_roots_data
 from jqc.backend.util import generate_lookup_table
 from jqc.constants import COORD_STRIDE, NPRIM_MAX, PRIM_STRIDE
 
 __all__ = ["gen_kernel"]
 
-THREADS = 256
+THREADS = (16, 16)
 compile_options = ("-std=c++17", "--use_fast_math", "--minimal")
 
 _script_cache = {}
 
-
 def gen_code(keys):
     if keys in _script_cache:
         return _script_cache[keys]
-    ang, nprim, dtype, rys_type, n_dm, do_j, do_k, nsq_per_block = keys
+    ang, nprim, dtype, rys_type, n_dm, do_j, do_k = keys
     if dtype == np.float64:
         dtype_cuda = "double"
     elif dtype == np.float32:
@@ -63,7 +62,6 @@ constexpr int n_dm = {n_dm};
 constexpr int rys_type = {rys_type};   // 0: omega = 0.0; -1: omega < 0.0; 1 omega > 0.0;
 constexpr int do_j = {int(do_j)};
 constexpr int do_k = {int(do_k)};
-constexpr int nsq_per_block = {nsq_per_block};
 // Inject constants to match host-side layout
 #define NPRIM_MAX {NPRIM_MAX}
 // PRIM_STRIDE here matches host scalar stride; device uses prim_stride = PRIM_STRIDE/2
@@ -75,12 +73,11 @@ constexpr int nroots = ((li+lj+lk+ll)/2+1);
 """
     idx_script = generate_lookup_table(li, lj, lk, ll)
     script = (
-        const + rys_roots_data[nroots] + rys_roots_code + idx_script + jk_1q1t_cuda_code
+        const + rys_roots_data[nroots] + rys_roots_code + idx_script + jk_2d_code
     )
 
     _script_cache[keys] = script
     return script
-
 
 def gen_kernel(
     ang,
@@ -103,8 +100,7 @@ def gen_kernel(
     else:
         rys_type = 0
 
-    nsq_per_block = THREADS
-    keys = ang, nprim, dtype, rys_type, n_dm, do_j, do_k, nsq_per_block
+    keys = ang, nprim, dtype, rys_type, n_dm, do_j, do_k
     script = gen_code(keys)
 
     if not use_cache:
@@ -115,36 +111,14 @@ def gen_kernel(
         x = random.random()
         script += f" \n#define RANDOM_NUMBER {x}"
 
-    # For counting tasks
-    shared_memory = THREADS * 4
-
     mod = cp.RawModule(code=script, options=compile_options)
-    kernel = mod.get_function("rys_jk")
-    if kernel.local_size_bytes > 8192:
-        msg = f"Local memory usage is high in 1q1t: {kernel.local_size_bytes} Bytes,"
-        msg += f"    ang = {ang}, nprim = {nprim}, dtype = {dtype}, n_dm = {n_dm}"
-        warnings.warn(msg)
-    if print_log:
-        li, lj, lk, ll = ang
-        npi, npj, npk, npl = nprim
-        fragi = (li + 1) * (li + 2) // 2
-        fragj = (lj + 1) * (lj + 2) // 2
-        fragk = (lk + 1) * (lk + 2) // 2
-        fragl = (ll + 1) * (ll + 2) // 2
-        print(
-            f"Type: ({li}{lj}|{lk}{ll}), \
-primitives: ({npi}{npj}|{npk}{npl}), \
-algorithm: 1q1t, \
-threads: ({nsq_per_block:3d},   1), \
-frags: ({fragi:2d}, {fragj:2d}, {fragk:2d}, {fragl:2d}), \
-shared memory: {shared_memory/1024:5.2f} KB, \
-registers: {kernel.num_regs:3d}, \
-local memory: {kernel.local_size_bytes:4d} Bytes"
-        )
+    kernel = mod.get_function("rys_jk_2d")
 
     def fun(*args):
-        ntasks = args[-1]  # the last argument is ntasks
-        blocks = (ntasks + nsq_per_block - 1) // nsq_per_block
-        kernel((blocks,), (nsq_per_block, 1), args, shared_mem=shared_memory)
+        n_ij_pairs = args[-3]
+        n_kl_pairs = args[-1]
+        grid_x = (n_ij_pairs + THREADS[0] - 1) // THREADS[0]
+        grid_y = (n_kl_pairs + THREADS[1] - 1) // THREADS[1]
+        kernel((grid_x, grid_y), THREADS, args)
 
     return script, mod, fun

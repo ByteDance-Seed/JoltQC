@@ -327,11 +327,10 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
         if with_j:
             if hermi == 1:
-                vj *= 2.0
+                vj = inplace_add_transpose(vj)
             else:
                 vj, vjT = vj[: n_dm // 2], vj[n_dm // 2 :]
                 vj += vjT.transpose(0, 2, 1)
-            vj = inplace_add_transpose(vj)
             vj = basis_layout.dm_to_mol(vj)
             vj = vj.reshape(dm.shape)
 
@@ -355,6 +354,62 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         return vj, vk
 
     return get_jk
+
+
+def make_pairs(l_ctr_bas_loc, q_matrix, cutoff, column_size: int = 16):
+    """Make shell pairs with GTO pairing screening"""
+    pairs = {}
+    n_groups = len(l_ctr_bas_loc) - 1
+    nbas = q_matrix.shape[0]
+    bas_loc = l_ctr_bas_loc
+
+    # Pre-compute indices to avoid repeated allocations
+    i_indices = cp.arange(nbas, dtype=np.int32)
+    j_indices = cp.arange(nbas, dtype=np.int32)
+
+    for i in range(n_groups):
+        i0, i1 = bas_loc[i], bas_loc[i + 1]
+        i_range = i_indices[i0:i1]
+
+        for j in range(n_groups):
+            j0, j1 = bas_loc[j], bas_loc[j + 1]
+            j_range = j_indices[j0:j1]
+
+            sub_q_idx = q_matrix[i0:i1, j0:j1]
+            mask = sub_q_idx > cutoff
+
+            if not mask.any():
+                continue
+
+            all_valid_pairs = []
+            for idx, sh_i in enumerate(i_range):
+                row_mask = mask[idx, :]
+                if not row_mask.any():
+                    continue
+
+                valid_j_indices = j_range[row_mask]
+                current_pairs = sh_i * nbas + valid_j_indices
+
+                q_values = sub_q_idx[idx, :][row_mask]
+                sort_indices = cp.argsort(q_values)
+                sorted_pairs = current_pairs[sort_indices]
+
+                num_pairs = sorted_pairs.size
+                padded_size = ((num_pairs + column_size - 1) // column_size) * column_size
+                if padded_size > 0:
+                    padded_row = cp.ones(padded_size, dtype=np.int32) * 1024 * 1024
+                    padded_row[:num_pairs] = sorted_pairs
+                    all_valid_pairs.append(padded_row)
+
+            if not all_valid_pairs:
+                continue
+
+            final_pairs_1d = cp.concatenate(all_valid_pairs)
+            num_total_pairs = final_pairs_1d.size
+            if num_total_pairs > 0:
+                pairs[i, j] = final_pairs_1d.reshape(-1, column_size)
+
+    return pairs
 
 
 def make_tile_pairs(l_ctr_bas_loc, q_matrix, cutoff, tile=TILE):
