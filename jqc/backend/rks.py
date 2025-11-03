@@ -32,7 +32,7 @@ __all__ = ["gen_rho_kernel", "gen_vv10_kernel", "gen_vxc_kernel", "vv10nlc"]
 compile_options = ("-std=c++17", "--use_fast_math", "--minimal")
 nthreads = 256
 
-with open(f"{code_path}/cuda/eval_rho.cu") as f:
+with open(f"{code_path}/dft/eval_rho.cu") as f:
     eval_rho_cuda_code = f.read()
 
 
@@ -98,7 +98,7 @@ local memory: {kernel.local_size_bytes:4d} Bytes"
     return script, mod, fun
 
 
-with open(f"{code_path}/cuda/eval_vxc.cu") as f:
+with open(f"{code_path}/dft/eval_vxc.cu") as f:
     eval_vxc_cuda_code = f.read()
 
 
@@ -164,7 +164,7 @@ local memory: {kernel.local_size_bytes:4d} Bytes"
     return script, mod, fun
 
 
-with open(f"{code_path}/cuda/estimate_log_aovalue.cu") as f:
+with open(f"{code_path}/dft/estimate_log_aovalue.cu") as f:
     estimate_aovalue_script = f.read()
 
 
@@ -248,7 +248,7 @@ constexpr int nprim = {nprim};
     return logidx, nnz_per_block
 
 
-with open(f"{code_path}/cuda/vv10.cu") as f:
+with open(f"{code_path}/dft/vv10.cu") as f:
     vv10_script = f.read()
 
 
