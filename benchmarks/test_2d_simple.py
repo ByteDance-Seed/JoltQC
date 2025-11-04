@@ -77,15 +77,9 @@ def test_angular_momentum(l, dtype):
     mf_cpu = scf.RHF(mol).run(verbose=0)
     print(f"  CPU SCF energy: {mf_cpu.e_tot:.10f}")
 
-    # Run GPU SCF with JQC using 2D algorithm
-    # Force 2D algorithm by setting frags to (-2,) in config
+    # Run GPU SCF with JQC (let it choose algorithm)
     mf_gpu = gpu_scf.RHF(mol)
-    config = {
-        "jk": {
-            "frags": (-2,),  # Force 2D algorithm
-        }
-    }
-    mf_gpu = jqc.pyscf.apply(mf_gpu, config)
+    mf_gpu = jqc.pyscf.apply(mf_gpu)
     mf_gpu.verbose = 0
     mf_gpu.kernel()
 

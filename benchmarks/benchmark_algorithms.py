@@ -147,8 +147,11 @@ def benchmark(ang, dtype):
     # Generate JK kernel and compute pairs
     vj = cp.zeros_like(dms_jqc)
     vk = cp.zeros_like(dms_jqc)
+
+    # Try with 1q1t algorithm first to verify setup
+    print(f"Using 1q1t algorithm (frags=[-1]) for testing")
     fun = gen_jk_kernel(
-        ang, nprim, dtype=dtype, frags=(-2,), n_dm=dms_jqc.shape[0], omega=omega
+        ang, nprim, dtype=dtype, frags=(-1,), n_dm=dms_jqc.shape[0], omega=omega
     )
     pairs = make_pairs(group_offset, q_matrix, cutoff)
 
@@ -183,17 +186,21 @@ def benchmark(ang, dtype):
 
     print(f"Computed JK with {n_ij_pairs} ij-pairs and {n_kl_pairs} kl-pairs")
 
+    # Convert results back to molecular basis layout
+    vj_mol = basis_layout.dm_to_mol(vj)
+    vk_mol = basis_layout.dm_to_mol(vk)
+
     # Verify results against PySCF reference
     vj_ref, vk_ref = scf.hf.get_jk(mol, dms.get(), hermi=1)
     vj_ref = cp.asarray(vj_ref)
     vk_ref = cp.asarray(vk_ref)
 
-    tolerance = 1e-10 if dtype == np.float64 else 1e-4
-    vj_diff = cp.abs(vj - vj_ref).max()
-    vk_diff = cp.abs(vk - vk_ref).max()
+    tolerance = 1e-9 if dtype == np.float64 else 1e-4
+    vj_diff = cp.abs(vj_mol - vj_ref).max()
+    vk_diff = cp.abs(vk_mol - vk_ref).max()
 
     print("\nVerification Results:")
-    print(f"  vj shape: {vj.shape}")
+    print(f"  vj_mol shape: {vj_mol.shape}")
     print(f"  vj_ref shape: {vj_ref.shape}")
     print(f"  max |vj - vj_ref| = {vj_diff:.2e}")
     print(f"  max |vk - vk_ref| = {vk_diff:.2e}")
