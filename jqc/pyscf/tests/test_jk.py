@@ -304,9 +304,11 @@ class KnownValues(unittest.TestCase):
         column_size = 16
         pairs = jqc.pyscf.jk.make_pairs(l_ctr_bas_loc, q_matrix, cutoff, column_size=column_size)
 
-        # Expected output based on the corrected walkthrough
+        # Expected output: valid pairs followed by nbas*nbas padding
+        # nbas=4, so padding value is 4*4=16
+        padding_value = nbas * nbas
         expected_pairs = {
-            (0, 0): cp.array([[1] + [0] * (column_size - 1), [4] + [0] * (column_size - 1)], dtype=np.int32)
+            (0, 0): cp.array([[1] + [padding_value] * (column_size - 1), [4] + [padding_value] * (column_size - 1)], dtype=np.int32)
         }
 
         self.assertEqual(len(pairs), len(expected_pairs))
