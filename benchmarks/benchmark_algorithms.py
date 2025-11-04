@@ -16,12 +16,23 @@
 """
 Benchmark script for testing JK algorithm implementations.
 
+This script benchmarks the 2D JK algorithm for specified angular momentum
+combinations. It verifies correctness against PySCF reference implementation.
+
+Angular Momentum Support:
+- s shell (l=0): simplest case
+- p shell (l=1): 3 basis functions
+- d shell (l=2): 6 basis functions
+- f shell (l=3): 10 basis functions
+- g shell (l=4): 15 basis functions
+
 Usage:
     python benchmark_algorithms.py <li> <lj> <lk> <ll> <precision>
 
-Example:
-    python benchmark_algorithms.py 0 0 0 0 fp64
-    python benchmark_algorithms.py 1 1 1 1 fp32
+Examples:
+    python benchmark_algorithms.py 0 0 0 0 fp64   # s-s-s-s shells
+    python benchmark_algorithms.py 1 1 1 1 fp32   # p-p-p-p shells
+    python benchmark_algorithms.py 0 1 2 3 fp64   # mixed shells
 """
 
 import math
@@ -164,8 +175,24 @@ if __name__ == "__main__":
 
     try:
         ang = tuple(map(int, sys.argv[1:5]))
+
+        # Validate angular momentum range
+        max_l = 4  # Maximum supported angular momentum (g shell)
+        if any(l < 0 or l > max_l for l in ang):
+            print(f"Error: Angular momentum {ang} out of range")
+            print(f"Supported range: 0 (s shell) to {max_l} (g shell)")
+            sys.exit(1)
+
         dtype = np.float32 if sys.argv[5] == "fp32" else np.float64
-        print(f"Running benchmark with angular momenta {ang} and {sys.argv[5]}")
+
+        # Print configuration
+        shell_names = ['s', 'p', 'd', 'f', 'g']
+        shell_str = '-'.join(shell_names[l] for l in ang)
+        print(f"Benchmarking 2D JK Algorithm")
+        print(f"  Angular momentum: {ang} ({shell_str})")
+        print(f"  Precision: {sys.argv[5]}")
+        print()
+
         benchmark(ang, dtype)
     except ValueError as e:
         print(f"Error: Invalid angular momentum values. Expected integers.")

@@ -14,7 +14,23 @@
 #
 
 """
-2D algorithm for JK calculations
+2D algorithm for JK calculations.
+
+The 2D algorithm computes J/K matrices using a 2D grid where:
+- Each block processes one (ij, kl) shell quartet pair
+- Threads within a block (16x16) handle multiple pairs from the pair lists
+- Supports arbitrary angular momentum combinations (li, lj, lk, ll)
+
+Angular Momentum Support:
+- All combinations from (0,0,0,0) to (4,4,4,4) are supported
+- The algorithm is most efficient for low angular momentum (s, p, d shells)
+- Higher angular momentum (f, g shells) may require more registers
+
+Pair Format:
+- ij_pairs and kl_pairs are arrays of flattened shell pair indices
+- Each pair index is computed as: pair = ish * nbas + jsh
+- Pairs are stored in blocks of 16 for coalesced memory access
+- Padding with zeros is used for incomplete blocks
 """
 
 import warnings
@@ -90,6 +106,37 @@ def gen_kernel(
     print_log=False,
     use_cache=True,
 ):
+    """
+    Generate a 2D JK kernel for given angular momentum and primitives.
+
+    Args:
+        ang: Tuple of 4 integers (li, lj, lk, ll) representing angular momenta.
+             Supports 0 (s) through 4 (g) for each shell.
+        nprim: Tuple of 4 integers specifying number of primitives per shell
+        dtype: Data type (np.float32 or np.float64)
+        n_dm: Number of density matrices to process
+        do_j: Whether to compute J matrix
+        do_k: Whether to compute K matrix
+        omega: Range-separation parameter (None for standard integrals)
+        print_log: Print kernel info if True
+        use_cache: Use cached kernels if available
+
+    Returns:
+        Tuple of (script, module, function) where function expects args:
+            (nbas, nao, ao_loc, coords, ce_data, dm, vj, vk, omega,
+             ij_pairs, n_ij_pairs, kl_pairs, n_kl_pairs)
+
+    Raises:
+        RuntimeError: If angular momentum exceeds maximum supported value (4)
+                     or if omega value is negative (not supported)
+    """
+    # Validate angular momentum
+    li, lj, lk, ll = ang
+    max_l = 4  # Maximum angular momentum (g shell)
+    if any(l < 0 or l > max_l for l in ang):
+        raise ValueError(
+            f"Angular momentum {ang} out of range. Supported: 0 (s) to {max_l} (g)"
+        )
     if omega is None:
         rys_type = 0
     elif omega > 0:
@@ -113,12 +160,10 @@ def gen_kernel(
 
     mod = cp.RawModule(code=script, options=compile_options)
     kernel = mod.get_function("rys_jk_2d")
-
+    
     def fun(*args):
         n_ij_pairs = args[-3]
         n_kl_pairs = args[-1]
-        grid_x = (n_ij_pairs + THREADS[0] - 1) // THREADS[0]
-        grid_y = (n_kl_pairs + THREADS[1] - 1) // THREADS[1]
-        kernel((grid_x, grid_y), THREADS, args)
+        kernel((n_ij_pairs, n_kl_pairs), THREADS, args)
 
     return script, mod, fun

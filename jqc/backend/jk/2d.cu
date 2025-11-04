@@ -55,20 +55,40 @@ void rys_jk_2d(const int nbas,
         const int* __restrict__ kl_pairs,
         const int n_kl_pairs)
 {
-    const int ij_idx = blockIdx.x * blockDim.x + threadIdx.x;
-    const int kl_idx = blockIdx.y * blockDim.y + threadIdx.y;
+    const int ij_idx = blockIdx.x;
+    const int kl_idx = blockIdx.y;
 
+    // Early exit for out-of-bounds blocks
     if (ij_idx >= n_ij_pairs || kl_idx >= n_kl_pairs) {
         return;
     }
 
-    const int ij_pair_flat = ij_pairs[ij_idx];
-    const int kl_pair_flat = kl_pairs[kl_idx];
+    // Extract pair indices with thread indexing
+    // Pairs are stored in blocks of 16, with padding for incomplete blocks
+    const int ij_offset = ij_idx * 16 + threadIdx.x;
+    const int kl_offset = kl_idx * 16 + threadIdx.y;
 
-    const int ish = ij_pair_flat / nbas;
-    const int jsh = ij_pair_flat % nbas;
-    const int ksh = kl_pair_flat / nbas;
-    const int lsh = kl_pair_flat % nbas;
+    // Load pair with bounds checking
+    const int ij = (ij_offset < n_ij_pairs * 16) ? ij_pairs[ij_offset] : 0;
+    const int kl = (kl_offset < n_kl_pairs * 16) ? kl_pairs[kl_offset] : 0;
+
+    // Decode shell indices from flattened pair indices
+    const int ish = ij / nbas;
+    const int jsh = ij - ish * nbas;  // Equivalent to ij % nbas but potentially faster
+    const int ksh = kl / nbas;
+    const int lsh = kl - ksh * nbas;
+
+    // Validate shell indices
+    // This handles both padding entries (ij=0, kl=0) and out-of-bounds cases
+    if (ish >= nbas || jsh >= nbas || ksh >= nbas || lsh >= nbas) {
+        return;
+    }
+
+    // Additional validation: ensure pairs represent valid shell combinations
+    // For symmetry: require ish >= jsh and ksh >= lsh (or adjust based on your convention)
+    if (ij == 0 || kl == 0) {
+        return;  // Skip padding entries
+    }
 
     constexpr int stride_i = 1;
     constexpr int stride_j = stride_i * (li+1);
@@ -427,41 +447,6 @@ void rys_jk_2d(const int nbas,
     
     for (int i_dm = 0; i_dm < n_dm; ++i_dm) {
         if constexpr(do_j){
-            // ijkl, ij -> kl
-            {
-                const int dm_offset = i0 + j0*nao;
-                DataType *dm_ptr = dm + dm_offset;
-                DataType vj_lk[nfkl] = {zero};
-#pragma unroll
-                for (int i = 0; i < nfi; i++){
-                    const int base_off_i = i * gstride_i;
-                    for (int j = 0; j < nfj; j++){
-                        const int dm_offset = j*nao + i;
-                        DataType dm_ij = __ldg(dm_ptr + dm_offset);
-                        const int off_j = base_off_i + j * gstride_j;
-                        for (int k = 0; k < nfk; k++){
-                            const int base_lk = k * nfl;
-                            int off_k = off_j + k * gstride_k;
-                            int idx = off_k;
-                            for (int l = 0; l < nfl; l++){
-                                vj_lk[base_lk + l] += integral[idx] * dm_ij;
-                                idx += gstride_l;
-                            }
-                        }
-                    }
-                }
-
-                const int vj_offset = k0 + l0*nao;
-                double *vj_ptr = vj + vj_offset;
-#pragma unroll
-                for (int k = 0; k < nfk; k++){
-                    for (int l = 0; l < nfl; l++){
-                        const int vj_offset = k + l*nao;
-                        atomicAdd(vj_ptr + vj_offset, (double)vj_lk[l + k*nfl]);
-                    }
-                }
-            }
-
             // ijkl, kl -> ij
             {
                 DataType dm_kl_cache[nfkl];
@@ -531,112 +516,6 @@ void rys_jk_2d(const int nbas,
                         }
                         const int offset = i*nao + k;
                         atomicAdd(vk_ptr + offset, (double)vk_ik);
-                    }
-                }
-            }
-
-            // ijkl, jk -> il
-            {
-                DataType dm_jk_cache[nfjk];
-                const int dm_offset = j0*nao + k0;
-                DataType *dm_ptr = dm + dm_offset;
-#pragma unroll
-                for (int j = 0; j < nfj; j++){
-                    for (int k = 0; k < nfk; k++){
-                        dm_jk_cache[k + j*nfk] = __ldg(dm_ptr + k);
-                    }
-                    dm_ptr += nao;
-                }
-
-                const int vk_offset = i0*nao + l0;
-                double *vk_ptr = vk + vk_offset;
-#pragma unroll
-                for (int i = 0; i < nfi; i++){
-                    const int base_off_i = i*gstride_i;
-                    for (int l = 0; l < nfl; l++){
-                        DataType vk_il = zero;
-                        int off_l = base_off_i + l*gstride_l;
-                        for (int j = 0; j < nfj; j++){
-                            const int cache_j = j * nfk;
-                            int idx = off_l;
-                            for (int k = 0; k < nfk; k++){
-                                vk_il += integral[idx] * dm_jk_cache[cache_j + k];
-                                idx += gstride_k;
-                            }
-                            off_l += gstride_j;
-                        }
-                        const int offset = i*nao + l;
-                        atomicAdd(vk_ptr + offset, (double)vk_il);
-                    }
-                }
-            }
-
-            // ijkl, il -> jk
-            {
-                DataType dm_il_cache[nfil];
-                const int dm_offset = i0*nao + l0;
-                DataType *dm_ptr = dm + dm_offset;
-#pragma unroll
-                for (int i = 0; i < nfi; i++){
-                    for (int l = 0; l < nfl; l++){
-                        dm_il_cache[l + i*nfl] = __ldg(dm_ptr + l);
-                    }
-                    dm_ptr += nao;
-                }
-                const int vk_offset = j0*nao + k0;
-                double *vk_ptr = vk + vk_offset;
-#pragma unroll
-                for (int j = 0; j < nfj; j++){
-                    const int base_off_j = j * gstride_j;
-                    for (int k = 0; k < nfk; k++){
-                        DataType vk_jk = zero;
-                        int off_k = base_off_j + k * gstride_k;
-                        for (int i = 0; i < nfi; i++){
-                            const int cache_i = i * nfl;
-                            int idx = off_k;
-                            for (int l = 0; l < nfl; l++){
-                                vk_jk += integral[idx] * dm_il_cache[cache_i + l];
-                                idx += gstride_l;
-                            }
-                            off_k += gstride_i;
-                        }
-                        const int offset = j*nao + k;
-                        atomicAdd(vk_ptr + offset, (double)vk_jk);
-                    }
-                }
-            }
-
-            // ijkl, ik -> jl
-            {
-                DataType vk_jl[nfl*nfj] = {zero};
-                const int dm_offset = i0*nao + k0;
-                DataType *dm_ptr = dm + dm_offset;
-#pragma unroll
-                for (int i = 0; i < nfi; i++){
-                    const int base_off_i = i * gstride_i;
-                    for (int k = 0; k < nfk; k++){
-                        const int dm_offset = i*nao + k;
-                        DataType dm_ik = __ldg(dm_ptr + dm_offset);
-                        int off_k = base_off_i + k * gstride_k;
-                        for (int j = 0; j < nfj; j++){
-                            int idx = off_k;
-                            const int cache_j = j * nfl;
-                            for (int l = 0; l < nfl; l++){
-                                vk_jl[cache_j + l] += integral[idx] * dm_ik;
-                                idx += gstride_l;
-                            }
-                            off_k += gstride_j;
-                        }
-                    }
-                }
-
-                const int vk_offset = j0*nao + l0;
-                double *vk_ptr = vk + vk_offset;
-#pragma unroll
-                for (int j = 0; j < nfj; j++){
-                    for (int l = 0; l < nfl; l++){
-                        const int vk_offset = j*nao + l;
-                        atomicAdd(vk_ptr + vk_offset, (double)vk_jl[l + j*nfl]);
                     }
                 }
             }
