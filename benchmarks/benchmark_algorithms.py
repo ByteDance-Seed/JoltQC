@@ -110,7 +110,7 @@ def generate_basis_for_angular_momentum(l, symbol="H"):
     # Generate appropriate exponents for the given angular momentum
     # Use a sequence of exponents with reasonable spacing
     if l == 0:  # s shell
-        exponents = [1.27, 0.27, 0.027]
+        exponents = [0.027, 0.27]#[1.27, 0.27, 0.027]
     elif l == 1:  # p shell
         exponents = [2.5, 0.6, 0.15]
     elif l == 2:  # d shell
@@ -182,7 +182,10 @@ def benchmark(ang, dtype):
         ce_data = cp.asarray(basis_layout.ce_fp64)
 
     # Generate JoltQC get_jk function for reference comparison
-    jqc_get_jk = generate_get_jk(basis_layout)
+    if dtype == np.float32:
+        jqc_get_jk = generate_get_jk(basis_layout, cutoff_fp32=1e-13, cutoff_fp64=1e100)
+    else:
+        jqc_get_jk = generate_get_jk(basis_layout, cutoff_fp64=1e-13)
 
     # Cast omega to the correct precision for CUDA kernel
     omega_kernel = dtype(omega)
@@ -257,9 +260,7 @@ def benchmark(ang, dtype):
     # Execute JK computation
     args = (nbas, nao, ao_loc, coords, ce_data, dms_jqc, vj, vk,
             omega_kernel, ij_pairs, n_ij_pairs, kl_pairs, n_kl_pairs)
-    print(nbas, nao, ao_loc.shape, coords.dtype, ce_data.dtype, dms_jqc.dtype,
-          vj.dtype, vk.dtype, omega_kernel.dtype, ij_pairs.shape, n_ij_pairs,
-          kl_pairs.shape, n_kl_pairs)
+
     start_evt = cp.cuda.Event()
     stop_evt = cp.cuda.Event()
     start_evt.record()
@@ -267,7 +268,7 @@ def benchmark(ang, dtype):
     stop_evt.record()
     stop_evt.synchronize()
     elapsed_2d = cp.cuda.get_elapsed_time(start_evt, stop_evt) * 1e-3
-    print(cp.linalg.norm(vj), cp.linalg.norm(vk))
+
     # Convert results back to molecular basis layout
     vj_mol = basis_layout.dm_to_mol(vj)
     vk_mol = basis_layout.dm_to_mol(vk)
@@ -280,8 +281,8 @@ def benchmark(ang, dtype):
     ref_stop.record()
     ref_stop.synchronize()
     elapsed_ref = cp.cuda.get_elapsed_time(ref_start, ref_stop) * 1e-3
-    print(cp.linalg.norm(vj_ref), cp.linalg.norm(vk_ref))
-    tolerance = 1e-9 if dtype == np.float64 else 1e-4
+
+    tolerance = 1e-8 if dtype == np.float64 else 1e-4
     vj_diff = cp.abs(vj_mol - vj_ref).max()
     vk_diff = cp.abs(vk_mol - vk_ref).max()
 

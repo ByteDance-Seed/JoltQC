@@ -21,6 +21,44 @@ constexpr DataType one = 1.0;
 constexpr DataType zero = 0.0;
 constexpr int prim_stride = PRIM_STRIDE / 2;
 
+template <typename T>
+__inline__ __device__ T warpReduceSum2D(T val) {
+    // Intra-warp reduction (warp synchronous)
+    for (int offset = warpSize / 2; offset > 0; offset /= 2)
+        val += __shfl_down_sync(0xffffffff, val, offset);
+    return val;
+}
+
+template <typename T>
+__inline__ __device__ T blockReduceSum2D(T val) {
+    // Flatten 2D thread index
+    int tid  = threadIdx.y * blockDim.x + threadIdx.x;
+    int lane = tid % warpSize;
+    int wid  = tid / warpSize;
+
+    // Shared memory to store partial sums from each warp
+    static __shared__ T shared[32];  // supports up to 1024 threads (32 warps)
+
+    // Each warp reduces its values
+    val = warpReduceSum2D(val);
+
+    // One thread per warp writes to shared memory
+    if (lane == 0)
+        shared[wid] = val;
+
+    __syncthreads();
+
+    // Only first warp loads results
+    val = (tid < (blockDim.x * blockDim.y / warpSize)) ? shared[lane] : static_cast<T>(0);
+
+    // Final warp-level reduction
+    if (wid == 0)
+        val = warpReduceSum2D(val);
+
+    return val;
+}
+
+
 
 // Make coordinate stride configurable via COORD_STRIDE
 static_assert(COORD_STRIDE >= 3, "COORD_STRIDE must be >= 3");
@@ -73,16 +111,10 @@ void rys_jk_2d(const int nbas,
     const int kl = (kl_offset < n_kl_pairs * 16) ? kl_pairs[kl_offset] : 0;
 
     // Decode shell indices from flattened pair indices
-    const int ish = ij / nbas;
-    const int jsh = ij - ish * nbas;  // Equivalent to ij % nbas but potentially faster
-    const int ksh = kl / nbas;
-    const int lsh = kl - ksh * nbas;
-
-    // Validate shell indices
-    // This handles both padding entries (ij=0, kl=0) and out-of-bounds cases
-    if (ish >= nbas || jsh >= nbas || ksh >= nbas || lsh >= nbas) {
-        return;
-    }
+    int ish = ij / nbas;
+    int jsh = ij - ish * nbas;  // Equivalent to ij % nbas but potentially faster
+    int ksh = kl / nbas;
+    int lsh = kl - ksh * nbas;
 
     constexpr int stride_i = 1;
     constexpr int stride_j = stride_i * (li+1);
@@ -103,6 +135,16 @@ void rys_jk_2d(const int nbas,
     constexpr int integral_size = nfi*nfj*nfk*nfl;
     
     DataType fac_sym = PI_FAC;
+    fac_sym = (ish >= nbas) ? zero : fac_sym;
+    fac_sym = (jsh >= nbas) ? zero : fac_sym;
+    fac_sym = (ksh >= nbas) ? zero : fac_sym;
+    fac_sym = (lsh >= nbas) ? zero : fac_sym;
+
+    ish = (ish >= nbas) ? 0 : ish;
+    jsh = (jsh >= nbas) ? 0 : jsh;
+    ksh = (ksh >= nbas) ? 0 : ksh;
+    lsh = (lsh >= nbas) ? 0 : lsh;
+
     DataType4 ri, rj, rk, rl;
     ri.x = __ldg(&coords[ish].x);
     ri.y = __ldg(&coords[ish].y);
@@ -508,8 +550,14 @@ void rys_jk_2d(const int nbas,
                             }
                             off_k += gstride_j;
                         }
-                        const int offset = i*nao + k;
-                        atomicAdd(vk_ptr + offset, (double)vk_ik);
+                        //vk_local[i * nfk + k] = vk_ik;
+                        
+                        double vk_tmp = (double)vk_ik;
+                        vk_tmp = blockReduceSum2D(vk_tmp);
+                        if (threadIdx.x == 0 && threadIdx.y == 0)
+                            atomicAdd(vk_ptr + i*nao + k, vk_tmp);
+                        //atomicAdd(vk_ptr + i*nao + k, (double)vk_ik);
+                        __syncthreads();
                     }
                 }
             }
