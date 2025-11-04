@@ -43,6 +43,7 @@ import numpy as np
 from pyscf import gto, scf
 
 from jqc.backend.jk import gen_jk_kernel
+from jqc.backend.linalg_helper import inplace_add_transpose
 from jqc.pyscf.basis import BasisLayout
 from jqc.pyscf.jk import make_pairs
 
@@ -148,20 +149,33 @@ def benchmark(ang, dtype):
     vj = cp.zeros_like(dms_jqc)
     vk = cp.zeros_like(dms_jqc)
 
+    # Debug: Print basis layout info
+    print(f"\nBasis Layout Info:")
+    print(f"  group_key: {group_key}")
+    print(f"  group_offset: {group_offset}")
+    print(f"  nbas: {nbas}, nao: {nao}")
+
     # Try with 1q1t algorithm first to verify setup
-    print(f"Using 1q1t algorithm (frags=[-1]) for testing")
+    print(f"\nUsing 1q1t algorithm (frags=[-1]) for testing")
     fun = gen_jk_kernel(
         ang, nprim, dtype=dtype, frags=(-1,), n_dm=dms_jqc.shape[0], omega=omega
     )
     pairs = make_pairs(group_offset, q_matrix, cutoff)
 
-    ij_pairs = pairs.get((ang[0], ang[1]), cp.array([], dtype=cp.int32))
-    kl_pairs = pairs.get((ang[2], ang[3]), cp.array([], dtype=cp.int32))
+    # Debug: Print available pairs
+    print(f"\nAvailable pair keys in dict: {list(pairs.keys())}")
+    print(f"Looking for angular momentum: {ang}")
+
+    # BUGFIX: Use group indices (0, 0) instead of angular momentum values
+    # Since we have a homogeneous basis with all same L, there's only one group
+    # and the group index is 0
+    ij_pairs = pairs.get((0, 0), cp.array([], dtype=cp.int32))
+    kl_pairs = pairs.get((0, 0), cp.array([], dtype=cp.int32))
     n_ij_pairs = len(ij_pairs)
     n_kl_pairs = len(kl_pairs)
 
     if n_ij_pairs == 0 or n_kl_pairs == 0:
-        print("No pairs found for the given angular momenta.")
+        print("\nNo pairs found for the given angular momenta.")
         print(f"Angular momenta: {ang}")
         print(f"Group offset: {group_offset}")
         return
@@ -185,6 +199,11 @@ def benchmark(ang, dtype):
     fun(*args)
 
     print(f"Computed JK with {n_ij_pairs} ij-pairs and {n_kl_pairs} kl-pairs")
+
+    # Apply symmetry transformations for hermitian matrices
+    # This is required to get the full J and K matrices
+    vj = inplace_add_transpose(vj)
+    vk = inplace_add_transpose(vk)
 
     # Convert results back to molecular basis layout
     vj_mol = basis_layout.dm_to_mol(vj)
