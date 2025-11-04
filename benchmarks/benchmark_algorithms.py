@@ -17,7 +17,7 @@
 Benchmark script for testing JK algorithm implementations.
 
 This script benchmarks the 2D JK algorithm for specified angular momentum
-combinations. It verifies correctness against PySCF reference implementation.
+combinations. It verifies correctness against JoltQC reference implementation.
 
 Angular Momentum Support:
 - s shell (l=0): simplest case
@@ -37,23 +37,69 @@ Examples:
 
 import math
 import sys
+from pathlib import Path
 
 import cupy as cp
 import numpy as np
-from pyscf import gto, scf
+from pyscf import gto
 
 from jqc.backend.jk import gen_jk_kernel
-from jqc.backend.linalg_helper import inplace_add_transpose
 from jqc.pyscf.basis import BasisLayout
-from jqc.pyscf.jk import make_pairs
+from jqc.pyscf.jk import make_pairs, generate_get_jk
 
 
-def generate_basis_for_angular_momentum(l):
+def load_xyz(xyz_path):
+    """
+    Load atomic symbols and coordinates from an XYZ file.
+
+    Args:
+        xyz_path: Path to the XYZ file
+
+    Returns:
+        List of tuples (symbol, (x, y, z))
+    """
+    xyz_path = Path(xyz_path)
+    if not xyz_path.exists():
+        raise FileNotFoundError(f"XYZ file not found: {xyz_path}")
+
+    with xyz_path.open("r", encoding="ascii") as f:
+        lines = [line.strip() for line in f if line.strip()]
+
+    if len(lines) < 2:
+        raise ValueError(f"XYZ file {xyz_path} is too short.")
+
+    try:
+        natoms = int(lines[0])
+    except ValueError as exc:
+        raise ValueError(f"First line of {xyz_path} must be an integer.") from exc
+
+    atom_lines = lines[2 : 2 + natoms]
+    if len(atom_lines) != natoms:
+        raise ValueError(
+            f"XYZ file {xyz_path} lists {len(atom_lines)} atoms, expected {natoms}."
+        )
+
+    atoms = []
+    for line in atom_lines:
+        parts = line.split()
+        if len(parts) < 4:
+            raise ValueError(f"Invalid XYZ atom line: {line!r}")
+        symbol = parts[0]
+        try:
+            x, y, z = map(float, parts[1:4])
+        except ValueError as exc:
+            raise ValueError(f"Invalid coordinates in line: {line!r}") from exc
+        atoms.append((symbol, (x, y, z)))
+    return atoms
+
+
+def generate_basis_for_angular_momentum(l, symbol="H"):
     """
     Generate a custom basis set with the specified angular momentum.
 
     Args:
         l: Angular momentum (0=s, 1=p, 2=d, 3=f, 4=g)
+        symbol: Atomic symbol to associate with the generated shell
 
     Returns:
         Basis string in PySCF format
@@ -75,7 +121,7 @@ def generate_basis_for_angular_momentum(l):
         exponents = [5.5, 1.2, 0.3]
 
     # Build basis string
-    basis_lines = [f"H    {shell_type}"]
+    basis_lines = [f"{symbol}    {shell_type}"]
     for exp in exponents:
         basis_lines.append(f"      {exp:.10f}      1")
 
@@ -106,30 +152,54 @@ def benchmark(ang, dtype):
 
     # Setup test molecule with custom basis for the given angular momentum
     mol = gto.Mole()
-    mol.atom = "H 0 0 0; H 0 0 1.1"
-    mol.unit = "B"
+    xyz_atoms = load_xyz('molecules/0084-elongated-halogenated.xyz')
+    mol.atom = [(sym, coords) for sym, coords in xyz_atoms]
+    mol.unit = "Angstrom"
 
-    # Generate custom basis with the exact angular momentum needed
-    basis_str = generate_basis_for_angular_momentum(L)
+    unique_symbols = sorted({sym for sym, _ in xyz_atoms})
+    basis_blocks = [
+        generate_basis_for_angular_momentum(L, symbol=sym) for sym in unique_symbols
+    ]
+    basis_str = "\n\n".join(basis_blocks)
     mol.basis = gto.basis.parse(basis_str)
     mol.build()
 
     # Setup basis layout and arrays
     basis_layout = BasisLayout.from_mol(mol)
     nbas = basis_layout.nbasis
-    nao = int(basis_layout.ao_loc[-1])
+    nao = int(basis_layout.ao_loc[-1])  # Cartesian basis size
+    nao_mol = mol.nao  # Molecular (spherical) basis size
     group_offset = basis_layout.group_info[1]
     q_matrix = basis_layout.q_matrix(omega=omega)
     ao_loc = cp.asarray(basis_layout.ao_loc)
-    coords = cp.asarray(basis_layout.coords_fp64)
-    ce_data = cp.asarray(basis_layout.ce_fp64)
 
-    # Get density matrix from reference calculation
-    mf = scf.RHF(mol).run()
-    dms = cp.asarray(mf.make_rdm1())
-    if dms.ndim == 2:
-        dms = dms[None, :, :]
+    # Select appropriate precision for coords and ce_data based on dtype
+    if dtype == np.float32:
+        coords = cp.asarray(basis_layout.coords_fp32)
+        ce_data = cp.asarray(basis_layout.ce_fp32)
+    else:
+        coords = cp.asarray(basis_layout.coords_fp64)
+        ce_data = cp.asarray(basis_layout.ce_fp64)
+
+    # Generate JoltQC get_jk function for reference comparison
+    jqc_get_jk = generate_get_jk(basis_layout)
+
+    # Cast omega to the correct precision for CUDA kernel
+    omega_kernel = dtype(omega)
+
+    # Build a deterministic symmetric density matrix in MOLECULAR basis
+    # Then convert it to Cartesian basis for the kernel
+    rng = np.random.default_rng(42)
+    dm_cpu = rng.standard_normal((nao_mol, nao_mol))
+    dm_cpu = (dm_cpu + dm_cpu.T) * 0.5
+    dm_gpu = cp.asarray(dm_cpu, dtype=np.float64)
+    dms = dm_gpu[None, :, :]
+    # Convert from molecular to Cartesian basis for the 2D kernel
     dms_jqc = basis_layout.dm_from_mol(dms)
+
+    # Ensure dms_jqc maintains the correct dtype
+    dms_jqc = cp.asarray(dms_jqc, dtype=dtype)
+
 
     # Determine primitives per angular momentum
     group_key = basis_layout.group_key
@@ -146,14 +216,12 @@ def benchmark(ang, dtype):
     )
 
     # Generate JK kernel and compute pairs
-    vj = cp.zeros_like(dms_jqc)
-    vk = cp.zeros_like(dms_jqc)
+    # Note: 2D kernel always expects vj/vk in fp64, regardless of dm precision
+    vj = cp.zeros(dms_jqc.shape, dtype=np.float64)
+    vk = cp.zeros(dms_jqc.shape, dtype=np.float64)
 
-    # Debug: Print basis layout info
-    print("\nBasis Layout Info:")
-    print(f"  group_key: {group_key}")
-    print(f"  group_offset: {group_offset}")
-    print(f"  nbas: {nbas}, nao: {nao}")
+    print(f"\nBasis: {nbas} shells, {nao} AOs")
+    print(f"Precision: {dtype.__name__}, omega={omega}")
 
     # Use 2D algorithm (frags=[-2])
     print("\nUsing 2D algorithm (frags=[-2])")
@@ -162,14 +230,10 @@ def benchmark(ang, dtype):
     )
     pairs = make_pairs(group_offset, q_matrix, cutoff)
 
-    # Debug: Print available pairs
-    print(f"\nAvailable pair keys in dict: {list(pairs.keys())}")
-    print(f"Looking for angular momentum: {ang}")
-
     # Map angular momentum to group indices for pair selection
     group_key_arr = np.asarray(group_key)
     def find_group_idx(lam):
-        for idx, (gl, _np) in enumerate(group_key_arr.tolist()):
+        for idx, (gl, _) in enumerate(group_key_arr.tolist()):
             if gl == lam:
                 return idx
         return 0
@@ -177,52 +241,57 @@ def benchmark(ang, dtype):
     gi, gj, gk, gl = map(find_group_idx, ang)
     ij_pairs = pairs.get((gi, gj), cp.array([], dtype=cp.int32))
     kl_pairs = pairs.get((gk, gl), cp.array([], dtype=cp.int32))
+
     n_ij_pairs = len(ij_pairs)
     n_kl_pairs = len(kl_pairs)
-
     if n_ij_pairs == 0 or n_kl_pairs == 0:
         print("\nNo pairs found for the given angular momenta.")
         print(f"Angular momenta: {ang}")
         print(f"Group offset: {group_offset}")
         return
 
-    # Execute JK computation
-    args = (
-        nbas,
-        nao,
-        ao_loc,
-        coords,
-        ce_data,
-        dms_jqc,
-        vj,
-        vk,
-        omega,
-        ij_pairs,
-        n_ij_pairs,
-        kl_pairs,
-        n_kl_pairs,
-    )
-    fun(*args)
+    # Flatten - kernel expects contiguous 1D arrays
+    ij_pairs = cp.ascontiguousarray(ij_pairs.ravel())
+    kl_pairs = cp.ascontiguousarray(kl_pairs.ravel())
 
-    print(f"Computed JK with {n_ij_pairs} ij-pairs and {n_kl_pairs} kl-pairs")
+    # Execute JK computation
+    args = (nbas, nao, ao_loc, coords, ce_data, dms_jqc, vj, vk,
+            omega_kernel, ij_pairs, n_ij_pairs, kl_pairs, n_kl_pairs)
+    print(nbas, nao, ao_loc.shape, coords.dtype, ce_data.dtype, dms_jqc.dtype,
+          vj.dtype, vk.dtype, omega_kernel.dtype, ij_pairs.shape, n_ij_pairs,
+          kl_pairs.shape, n_kl_pairs)
+    start_evt = cp.cuda.Event()
+    stop_evt = cp.cuda.Event()
+    start_evt.record()
+    fun(*args)
+    stop_evt.record()
+    stop_evt.synchronize()
+    elapsed_2d = cp.cuda.get_elapsed_time(start_evt, stop_evt) * 1e-3
+    print(cp.linalg.norm(vj), cp.linalg.norm(vk))
     # Convert results back to molecular basis layout
     vj_mol = basis_layout.dm_to_mol(vj)
     vk_mol = basis_layout.dm_to_mol(vk)
 
-    # Verify results against PySCF reference
-    vj_ref, vk_ref = scf.hf.get_jk(mol, dms.get(), hermi=1)
-    vj_ref = cp.asarray(vj_ref)
-    vk_ref = cp.asarray(vk_ref)
-
+    # Verify results against JoltQC reference implementation
+    ref_start = cp.cuda.Event()
+    ref_stop = cp.cuda.Event()
+    ref_start.record()
+    vj_ref, vk_ref = jqc_get_jk(mol, dms, hermi=1, omega=omega)
+    ref_stop.record()
+    ref_stop.synchronize()
+    elapsed_ref = cp.cuda.get_elapsed_time(ref_start, ref_stop) * 1e-3
+    print(cp.linalg.norm(vj_ref), cp.linalg.norm(vk_ref))
     tolerance = 1e-9 if dtype == np.float64 else 1e-4
     vj_diff = cp.abs(vj_mol - vj_ref).max()
     vk_diff = cp.abs(vk_mol - vk_ref).max()
-    print("\nVerification Results:")
-    print(f"  vj_mol shape: {vj_mol.shape}")
-    print(f"  vj_ref shape: {vj_ref.shape}")
-    print(f"  max |vj - vj_ref| = {vj_diff:.2e}")
-    print(f"  max |vk - vk_ref| = {vk_diff:.2e}")
-    print(f"  tolerance = {tolerance:.2e}")
+
+    print(f"\nVerification (tolerance={tolerance:.0e}):")
+    print(f"  vj error: {vj_diff:.2e}")
+    print(f"  vk error: {vk_diff:.2e}")
+    print(f"\nTiming:")
+    print(f"  2D kernel   : {elapsed_2d:.6f} s")
+    print(f"  Reference   : {elapsed_ref:.6f} s")
+    print(f"  Speedup     : {elapsed_ref/elapsed_2d:.2f}x")
 
     try:
         assert vj_diff < tolerance, f"vj error {vj_diff:.2e} exceeds tolerance {tolerance:.2e}"
@@ -255,10 +324,10 @@ if __name__ == "__main__":
         # Print configuration
         shell_names = ['s', 'p', 'd', 'f', 'g']
         shell_str = '-'.join(shell_names[l] for l in ang)
-        print(f"Benchmarking 2D JK Algorithm")
-        print(f"  Angular momentum: {ang} ({shell_str})")
-        print(f"  Precision: {sys.argv[5]}")
-        print()
+        print(f"\n{'='*60}")
+        print(f"2D JK Algorithm Benchmark")
+        print(f"  Shells: {shell_str} | Precision: {sys.argv[5]}")
+        print(f"{'='*60}")
 
         benchmark(ang, dtype)
     except ValueError as e:

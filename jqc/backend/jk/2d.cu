@@ -84,12 +84,6 @@ void rys_jk_2d(const int nbas,
         return;
     }
 
-    // Additional validation: ensure pairs represent valid shell combinations
-    // For symmetry: require ish >= jsh and ksh >= lsh (or adjust based on your convention)
-    if (ij == 0 || kl == 0) {
-        return;  // Skip padding entries
-    }
-
     constexpr int stride_i = 1;
     constexpr int stride_j = stride_i * (li+1);
     constexpr int stride_k = stride_j * (lj+1);
