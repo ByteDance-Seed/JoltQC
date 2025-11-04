@@ -75,7 +75,7 @@ constexpr int nroots = ((li+lj+lk+ll)/2+1);
 """
     idx_script = generate_lookup_table(li, lj, lk, ll)
     script = (
-        const + rys_roots_data[nroots] + rys_roots_code + idx_script + jk_1q1t_cuda_code
+        const + rys_roots_data[nroots] + rys_roots_code + idx_script + jk_1q1t_code
     )
 
     _script_cache[keys] = script

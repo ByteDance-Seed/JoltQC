@@ -274,7 +274,7 @@ constexpr int nroots = ((li+lj+lk+ll)/2+1);
         + rys_roots_data[nroots]
         + rys_roots_parallel_code
         + idx_script
-        + jk_1qnt_cuda_code
+        + jk_1qnt_code
     )
 
     if not use_cache:
