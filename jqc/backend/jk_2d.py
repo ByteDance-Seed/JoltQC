@@ -159,11 +159,22 @@ def gen_kernel(
         script += f" \n#define RANDOM_NUMBER {x}"
 
     mod = cp.RawModule(code=script, options=compile_options)
-    kernel = mod.get_function("rys_jk_2d")
-    
+    kernel_vj = mod.get_function("rys_vj_2d") if do_j else None
+    kernel_vk = mod.get_function("rys_vk_2d") if do_k else None
+
     def fun(*args):
         n_ij_pairs = args[-3]
         n_kl_pairs = args[-1]
-        kernel((n_ij_pairs, n_kl_pairs), THREADS, args)
+
+        if do_j:
+            vj_args = args[:7] + args[8:]
+            grid_vj = (n_ij_pairs * 16,)
+            block_vj = (256,)
+            kernel_vj(grid_vj, block_vj, vj_args)
+        if do_k:
+            vk_args = args[:6] + args[7:]
+            grid_vk = (n_ij_pairs, n_kl_pairs)
+            block_vk = THREADS
+            kernel_vk(grid_vk, block_vk, vk_args)
 
     return script, mod, fun

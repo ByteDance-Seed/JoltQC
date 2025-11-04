@@ -189,6 +189,8 @@ def benchmark(ang, dtype):
 
     # Cast omega to the correct precision for CUDA kernel
     omega_kernel = dtype(omega)
+    omega_fp32 = np.float32(omega) if omega is not None else None
+    omega_fp64 = np.float64(omega) if omega is not None else None
 
     # Build a deterministic symmetric density matrix in MOLECULAR basis
     # Then convert it to Cartesian basis for the kernel
@@ -203,6 +205,7 @@ def benchmark(ang, dtype):
     # Ensure dms_jqc maintains the correct dtype
     dms_jqc = cp.asarray(dms_jqc, dtype=dtype)
 
+    hermi = 1 # Added hermi definition
 
     # Determine primitives per angular momentum
     group_key = basis_layout.group_key
@@ -218,7 +221,11 @@ def benchmark(ang, dtype):
         nprim_map.get(ang[3], 1),
     )
 
-    # Generate JK kernel and compute pairs
+    if hermi == 0:
+        # Contract the tril and triu parts separately
+        dms = cp.vstack([dms, dms.transpose(0, 2, 1)])
+    n_dm = dms.shape[0]
+
     # Note: 2D kernel always expects vj/vk in fp64, regardless of dm precision
     vj = cp.zeros(dms_jqc.shape, dtype=np.float64)
     vk = cp.zeros(dms_jqc.shape, dtype=np.float64)
@@ -231,6 +238,7 @@ def benchmark(ang, dtype):
     fun = gen_jk_kernel(
         ang, nprim, dtype=dtype, frags=(-2,), n_dm=dms_jqc.shape[0], omega=omega
     )
+
     pairs = make_pairs(group_offset, q_matrix, cutoff)
 
     # Map angular momentum to group indices for pair selection

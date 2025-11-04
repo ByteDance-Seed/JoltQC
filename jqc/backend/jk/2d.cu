@@ -79,13 +79,12 @@ struct __align__(2*sizeof(DataType)) DataType2 {
 };
 
 extern "C" __global__
-void rys_jk_2d(const int nbas,
+void rys_vk_2d(const int nbas,
         const int nao,
         const int * __restrict__ ao_loc,
         const DataType4* __restrict__ coords,
         const DataType2* __restrict__ coeff_exp,
         DataType* __restrict__ dm,
-        double* __restrict__ vj,
         double* __restrict__ vk,
         const DataType omega,
         const int* __restrict__ ij_pairs,
@@ -482,44 +481,6 @@ void rys_jk_2d(const int nbas,
     constexpr int nfjl = nfj*nfl;
     
     for (int i_dm = 0; i_dm < n_dm; ++i_dm) {
-        if constexpr(do_j){
-            // ijkl, kl -> ij
-            {
-                DataType dm_kl_cache[nfkl];
-                const int dm_offset = k0 + l0*nao;
-                DataType *dm_ptr = dm + dm_offset;
-#pragma unroll
-                for (int l = 0; l < nfl; l++){
-                    for (int k = 0; k < nfk; k++){
-                        dm_kl_cache[k + l*nfk] = __ldg(dm_ptr + k);
-                    }
-                    dm_ptr += nao;
-                }
-                const int vj_offset = i0 + j0*nao;
-                double *vj_ptr = vj + vj_offset;
-#pragma unroll
-                for (int i = 0; i < nfi; i++){
-                    const int base_off_i = i*gstride_i;
-                    for (int j = 0; j < nfj; j++){
-                        DataType vj_ji = zero;
-                        const int off_j = base_off_i + j*gstride_j;
-                        for (int k = 0; k < nfk; k++){
-                            int off_k = off_j + k * gstride_k;
-                            int idx = off_k;
-                            int cache_idx = k; // advances by nfk per l
-                            for (int l = 0; l < nfl; l++){
-                                vj_ji += integral[idx] * dm_kl_cache[cache_idx];
-                                idx += gstride_l;
-                                cache_idx += nfk;
-                            }
-                        }
-                        const int offset = j*nao + i;
-                        atomicAdd(vj_ptr + offset, (double)vj_ji);
-                    }
-                }
-            }
-        }
-        
         if constexpr(do_k){
             // ijkl, jl -> ik
             {
@@ -564,7 +525,440 @@ void rys_jk_2d(const int nbas,
         }
         const int nao2 = nao*nao;
         dm += nao2;
-        if constexpr(do_j) vj += nao2;
         if constexpr(do_k) vk += nao2;
+    }
+}
+
+extern "C" __global__
+void rys_vj_2d(const int nbas,
+        const int nao,
+        const int * __restrict__ ao_loc,
+        const DataType4* __restrict__ coords,
+        const DataType2* __restrict__ coeff_exp,
+        DataType* __restrict__ dm,
+        double* __restrict__ vj,
+        const DataType omega,
+        const int* __restrict__ ij_pairs,
+        const int n_ij_pairs,
+        const int* __restrict__ kl_pairs,
+        const int n_kl_pairs)
+{
+    const int ij_idx = blockIdx.x;
+    const int ij = ij_pairs[ij_idx];
+
+    // Decode shell indices from flattened pair indices
+    int ish = ij / nbas;
+    int jsh = ij - ish * nbas;
+
+    DataType fac_sym_ij = PI_FAC;
+    fac_sym_ij = (ish >= nbas) ? 0 : fac_sym_ij;
+    fac_sym_ij = (jsh >= nbas) ? 0 : fac_sym_ij;
+
+    // Clamped versions for array indexing
+    ish = (ish >= nbas) ? 0 : ish;
+    jsh = (jsh >= nbas) ? 0 : jsh;
+
+    constexpr int stride_i = 1;
+    constexpr int stride_j = stride_i * (li+1);
+    constexpr int stride_k = stride_j * (lj+1);
+    constexpr int stride_l = stride_k * (lk+1);
+    constexpr int gsize = (li+1)*(lj+1)*(lk+1)*(ll+1);
+    constexpr int gsize2 = 2*gsize;
+
+    constexpr int nfi = (li+1)*(li+2)/2;
+    constexpr int nfj = (lj+1)*(lj+2)/2;
+    constexpr int nfk = (lk+1)*(lk+2)/2;
+    constexpr int nfl = (ll+1)*(ll+2)/2;
+    
+    constexpr int gstride_l = 1;
+    constexpr int gstride_k = gstride_l * nfl;
+    constexpr int gstride_j = gstride_k * nfk;
+    constexpr int gstride_i = gstride_j * nfj;
+    constexpr int integral_size = nfi*nfj*nfk*nfl;
+
+
+    DataType4 ri, rj;
+    ri.x = __ldg(&coords[ish].x);
+    ri.y = __ldg(&coords[ish].y);
+    ri.z = __ldg(&coords[ish].z);
+    rj.x = __ldg(&coords[jsh].x);
+    rj.y = __ldg(&coords[jsh].y);
+    rj.z = __ldg(&coords[jsh].z);
+
+    const DataType rij0 = rj.x - ri.x;
+    const DataType rij1 = rj.y - ri.y;
+    const DataType rij2 = rj.z - ri.z;
+
+    const DataType rjri[3] = {rij0, rij1, rij2};
+    const DataType rr_ij = rjri[0]*rjri[0] + rjri[1]*rjri[1] + rjri[2]*rjri[2];
+
+    DataType2 reg_cei[npi], reg_cej[npj];
+    for (int ip = 0; ip < npi; ip++){
+        const int ish_ip = ip + ish*prim_stride;
+        reg_cei[ip].c = __ldg(&coeff_exp[ish_ip].c);
+        reg_cei[ip].e = __ldg(&coeff_exp[ish_ip].e);
+    }
+    for (int jp = 0; jp < npj; jp++){
+        const int jsh_jp = jp + jsh*prim_stride;
+        reg_cej[jp].c = __ldg(&coeff_exp[jsh_jp].c);
+        reg_cej[jp].e = __ldg(&coeff_exp[jsh_jp].e);
+    }
+
+    double vj_accm[nfi*nfj] = {zero};
+    
+    for (int kl_idx = threadIdx.x; kl_idx < n_kl_pairs * 16; kl_idx += blockDim.x) {
+        const int kl = kl_pairs[kl_idx];
+
+        int ksh = kl / nbas;
+        int lsh = kl - ksh * nbas;
+
+        // Determine fac_sym for the current quartet based on original (unclamped) indices
+        DataType fac_sym = fac_sym_ij;
+        fac_sym = (ksh >= nbas) ? 0 : fac_sym;
+        fac_sym = (lsh >= nbas) ? 0 : fac_sym;
+
+        // Clamped versions for array indexing
+        ksh = (ksh >= nbas) ? 0 : ksh;
+        lsh = (lsh >= nbas) ? 0 : lsh;
+
+        DataType4 rk, rl;
+        rk.x = __ldg(&coords[ksh].x);
+        rk.y = __ldg(&coords[ksh].y);
+        rk.z = __ldg(&coords[ksh].z);
+        rl.x = __ldg(&coords[lsh].x);
+        rl.y = __ldg(&coords[lsh].y);
+        rl.z = __ldg(&coords[lsh].z);
+
+        const DataType rkl0 = rl.x - rk.x;
+        const DataType rkl1 = rl.y - rk.y;
+        const DataType rkl2 = rl.z - rk.z;
+
+        const DataType rlrk[3] = {rkl0, rkl1, rkl2};
+        const DataType rr_kl = rlrk[0]*rlrk[0] + rlrk[1]*rlrk[1] + rlrk[2]*rlrk[2];
+        DataType integral[integral_size] = {zero};
+
+        // Estimate register usage for caching cei, cej, cicj and inv_aij
+        // DataType can be float (1 register) or double (2 registers)
+        constexpr int reg_per_datatype = sizeof(DataType) / 4; // 4 bytes per 32-bit register
+        constexpr int reg_g = reg_per_datatype * 3 * gsize;
+        constexpr int reg_aij_ceij = reg_per_datatype * 2 * npi * npj;
+        constexpr int reg_cei_cej = reg_per_datatype * 2 * (npi + npj);
+        constexpr int reg_integral = reg_per_datatype * integral_size;
+        constexpr int estimated_registers = reg_g + reg_aij_ceij + reg_cei_cej + reg_integral;
+        constexpr bool use_cache = (estimated_registers <= 256);
+        
+        // Cache per-(ip,jp) terms to avoid repeated expensive exp/div computations if register usage is reasonable
+        DataType reg_cicj[use_cache ? npi*npj : 1];
+        DataType reg_inv_aij[use_cache ? npi*npj : 1];
+        
+        if constexpr (use_cache) {
+    #pragma unroll
+            for (int ip = 0; ip < npi; ip++){
+                for (int jp = 0; jp < npj; jp++){
+                    DataType ai, aj, ci, cj;
+                    ai = reg_cei[ip].e;
+                    aj = reg_cej[jp].e;
+                    ci = reg_cei[ip].c;
+                    cj = reg_cej[jp].c;
+
+                    const DataType aij = ai + aj;
+                    const DataType inv_aij = one / aij;
+                    const DataType aj_aij = aj * inv_aij;
+                    const DataType theta_ij = ai * aj_aij;
+                    const DataType Kab = exp(-theta_ij * rr_ij);
+                    const DataType cicj = fac_sym * ci * cj * Kab;
+                    const int idx = ip + jp*npi;
+                    reg_cicj[idx] = cicj;
+                    reg_inv_aij[idx] = inv_aij;
+                }
+            }
+        }
+
+    #pragma unroll
+        for (int kp = 0; kp < npk; kp++)
+        for (int lp = 0; lp < npl; lp++){
+            const int ksh_kp = kp + ksh*prim_stride;
+            const int lsh_lp = lp + lsh*prim_stride;
+            DataType2 cek, cel;
+            cek.c = __ldg(&coeff_exp[ksh_kp].c);
+            cek.e = __ldg(&coeff_exp[ksh_kp].e);
+            cel.c = __ldg(&coeff_exp[lsh_lp].c);
+            cel.e = __ldg(&coeff_exp[lsh_lp].e);
+            const DataType ak = cek.e;
+            const DataType al = cel.e;
+            const DataType akl = ak + al;
+            const DataType inv_akl = one / akl;
+            const DataType al_akl = al * inv_akl;
+            const DataType theta_kl = ak * al_akl;
+            const DataType Kcd = exp(-theta_kl * rr_kl);
+            const DataType ck = cek.c;
+            const DataType cl = cel.c;
+            const DataType ckcl = ck * cl * Kcd;
+            for (int ip = 0; ip < npi; ip++)
+            for (int jp = 0; jp < npj; jp++){
+                DataType ai, aj, ci, cj;
+                if constexpr (use_cache) {
+                    ai = reg_cei[ip].e;
+                    aj = reg_cej[jp].e;
+                    ci = reg_cei[ip].c;
+                    cj = reg_cej[jp].c;
+                } else {
+                    const int ish_ip = ip + ish*prim_stride;
+                    const int jsh_jp = jp + jsh*prim_stride;
+                    DataType2 cei, cej;
+                    cei.c = __ldg(&coeff_exp[ish_ip].c);
+                    cei.e = __ldg(&coeff_exp[ish_ip].e);
+                    cej.c = __ldg(&coeff_exp[jsh_jp].c);
+                    cej.e = __ldg(&coeff_exp[jsh_jp].e);
+                    ai = cei.e;
+                    aj = cej.e;
+                    ci = cei.c;
+                    cj = cej.c;
+                }
+                const DataType aij = ai + aj;
+
+                DataType inv_aij, cicj;
+                if constexpr (use_cache) {
+                    const int idx = ip + jp*npi;
+                    inv_aij = reg_inv_aij[idx];
+                    cicj = reg_cicj[idx];
+                } else {
+                    inv_aij = one / aij;
+                    const DataType aj_aij = aj * inv_aij;
+                    const DataType theta_ij = ai * aj_aij;
+                    const DataType Kab = exp(-theta_ij * rr_ij);
+                    cicj = fac_sym * ci * cj * Kab;
+                }
+                const DataType aj_aij = aj * inv_aij;
+
+                const DataType xij = rjri[0] * aj_aij + ri.x;
+                const DataType yij = rjri[1] * aj_aij + ri.y;
+                const DataType zij = rjri[2] * aj_aij + ri.z;
+                const DataType xkl = rlrk[0] * al_akl + rk.x;
+                const DataType ykl = rlrk[1] * al_akl + rk.y;
+                const DataType zkl = rlrk[2] * al_akl + rk.z;
+                const DataType Rpq[3] = {xij-xkl, yij-ykl, zij-zkl};
+
+                const DataType rr = Rpq[0]*Rpq[0] + Rpq[1]*Rpq[1] + Rpq[2]*Rpq[2];
+                const DataType inv_aijkl = one / (aij + akl);
+                const DataType theta = aij * akl * inv_aijkl;
+
+                DataType gy0 = cicj * inv_aij * inv_akl * sqrt(inv_aijkl);
+                DataType rw[2*nroots];
+                
+                rys_roots(rr, rw, theta, omega);
+                for (int irys = 0; irys < nroots; irys++){
+                    const DataType rt = rw[irys*2];
+                    const DataType rt_aa = rt * inv_aijkl;
+                    DataType g[3*gsize];
+                    g[0] = ckcl;
+                    g[gsize] = gy0;
+                    g[2*gsize] = rw[(irys*2+1)];
+
+                    // TRR
+                    constexpr int lij = li + lj;
+                    if constexpr (lij > 0) {
+                        const DataType rt_aij = rt_aa * akl;
+                        const DataType b10 = 0.5 * inv_aij * (one - rt_aij);
+                        
+    #pragma unroll
+                        for (int _ix = 0; _ix < 3; _ix++){
+                            DataType *_gix = g + _ix * gsize;
+                            const DataType Rpa = rjri[_ix] * aj_aij;
+                            const DataType c0x = Rpa - rt_aij * Rpq[_ix];
+                            DataType s0x, s1x, s2x;
+                            s0x = _gix[0];
+                            s1x = c0x * s0x;
+                            _gix[stride_i] = s1x;
+                            for (int i = 1; i < lij; ++i) {
+                                const DataType i_b10 = i * b10;
+                                s2x = c0x * s1x + i_b10 * s0x;
+                                _gix[i*stride_i + stride_i] = s2x;
+                                s0x = s1x;
+                                s1x = s2x;
+                            }
+                        }
+                    }
+
+                    constexpr int lkl = lk + ll;
+                    if constexpr (lkl > 0) {
+                        const DataType rt_akl = rt_aa * aij;
+                        const DataType b00 = 0.5 * rt_aa;
+                        const DataType b01 = 0.5 * inv_akl * (one - rt_akl);
+    #pragma unroll
+                        for (int _ix = 0; _ix < 3; _ix++){
+                            DataType *_gix = g + _ix * gsize;
+                            const DataType Rqc = rlrk[_ix] * al_akl;
+                            const DataType cpx = Rqc + rt_akl * Rpq[_ix];
+                            
+                            DataType s0x, s1x, s2x;
+                            s0x = _gix[0];
+                            s1x = cpx * s0x;
+                            _gix[stride_k] = s1x;
+                            
+    #pragma unroll
+                            for (int k = 1; k < lkl; ++k) {
+                                const DataType k_b01 = k * b01;
+                                s2x = cpx*s1x + k_b01*s0x;
+                                _gix[k*stride_k + stride_k] = s2x;
+                                s0x = s1x;
+                                s1x = s2x;
+                            }
+    #pragma unroll
+                            for (int i = 1; i < lij+1; i++){
+                                const DataType ib00 = i * b00;
+                                const int i_off = i * stride_i;
+                                int i_off_minus = i_off - stride_i;
+                                int i_off_plus_k = i_off + stride_k;
+                                s0x = _gix[i_off];
+                                s1x = cpx * s0x;
+                                s1x += ib00 * _gix[i_off_minus];
+                                _gix[i_off_plus_k] = s1x;
+
+                                for (int k = 1; k < lkl; ++k) {
+                                    const int k_i_off_minus = i_off_minus + k * stride_k;
+                                    const int k_i_off_plus_k = i_off_plus_k + k * stride_k;
+                                    const DataType k_b01 = k * b01;
+
+                                    s2x = cpx * s1x + k_b01 * s0x;
+                                    s2x += ib00 * _gix[k_i_off_minus];
+                                    _gix[k_i_off_plus_k] = s2x;
+                                    s0x = s1x;
+                                    s1x = s2x;
+                                }
+                            }
+                        }
+                    }
+
+                    // hrr
+                    if constexpr (lj > 0) {
+                        constexpr int stride_j_i = stride_j - stride_i;
+    #pragma unroll
+                        for (int _ix = 0; _ix < 3; _ix++){
+                            DataType *_gix = g + _ix * gsize;
+                            const DataType rjri_ix = rjri[_ix];
+                            for (int kl = 0; kl < lkl+1; kl++){
+                                const int kl_off = kl*stride_k;
+                                const int ijkl0 = kl_off + lij*stride_i;
+                                for (int j = 0; j < lj; ++j) {
+                                    DataType s0x, s1x;
+                                    const int jkl_off = kl_off + j*stride_j;
+                                    int ijkl = ijkl0 + j*stride_j_i;
+                                    s1x = _gix[ijkl];
+                                    for (ijkl-=stride_i; ijkl >= jkl_off; ijkl-=stride_i) {
+                                        s0x = _gix[ijkl];
+                                    _gix[(ijkl+stride_j)] = s1x - rjri_ix * s0x;
+                                        s1x = s0x;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    if constexpr (ll > 0) {
+                        constexpr int stride_l_k = stride_l - stride_k;
+    #pragma unroll
+                        for (int _ix = 0; _ix < 3; _ix++){
+                            DataType *_gix = g + _ix * gsize;
+                            const DataType rlrk_ix = rlrk[_ix];
+                            for (int ij = 0; ij < (li+1)*(lj+1); ij++){
+                                const int ij_off = ij*stride_i;
+                                const int ijl = lkl*stride_k + ij_off;
+                                for (int l = 0; l < ll; ++l) {
+                                    const int lstride_l = l*stride_l;
+                                    DataType s0x, s1x;
+                                    int ijkl = ijl + l*stride_l_k;
+                                    s1x = _gix[ijkl];
+                                    for (ijkl-=stride_k; ijkl >= lstride_l; ijkl-=stride_k) {
+                                        s0x = _gix[ijkl];
+                                        _gix[ijkl + stride_l] = s1x - rlrk_ix * s0x;
+                                        s1x = s0x;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    DataType* gx = g;
+                    DataType* gy = g + gsize;
+                    DataType* gz = g + gsize2;
+    #pragma unroll
+                    for (int i = 0; i < nfi; i++){
+                        const int base_ij_off_i = i*gstride_i;
+                        for (int j = 0; j < nfj; j++){
+                            const int addr_ij = i_idx[i] + j_idx[j];
+                            const int ij_off = base_ij_off_i + j*gstride_j;
+                            for (int k = 0; k < nfk; k++){
+                                const int addr_ijk = addr_ij + k_idx[k];
+                                int integral_off = ij_off + k*gstride_k;
+                                for (int l = 0; l < nfl; l++){
+                                    uint32_t addr = addr_ijk + l_idx[l];
+                                    uint32_t addrx =  addr        & 0x3FF;
+                                    uint32_t addry = (addr >> 10) & 0x3FF;
+                                    uint32_t addrz = (addr >> 20) & 0x3FF;
+                                    integral[integral_off + l*gstride_l] += gx[addrx] * gy[addry] * gz[addrz];
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        const int k0 = ao_loc[ksh];
+        const int l0 = ao_loc[lsh];
+        
+        constexpr int nfkl = nfk*nfl;
+        
+        for (int i_dm = 0; i_dm < n_dm; ++i_dm) {
+            if constexpr(do_j){
+                {
+                    DataType dm_kl_cache[nfkl];
+                    const int dm_offset = k0 + l0*nao;
+                    DataType *dm_ptr = dm + dm_offset + i_dm*nao*nao;
+    #pragma unroll
+                    for (int l = 0; l < nfl; l++){
+                        for (int k = 0; k < nfk; k++){
+                            dm_kl_cache[k + l*nfk] = __ldg(dm_ptr + k);
+                        }
+                        dm_ptr += nao;
+                    }
+    #pragma unroll
+                    for (int i = 0; i < nfi; i++){
+                        const int base_off_i = i*gstride_i;
+                        for (int j = 0; j < nfj; j++){
+                            DataType vj_ji = zero;
+                            const int off_j = base_off_i + j*gstride_j;
+                            for (int k = 0; k < nfk; k++){
+                                int off_k = off_j + k * gstride_k;
+                                int idx = off_k;
+                                int cache_idx = k;
+                                for (int l = 0; l < nfl; l++){
+                                    vj_ji += integral[idx] * dm_kl_cache[cache_idx];
+                                    idx += gstride_l;
+                                    cache_idx += nfk;
+                                }
+                            }
+                            const int offset = j*nao + i;
+                            vj_accm[i*nfi + j] += (double)vj_ji;
+                            //atomicAdd(vj_ptr + offset, (double)vj_ji);
+                        }
+                    }
+                }
+            }
+            //const int nao2 = nao*nao;
+            //dm += nao2;
+            //if constexpr(do_j) vj += nao2;
+        }
+    }
+    const int i0 = ao_loc[ish];
+    const int j0 = ao_loc[jsh];
+    const int vj_offset = i0 + j0*nao;
+    double *vj_ptr = vj + vj_offset;// + i_dm*nao*nao;
+    for (int i = 0; i < nfi; i++){
+        for (int j = 0; j < nfj; j++){
+            const int offset = j*nao + i;
+            atomicAdd(vj_ptr + offset, vj_accm[i*nfi + j]);
+        }
     }
 }
