@@ -398,7 +398,7 @@ def make_pairs(l_ctr_bas_loc, q_matrix, cutoff, column_size: int = 16):
                 num_pairs = sorted_pairs.size
                 padded_size = ((num_pairs + column_size - 1) // column_size) * column_size
                 if padded_size > 0:
-                    padded_row = cp.ones(padded_size, dtype=np.int32) * 1024 * 1024
+                    padded_row = cp.zeros(padded_size, dtype=np.int32)
                     padded_row[:num_pairs] = sorted_pairs
                     all_valid_pairs.append(padded_row)
 
