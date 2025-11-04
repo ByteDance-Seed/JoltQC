@@ -150,15 +150,15 @@ def benchmark(ang, dtype):
     vk = cp.zeros_like(dms_jqc)
 
     # Debug: Print basis layout info
-    print(f"\nBasis Layout Info:")
+    print("\nBasis Layout Info:")
     print(f"  group_key: {group_key}")
     print(f"  group_offset: {group_offset}")
     print(f"  nbas: {nbas}, nao: {nao}")
 
-    # Try with 1q1t algorithm first to verify setup
-    print(f"\nUsing 1q1t algorithm (frags=[-1]) for testing")
+    # Use 2D algorithm (frags=[-2])
+    print("\nUsing 2D algorithm (frags=[-2])")
     fun = gen_jk_kernel(
-        ang, nprim, dtype=dtype, frags=(-1,), n_dm=dms_jqc.shape[0], omega=omega
+        ang, nprim, dtype=dtype, frags=(-2,), n_dm=dms_jqc.shape[0], omega=omega
     )
     pairs = make_pairs(group_offset, q_matrix, cutoff)
 
@@ -166,11 +166,17 @@ def benchmark(ang, dtype):
     print(f"\nAvailable pair keys in dict: {list(pairs.keys())}")
     print(f"Looking for angular momentum: {ang}")
 
-    # BUGFIX: Use group indices (0, 0) instead of angular momentum values
-    # Since we have a homogeneous basis with all same L, there's only one group
-    # and the group index is 0
-    ij_pairs = pairs.get((0, 0), cp.array([], dtype=cp.int32))
-    kl_pairs = pairs.get((0, 0), cp.array([], dtype=cp.int32))
+    # Map angular momentum to group indices for pair selection
+    group_key_arr = np.asarray(group_key)
+    def find_group_idx(lam):
+        for idx, (gl, _np) in enumerate(group_key_arr.tolist()):
+            if gl == lam:
+                return idx
+        return 0
+
+    gi, gj, gk, gl = map(find_group_idx, ang)
+    ij_pairs = pairs.get((gi, gj), cp.array([], dtype=cp.int32))
+    kl_pairs = pairs.get((gk, gl), cp.array([], dtype=cp.int32))
     n_ij_pairs = len(ij_pairs)
     n_kl_pairs = len(kl_pairs)
 
@@ -199,12 +205,6 @@ def benchmark(ang, dtype):
     fun(*args)
 
     print(f"Computed JK with {n_ij_pairs} ij-pairs and {n_kl_pairs} kl-pairs")
-
-    # Apply symmetry transformations for hermitian matrices
-    # This is required to get the full J and K matrices
-    vj = inplace_add_transpose(vj)
-    vk = inplace_add_transpose(vk)
-
     # Convert results back to molecular basis layout
     vj_mol = basis_layout.dm_to_mol(vj)
     vk_mol = basis_layout.dm_to_mol(vk)
@@ -217,7 +217,6 @@ def benchmark(ang, dtype):
     tolerance = 1e-9 if dtype == np.float64 else 1e-4
     vj_diff = cp.abs(vj_mol - vj_ref).max()
     vk_diff = cp.abs(vk_mol - vk_ref).max()
-
     print("\nVerification Results:")
     print(f"  vj_mol shape: {vj_mol.shape}")
     print(f"  vj_ref shape: {vj_ref.shape}")
