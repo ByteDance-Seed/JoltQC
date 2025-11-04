@@ -327,10 +327,11 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
         if with_j:
             if hermi == 1:
-                vj = inplace_add_transpose(vj)
+                vj *= 2.0
             else:
                 vj, vjT = vj[: n_dm // 2], vj[n_dm // 2 :]
                 vj += vjT.transpose(0, 2, 1)
+            vj = inplace_add_transpose(vj)
             vj = basis_layout.dm_to_mol(vj)
             vj = vj.reshape(dm.shape)
 
