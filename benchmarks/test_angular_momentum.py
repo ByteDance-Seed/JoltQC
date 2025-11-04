@@ -41,53 +41,87 @@ from jqc.pyscf.jk import make_pairs
 
 
 # Test cases: (li, lj, lk, ll, description)
+# Focus on homogeneous cases where all four angular momenta are the same
+# This ensures the basis set has exactly the shells needed
 TEST_CASES = [
-    # Homogeneous cases
+    # Homogeneous cases (primary focus)
     (0, 0, 0, 0, "s-s-s-s (all s shells)"),
     (1, 1, 1, 1, "p-p-p-p (all p shells)"),
     (2, 2, 2, 2, "d-d-d-d (all d shells)"),
     (3, 3, 3, 3, "f-f-f-f (all f shells)"),
+    (4, 4, 4, 4, "g-g-g-g (all g shells)"),
+]
 
-    # Mixed low angular momentum
+# Additional mixed cases (optional - basis uses first angular momentum)
+MIXED_TEST_CASES = [
     (0, 0, 1, 1, "s-s-p-p"),
     (0, 1, 0, 1, "s-p-s-p"),
     (1, 1, 2, 2, "p-p-d-d"),
     (0, 0, 2, 2, "s-s-d-d"),
-
-    # Mixed medium angular momentum
     (1, 2, 1, 2, "p-d-p-d"),
     (2, 2, 3, 3, "d-d-f-f"),
     (0, 2, 0, 2, "s-d-s-d"),
-
-    # Heterogeneous combinations
     (0, 1, 2, 3, "s-p-d-f (all different)"),
     (1, 0, 2, 0, "p-s-d-s"),
     (2, 1, 1, 0, "d-p-p-s"),
 ]
 
 
+def generate_basis_for_angular_momentum(l):
+    """
+    Generate a custom basis set with the specified angular momentum.
+
+    Args:
+        l: Angular momentum (0=s, 1=p, 2=d, 3=f, 4=g)
+
+    Returns:
+        Basis string in PySCF format
+    """
+    shell_types = ['S', 'P', 'D', 'F', 'G']
+    shell_type = shell_types[l]
+
+    # Generate appropriate exponents for the given angular momentum
+    if l == 0:  # s shell
+        exponents = [1.27, 0.27, 0.027]
+    elif l == 1:  # p shell
+        exponents = [2.5, 0.6, 0.15]
+    elif l == 2:  # d shell
+        exponents = [3.5, 0.8, 0.2]
+    elif l == 3:  # f shell
+        exponents = [4.5, 1.0, 0.25]
+    else:  # g shell (l=4)
+        exponents = [5.5, 1.2, 0.3]
+
+    # Build basis string
+    basis_lines = [f"H    {shell_type}"]
+    for exp in exponents:
+        basis_lines.append(f"      {exp:.10f}      1")
+
+    return "\n".join(basis_lines)
+
+
 def create_test_molecule(ang):
-    """Create a simple test molecule with appropriate basis for given angular momentum."""
+    """
+    Create a simple test molecule with custom basis for given angular momentum.
+
+    Note: Since we don't consider mixed shells, all four angular momentum
+    values should be the same. We use the first value (li) for the basis.
+    """
     mol = gto.Mole()
     mol.atom = "H 0 0 0; H 0 0 1.1"
     mol.unit = "B"
 
-    # Create a simple basis with the required angular momentum
     li, lj, lk, ll = ang
-    max_l = max(ang)
 
-    # Use appropriate basis set based on max angular momentum
-    if max_l == 0:
-        mol.basis = "sto-3g"
-    elif max_l == 1:
-        mol.basis = "6-31g"
-    elif max_l == 2:
-        mol.basis = "def2-svp"
-    elif max_l == 3:
-        mol.basis = "def2-tzvp"
-    else:  # max_l >= 4
-        mol.basis = "def2-qzvp"
+    # For homogeneous angular momentum tests, use single L value
+    # If mixed, use the first value
+    if not (li == lj == lk == ll):
+        print(f"  Note: Mixed angular momentum {ang}, using L={li} for basis")
+    L = li
 
+    # Generate custom basis with exact angular momentum
+    basis_str = generate_basis_for_angular_momentum(L)
+    mol.basis = gto.basis.parse(basis_str)
     mol.build()
     return mol
 
@@ -187,8 +221,8 @@ def main():
         help="Print detailed output for each test"
     )
     parser.add_argument(
-        "--subset", choices=["homogeneous", "mixed", "all"], default="all",
-        help="Which subset of tests to run"
+        "--subset", choices=["homogeneous", "mixed", "all"], default="homogeneous",
+        help="Which subset of tests to run (default: homogeneous)"
     )
     args = parser.parse_args()
 
@@ -199,11 +233,12 @@ def main():
 
     # Filter test cases based on subset
     if args.subset == "homogeneous":
-        test_cases = [tc for tc in TEST_CASES if tc[0] == tc[1] == tc[2] == tc[3]]
-    elif args.subset == "mixed":
-        test_cases = [tc for tc in TEST_CASES if not (tc[0] == tc[1] == tc[2] == tc[3])]
-    else:
         test_cases = TEST_CASES
+    elif args.subset == "mixed":
+        test_cases = MIXED_TEST_CASES
+        print("Note: Mixed tests use basis from first angular momentum (li)")
+    else:
+        test_cases = TEST_CASES + MIXED_TEST_CASES
 
     passed = 0
     failed = 0

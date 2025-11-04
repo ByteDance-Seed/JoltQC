@@ -47,6 +47,40 @@ from jqc.pyscf.basis import BasisLayout
 from jqc.pyscf.jk import make_pairs
 
 
+def generate_basis_for_angular_momentum(l):
+    """
+    Generate a custom basis set with the specified angular momentum.
+
+    Args:
+        l: Angular momentum (0=s, 1=p, 2=d, 3=f, 4=g)
+
+    Returns:
+        Basis string in PySCF format
+    """
+    shell_types = ['S', 'P', 'D', 'F', 'G']
+    shell_type = shell_types[l]
+
+    # Generate appropriate exponents for the given angular momentum
+    # Use a sequence of exponents with reasonable spacing
+    if l == 0:  # s shell
+        exponents = [1.27, 0.27, 0.027]
+    elif l == 1:  # p shell
+        exponents = [2.5, 0.6, 0.15]
+    elif l == 2:  # d shell
+        exponents = [3.5, 0.8, 0.2]
+    elif l == 3:  # f shell
+        exponents = [4.5, 1.0, 0.25]
+    else:  # g shell (l=4)
+        exponents = [5.5, 1.2, 0.3]
+
+    # Build basis string
+    basis_lines = [f"H    {shell_type}"]
+    for exp in exponents:
+        basis_lines.append(f"      {exp:.10f}      1")
+
+    return "\n".join(basis_lines)
+
+
 def benchmark(ang, dtype):
     """
     Benchmark JK matrix computation for given angular momentum and precision.
@@ -58,17 +92,25 @@ def benchmark(ang, dtype):
     omega = 0.0
     cutoff = math.log(1e-10)
 
-    # Setup test molecule
+    li, lj, lk, ll = ang
+
+    # For homogeneous angular momentum, use single L value
+    # Since we don't consider mixed shells, all four should be the same
+    if not (li == lj == lk == ll):
+        print(f"Warning: Mixed angular momentum {ang} detected.")
+        print(f"Using L={li} for all shells to ensure basis consistency.")
+        L = li
+    else:
+        L = li
+
+    # Setup test molecule with custom basis for the given angular momentum
     mol = gto.Mole()
     mol.atom = "H 0 0 0; H 0 0 1.1"
-    mol.basis = gto.basis.parse(
-        """
-        O    S
-          1.2700058226E+00      1
-          0.2700058226E+00      1
-          0.02700058226E+00      1
-        """
-    )
+    mol.unit = "B"
+
+    # Generate custom basis with the exact angular momentum needed
+    basis_str = generate_basis_for_angular_momentum(L)
+    mol.basis = gto.basis.parse(basis_str)
     mol.build()
 
     # Setup basis layout and arrays
