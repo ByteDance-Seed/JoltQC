@@ -150,7 +150,7 @@ void rys_vk_2d(const int nbas,
     int jsh = ij - ish * nbas;  // Equivalent to ij % nbas but potentially faster
     int ksh = kl / nbas;
     int lsh = kl - ksh * nbas;
-    if (ish < ksh) return;
+    if (ij_idx < kl_idx) return;
     
     constexpr int stride_i = 1;
     constexpr int stride_j = stride_i * (li+1);
@@ -177,7 +177,7 @@ void rys_vk_2d(const int nbas,
     DataType fac_sym_kl = one;
     fac_sym_kl = (ksh >= nbas) ? zero : fac_sym_kl;
     fac_sym_kl = (lsh >= nbas) ? zero : fac_sym_kl;
-    fac_sym_kl *= (ish == ksh) ? half : one;
+    fac_sym_kl *= (ij_idx == kl_idx) ? half : one;
 
     ish = (ish >= nbas) ? 0 : ish;
     jsh = (jsh >= nbas) ? 0 : jsh;
