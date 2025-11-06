@@ -134,6 +134,8 @@ void rys_vk_2d(const int nbas,
     const int ij_idx = blockIdx.x;
     const int kl_idx = blockIdx.y;
 
+    if (ij_idx < kl_idx) return;  // 2-fold symmetry: only compute ij >= kl quartets
+
     // Extract pair indices with thread indexing
     // Pairs are stored in blocks of 16, with padding for incomplete blocks
     const int ij_offset = ij_idx * 16 + threadIdx.x;
@@ -184,7 +186,7 @@ void rys_vk_2d(const int nbas,
     fac_sym_kl = (lsh >= nbas) ? zero : fac_sym_kl;
     fac_sym_kl *= (ij_idx == kl_idx) ? half : one;
     // 2-fold symmetry: only compute ij >= kl quartets
-    fac_sym_kl = (ij_idx < kl_idx) ? zero : fac_sym_kl;
+    //fac_sym_kl = (ij_idx < kl_idx) ? zero : fac_sym_kl;
 
     ish = (ish >= nbas) ? 0 : ish;
     jsh = (jsh >= nbas) ? 0 : jsh;
@@ -232,8 +234,8 @@ void rys_vk_2d(const int nbas,
     }
     
     // Cache per-(ip,jp) terms to avoid repeated expensive exp/div computations if register usage is reasonable
-    __shared__ DataType sh_cicj[npi*npj*threadx];
-    __shared__ DataType sh_inv_aij[npi*npj*threadx];
+    __shared__ DataType reg_cicj[npi*npj*threadx];
+    __shared__ DataType reg_inv_aij[npi*npj*threadx];
 
     if (threadIdx.y == 0){
         for (int ip = 0; ip < npi; ip++)
@@ -251,8 +253,8 @@ void rys_vk_2d(const int nbas,
             const DataType Kab = exp(-theta_ij * rr_ij);
             const DataType cicj = fac_sym_ij * ci * cj * Kab;
             const int idx = (ip + jp*npi) * threadx + threadIdx.x;
-            sh_cicj[idx] = cicj;
-            sh_inv_aij[idx] = inv_aij;
+            reg_cicj[idx] = cicj;
+            reg_inv_aij[idx] = inv_aij;
         }
     }
     __syncthreads();
@@ -289,8 +291,8 @@ void rys_vk_2d(const int nbas,
 
             DataType inv_aij, cicj;
             const int idx = ip + jp*npi;
-            inv_aij = sh_inv_aij[idx * threadx + threadIdx.x];//reg_inv_aij[idx];
-            cicj = sh_cicj[idx * threadx + threadIdx.x];//reg_cicj[idx];
+            inv_aij = reg_inv_aij[idx * threadx + threadIdx.x];
+            cicj = reg_cicj[idx * threadx + threadIdx.x];
             const DataType aj_aij = aj * inv_aij;
 
             const DataType xij = rjri[0] * aj_aij + ri.x;
@@ -528,8 +530,6 @@ void rys_vk_2d(const int nbas,
                 vk_tmp = blockReduceSum2D(vk_tmp);
                 if (threadIdx.x == 0 && threadIdx.y == 0)
                     atomicAdd(vk_ptr + i*nao + k, vk_tmp);
-                //atomicAdd(vk_ptr + i*nao + k, (double)vk_ik);
-                __syncthreads();
             }
         }
 
@@ -557,36 +557,39 @@ void rys_vj_2d(const int nbas,
         const float log_cutoff)
 {
     const int ij_idx = blockIdx.x;
-    const int ij = ij_pairs[ij_idx];
+    const int kl_idx = blockIdx.y;
+
+    // Extract pair indices with thread indexing (same as VK kernel)
+    const int ij_offset = ij_idx * 16 + threadIdx.x;
+    const int kl_offset = kl_idx * 16 + threadIdx.y;
+
+    // Load block-level q_cond values for Schwarz screening
+    const int ij0 = ij_idx * 16;
+    const int kl0 = kl_idx * 16;
+    const float q_ij = __ldg(&q_cond_ij[ij0]);
+    const float q_kl = __ldg(&q_cond_kl[kl0]);
+    if (q_ij + q_kl < log_cutoff) return;
+
+    // Load pair with bounds checking
+    const int ij = ij_pairs[ij_offset];
+    const int kl = kl_pairs[kl_offset];
 
     // Decode shell indices from flattened pair indices
     int ish = ij / nbas;
     int jsh = ij - ish * nbas;
+    int ksh = kl / nbas;
+    int lsh = kl - ksh * nbas;
 
-    if (ish < jsh) return;
-
-    // Load q_ij for Schwarz screening (per-pair format)
-    const float q_ij = __ldg(&q_cond_ij[ij_idx * 16]);
-
+    // Apply ij symmetry screening
     DataType fac_sym_ij = PI_FAC;
     fac_sym_ij = (ish >= nbas) ? zero : fac_sym_ij;
     fac_sym_ij = (jsh >= nbas) ? zero : fac_sym_ij;
     fac_sym_ij *= (ish == jsh) ? half : one;
+    fac_sym_ij = (ish < jsh) ? zero : fac_sym_ij;
 
     // Clamped versions for array indexing
     ish = (ish >= nbas) ? 0 : ish;
     jsh = (jsh >= nbas) ? 0 : jsh;
-
-    const int kl_idx = blockIdx.y * 256 + threadIdx.x;
-    const int kl = (kl_idx < 16 * n_kl_pairs) ? kl_pairs[kl_idx] : nbas*nbas;
-
-    // Load per-pair q_kl for Schwarz screening
-    const float q_kl = (kl_idx < 16 * n_kl_pairs) ? __ldg(&q_cond_kl[blockIdx.y * 16]) : -1000.0f;
-    //const bool screen_pair = (q_ij + q_kl >= log_cutoff);
-    if (q_ij + q_kl < log_cutoff) return;
-
-    int ksh = kl / nbas;
-    int lsh = kl - ksh * nbas;
 
     constexpr int stride_i = 1;
     constexpr int stride_j = stride_i * (li+1);
@@ -634,14 +637,10 @@ void rys_vj_2d(const int nbas,
         reg_cej[jp].e = __ldg(&coeff_exp[jsh_jp].e);
     }
 
-    double vj_accm[nfi*nfj] = {zero};
-
-    // Determine fac_sym for the current quartet based on original (unclamped) indices
-    DataType fac_sym = fac_sym_ij;
-    fac_sym = (ksh >= nbas) ? zero : fac_sym;
-    fac_sym = (lsh >= nbas) ? zero : fac_sym;
-    // Schwarz screening: zero out if below threshold
-    //fac_sym = screen_pair ? zero : fac_sym;
+    // Separate symmetry factor for kl (similar to VK kernel)
+    DataType fac_sym_kl = one;
+    fac_sym_kl = (ksh >= nbas) ? zero : fac_sym_kl;
+    fac_sym_kl = (lsh >= nbas) ? zero : fac_sym_kl;
 
     // Clamped versions for array indexing
     ksh = (ksh >= nbas) ? 0 : ksh;
@@ -663,12 +662,12 @@ void rys_vj_2d(const int nbas,
     const DataType rr_kl = rlrk[0]*rlrk[0] + rlrk[1]*rlrk[1] + rlrk[2]*rlrk[2];
     DataType integral[integral_size] = {zero};
 
-    // Cache per-(ip,jp) terms to avoid repeated expensive exp/div computations if register usage is reasonable
-    DataType reg_cicj[npi*npj];
-    DataType reg_inv_aij[npi*npj];
+    // Cache per-(ip,jp) terms in shared memory to avoid repeated expensive exp/div computations
+    __shared__ DataType sh_cicj[npi*npj*threadx];
+    __shared__ DataType sh_inv_aij[npi*npj*threadx];
 
-#pragma unroll
-    for (int ip = 0; ip < npi; ip++){
+    if (threadIdx.y == 0){
+        for (int ip = 0; ip < npi; ip++)
         for (int jp = 0; jp < npj; jp++){
             DataType ai, aj, ci, cj;
             ai = reg_cei[ip].e;
@@ -681,12 +680,13 @@ void rys_vj_2d(const int nbas,
             const DataType aj_aij = aj * inv_aij;
             const DataType theta_ij = ai * aj_aij;
             const DataType Kab = exp(-theta_ij * rr_ij);
-            const DataType cicj = fac_sym * ci * cj * Kab;
-            const int idx = ip + jp*npi;
-            reg_cicj[idx] = cicj;
-            reg_inv_aij[idx] = inv_aij;
+            const DataType cicj = fac_sym_ij * ci * cj * Kab;
+            const int idx = (ip + jp*npi) * threadx + threadIdx.x;
+            sh_cicj[idx] = cicj;
+            sh_inv_aij[idx] = inv_aij;
         }
     }
+    __syncthreads();
 
 #pragma unroll
     for (int kp = 0; kp < npk; kp++)
@@ -707,7 +707,7 @@ void rys_vj_2d(const int nbas,
         const DataType Kcd = exp(-theta_kl * rr_kl);
         const DataType ck = cek.c;
         const DataType cl = cel.c;
-        const DataType ckcl = ck * cl * Kcd;
+        const DataType ckcl = fac_sym_kl * ck * cl * Kcd;
         for (int ip = 0; ip < npi; ip++)
         for (int jp = 0; jp < npj; jp++){
             DataType ai, aj, ci, cj;
@@ -720,8 +720,8 @@ void rys_vj_2d(const int nbas,
 
             DataType inv_aij, cicj;
             const int idx = ip + jp*npi;
-            inv_aij = reg_inv_aij[idx];
-            cicj = reg_cicj[idx];
+            inv_aij = sh_inv_aij[idx * threadx + threadIdx.x];
+            cicj = sh_cicj[idx * threadx + threadIdx.x];
 
             const DataType aj_aij = aj * inv_aij;
 
@@ -899,11 +899,13 @@ void rys_vj_2d(const int nbas,
         }
     }
 
+    const int i0 = ao_loc[ish];
+    const int j0 = ao_loc[jsh];
     const int k0 = ao_loc[ksh];
     const int l0 = ao_loc[lsh];
-    
+
     constexpr int nfkl = nfk*nfl;
-    
+
     for (int i_dm = 0; i_dm < n_dm; ++i_dm) {
         DataType dm_kl_cache[nfkl];
         const int dm_offset = k0 + l0*nao;
@@ -915,6 +917,9 @@ void rys_vj_2d(const int nbas,
             }
             dm_ptr += nao;
         }
+
+        const int vj_offset = i0 + j0*nao + i_dm*nao*nao;
+        double *vj_ptr = vj + vj_offset;
 #pragma unroll
         for (int i = 0; i < nfi; i++){
             const int base_off_i = i*gstride_i;
@@ -932,24 +937,16 @@ void rys_vj_2d(const int nbas,
                     }
                 }
                 const int offset = j*nao + i;
-                vj_accm[i*nfi + j] += (double)vj_ji;
+                atomicAdd(vj_ptr + offset, (double)vj_ji);
+                //double vj_tmp = (double)vj_ji;
+                //vj_tmp = __shfl_down_sync(0xFFFFFFFF, vj_ji, 8);
+                //vj_tmp = __shfl_down_sync(0xFFFFFFFF, vj_ji, 4);
+                //vj_tmp = __shfl_down_sync(0xFFFFFFFF, vj_ji, 2);
+                //vj_tmp = __shfl_down_sync(0xFFFFFFFF, vj_ji, 1);
+                //if (threadIdx.y == 0){
+                //    atomicAdd(vj_ptr + offset, vj_tmp);
+                //}
             }
-        }
-    }
-    
-    const int i0 = ao_loc[ish];
-    const int j0 = ao_loc[jsh];
-    const int vj_offset = i0 + j0*nao;
-    double *vj_ptr = vj + vj_offset;// + i_dm*nao*nao;
-    for (int i = 0; i < nfi; i++){
-        for (int j = 0; j < nfj; j++){
-            const int offset = j*nao + i;
-            //atomicAdd(vj_ptr + offset, vj_accm[i*nfi + j]);
-            double vj_tmp = vj_accm[i*nfi + j];
-            vj_tmp = blockReduceSum(vj_tmp);
-            if (threadIdx.x == 0 && threadIdx.y == 0)
-                atomicAdd(vj_ptr + offset, vj_tmp);
-            __syncthreads();
         }
     }
 }

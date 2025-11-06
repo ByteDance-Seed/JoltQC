@@ -168,13 +168,7 @@ def gen_kernel(
         #        q_cond_ij, q_cond_kl, log_cutoff)
         n_ij_pairs = args[10]
         n_kl_pairs = args[12]
-
-        # Debug: print log_cutoff value
-        if len(args) > 15:
-            import numpy as np
-            log_cutoff_val = float(args[15]) if isinstance(args[15], (int, float, np.number)) else float(args[15].get())
-            print(f"Python side log_cutoff: {log_cutoff_val}")
-
+        
         if do_j:
             # VJ: per-pair screening for both ij and kl dimensions
             vj_args = args[:7] + (args[8],) + args[9:]

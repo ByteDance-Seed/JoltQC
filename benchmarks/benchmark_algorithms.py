@@ -110,7 +110,7 @@ def generate_basis_for_angular_momentum(l, symbol="H"):
     # Generate appropriate exponents for the given angular momentum
     # Use a sequence of exponents with reasonable spacing
     if l == 0:  # s shell
-        exponents = [0.027, 0.027]#[1.27, 0.27, 0.027]
+        exponents = [0.27]#[1.27, 0.27, 0.027]
     elif l == 1:  # p shell
         exponents = [2.5, 0.6, 0.15]
     elif l == 2:  # d shell
@@ -137,7 +137,7 @@ def benchmark(ang, dtype):
         dtype: Data type for computation (np.float32 or np.float64)
     """
     omega = 0.0
-    cutoff = math.log(1e-10)
+    cutoff = math.log(1e-13)
 
     li, lj, lk, ll = ang
 
@@ -297,16 +297,6 @@ def benchmark(ang, dtype):
     q_cond_ij = extract_q_cond(ij_pairs, nbas, q_matrix)
     q_cond_kl = extract_q_cond(kl_pairs, nbas, q_matrix)
     log_cutoff = np.float32(cutoff)
-
-    # Print screening statistics
-    if use_simple_molecule:
-        total_quartets = len(q_cond_ij) * len(q_cond_kl)
-        screened_count = 0
-        for q_ij_val in q_cond_ij.get():
-            for q_kl_val in q_cond_kl.get():
-                if q_ij_val + q_kl_val >= log_cutoff:
-                    screened_count += 1
-        print(f"Screening: {screened_count}/{total_quartets} quartets screened out ({100*screened_count/total_quartets:.1f}%)")
 
     # Execute JK computation with per-pair Schwarz screening
     args = (nbas, nao, ao_loc, coords, ce_data, dms_jqc, vj, vk,
