@@ -168,7 +168,7 @@ def gen_kernel(
 
         if do_j:
             vj_args = args[:7] + args[8:]
-            grid_vj = (n_ij_pairs * 16,)
+            grid_vj = (n_ij_pairs * 16, (n_kl_pairs + 15) // 16)
             block_vj = (256,)
             kernel_vj(grid_vj, block_vj, vj_args)
         if do_k:

@@ -46,7 +46,7 @@ from pyscf import gto
 from jqc.backend.jk import gen_jk_kernel
 from jqc.pyscf.basis import BasisLayout
 from jqc.pyscf.jk import make_pairs, generate_get_jk
-
+from jqc.backend.linalg_helper import inplace_add_transpose
 
 def load_xyz(xyz_path):
     """
@@ -236,7 +236,7 @@ def benchmark(ang, dtype):
     # Use 2D algorithm (frags=[-2])
     print("\nUsing 2D algorithm (frags=[-2])")
     fun = gen_jk_kernel(
-        ang, nprim, dtype=dtype, frags=(-2,), n_dm=dms_jqc.shape[0], omega=omega
+        ang, nprim, dtype=dtype, frags=(-2,), n_dm=dms_jqc.shape[0], omega=omega, do_j=True, do_k=True
     )
 
     pairs = make_pairs(group_offset, q_matrix, cutoff)
@@ -276,6 +276,9 @@ def benchmark(ang, dtype):
     stop_evt.record()
     stop_evt.synchronize()
     elapsed_2d = cp.cuda.get_elapsed_time(start_evt, stop_evt) * 1e-3
+
+    inplace_add_transpose(vj)
+    inplace_add_transpose(vk)
 
     # Convert results back to molecular basis layout
     vj_mol = basis_layout.dm_to_mol(vj)
