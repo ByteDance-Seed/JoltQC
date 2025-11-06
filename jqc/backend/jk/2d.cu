@@ -293,6 +293,7 @@ void rys_vk_2d(const int nbas,
             const int idx = ip + jp*npi;
             inv_aij = reg_inv_aij[idx * threadx + threadIdx.x];
             cicj = reg_cicj[idx * threadx + threadIdx.x];
+
             const DataType aj_aij = aj * inv_aij;
 
             const DataType xij = rjri[0] * aj_aij + ri.x;
@@ -559,6 +560,11 @@ void rys_vj_2d(const int nbas,
     const int ij_idx = blockIdx.x;
     const int kl_idx = blockIdx.y;
 
+    // Early exit for out-of-bounds blocks
+    if (ij_idx >= n_ij_pairs || kl_idx >= n_kl_pairs) {
+        return;
+    }
+
     // Extract pair indices with thread indexing (same as VK kernel)
     const int ij_offset = ij_idx * 16 + threadIdx.x;
     const int kl_offset = kl_idx * 16 + threadIdx.y;
@@ -715,14 +721,12 @@ void rys_vj_2d(const int nbas,
             aj = reg_cej[jp].e;
             ci = reg_cei[ip].c;
             cj = reg_cej[jp].c;
-
             const DataType aij = ai + aj;
 
             DataType inv_aij, cicj;
             const int idx = ip + jp*npi;
             inv_aij = sh_inv_aij[idx * threadx + threadIdx.x];
             cicj = sh_cicj[idx * threadx + threadIdx.x];
-
             const DataType aj_aij = aj * inv_aij;
 
             const DataType xij = rjri[0] * aj_aij + ri.x;
@@ -938,14 +942,6 @@ void rys_vj_2d(const int nbas,
                 }
                 const int offset = j*nao + i;
                 atomicAdd(vj_ptr + offset, (double)vj_ji);
-                //double vj_tmp = (double)vj_ji;
-                //vj_tmp = __shfl_down_sync(0xFFFFFFFF, vj_ji, 8);
-                //vj_tmp = __shfl_down_sync(0xFFFFFFFF, vj_ji, 4);
-                //vj_tmp = __shfl_down_sync(0xFFFFFFFF, vj_ji, 2);
-                //vj_tmp = __shfl_down_sync(0xFFFFFFFF, vj_ji, 1);
-                //if (threadIdx.y == 0){
-                //    atomicAdd(vj_ptr + offset, vj_tmp);
-                //}
             }
         }
     }

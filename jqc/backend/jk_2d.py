@@ -168,12 +168,12 @@ def gen_kernel(
         #        q_cond_ij, q_cond_kl, log_cutoff)
         n_ij_pairs = args[10]
         n_kl_pairs = args[12]
-        
+
         if do_j:
-            # VJ: per-pair screening for both ij and kl dimensions
+            # VJ: same grid/block structure as VK
             vj_args = args[:7] + (args[8],) + args[9:]
-            grid_vj = (n_ij_pairs * 16, (n_kl_pairs + 15) // 16)
-            block_vj = (256,)
+            grid_vj = (n_ij_pairs, n_kl_pairs)
+            block_vj = THREADS
             kernel_vj(grid_vj, block_vj, vj_args)
         if do_k:
             # VK: per-pair screening with 2D thread indexing
