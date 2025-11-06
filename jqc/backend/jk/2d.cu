@@ -126,31 +126,36 @@ void rys_vk_2d(const int nbas,
         const int* __restrict__ ij_pairs,
         const int n_ij_pairs,
         const int* __restrict__ kl_pairs,
-        const int n_kl_pairs)
+        const int n_kl_pairs,
+        const float* __restrict__ q_cond_ij,
+        const float* __restrict__ q_cond_kl,
+        const float log_cutoff)
 {
     const int ij_idx = blockIdx.x;
     const int kl_idx = blockIdx.y;
-
-    // Early exit for out-of-bounds blocks
-    if (ij_idx >= n_ij_pairs || kl_idx >= n_kl_pairs) {
-        return;
-    }
 
     // Extract pair indices with thread indexing
     // Pairs are stored in blocks of 16, with padding for incomplete blocks
     const int ij_offset = ij_idx * 16 + threadIdx.x;
     const int kl_offset = kl_idx * 16 + threadIdx.y;
 
+    // Load per-pair q_cond values for Schwarz screening
+    const int ij0 = ij_idx * 16;
+    const int kl0 = kl_idx * 16;
+    const float q_ij = __ldg(&q_cond_ij[ij0]);
+    const float q_kl = __ldg(&q_cond_kl[kl0]);
+    
+    if (q_ij + q_kl < log_cutoff) return;
+
     // Load pair with bounds checking
-    const int ij = (ij_offset < n_ij_pairs * 16) ? ij_pairs[ij_offset] : 0;
-    const int kl = (kl_offset < n_kl_pairs * 16) ? kl_pairs[kl_offset] : 0;
+    const int ij = ij_pairs[ij_offset];
+    const int kl = kl_pairs[kl_offset];
 
     // Decode shell indices from flattened pair indices
     int ish = ij / nbas;
     int jsh = ij - ish * nbas;  // Equivalent to ij % nbas but potentially faster
     int ksh = kl / nbas;
     int lsh = kl - ksh * nbas;
-    if (ij_idx < kl_idx) return;
     
     constexpr int stride_i = 1;
     constexpr int stride_j = stride_i * (li+1);
@@ -178,6 +183,8 @@ void rys_vk_2d(const int nbas,
     fac_sym_kl = (ksh >= nbas) ? zero : fac_sym_kl;
     fac_sym_kl = (lsh >= nbas) ? zero : fac_sym_kl;
     fac_sym_kl *= (ij_idx == kl_idx) ? half : one;
+    // 2-fold symmetry: only compute ij >= kl quartets
+    fac_sym_kl = (ij_idx < kl_idx) ? zero : fac_sym_kl;
 
     ish = (ish >= nbas) ? 0 : ish;
     jsh = (jsh >= nbas) ? 0 : jsh;
@@ -544,7 +551,10 @@ void rys_vj_2d(const int nbas,
         const int* __restrict__ ij_pairs,
         const int n_ij_pairs,
         const int* __restrict__ kl_pairs,
-        const int n_kl_pairs)
+        const int n_kl_pairs,
+        const float* __restrict__ q_cond_ij,
+        const float* __restrict__ q_cond_kl,
+        const float log_cutoff)
 {
     const int ij_idx = blockIdx.x;
     const int ij = ij_pairs[ij_idx];
@@ -555,14 +565,28 @@ void rys_vj_2d(const int nbas,
 
     if (ish < jsh) return;
 
+    // Load q_ij for Schwarz screening (per-pair format)
+    const float q_ij = __ldg(&q_cond_ij[ij_idx * 16]);
+
     DataType fac_sym_ij = PI_FAC;
-    fac_sym_ij = (ish >= nbas) ? 0 : fac_sym_ij;
-    fac_sym_ij = (jsh >= nbas) ? 0 : fac_sym_ij;
+    fac_sym_ij = (ish >= nbas) ? zero : fac_sym_ij;
+    fac_sym_ij = (jsh >= nbas) ? zero : fac_sym_ij;
     fac_sym_ij *= (ish == jsh) ? half : one;
 
     // Clamped versions for array indexing
     ish = (ish >= nbas) ? 0 : ish;
     jsh = (jsh >= nbas) ? 0 : jsh;
+
+    const int kl_idx = blockIdx.y * 256 + threadIdx.x;
+    const int kl = (kl_idx < 16 * n_kl_pairs) ? kl_pairs[kl_idx] : nbas*nbas;
+
+    // Load per-pair q_kl for Schwarz screening
+    const float q_kl = (kl_idx < 16 * n_kl_pairs) ? __ldg(&q_cond_kl[blockIdx.y * 16]) : -1000.0f;
+    //const bool screen_pair = (q_ij + q_kl >= log_cutoff);
+    if (q_ij + q_kl < log_cutoff) return;
+
+    int ksh = kl / nbas;
+    int lsh = kl - ksh * nbas;
 
     constexpr int stride_i = 1;
     constexpr int stride_j = stride_i * (li+1);
@@ -611,19 +635,13 @@ void rys_vj_2d(const int nbas,
     }
 
     double vj_accm[nfi*nfj] = {zero};
-    
-    int kl_idx = blockIdx.y * 256 + threadIdx.x;
-    
-    //for (int kl_idx = threadIdx.x; kl_idx < n_kl_pairs * 16; kl_idx += blockDim.x) {
-    const int kl = (kl_idx < 16 * n_kl_pairs) ? kl_pairs[kl_idx] : nbas*nbas;
-
-    int ksh = kl / nbas;
-    int lsh = kl - ksh * nbas;
 
     // Determine fac_sym for the current quartet based on original (unclamped) indices
     DataType fac_sym = fac_sym_ij;
-    fac_sym = (ksh >= nbas) ? 0 : fac_sym;
-    fac_sym = (lsh >= nbas) ? 0 : fac_sym;
+    fac_sym = (ksh >= nbas) ? zero : fac_sym;
+    fac_sym = (lsh >= nbas) ? zero : fac_sym;
+    // Schwarz screening: zero out if below threshold
+    //fac_sym = screen_pair ? zero : fac_sym;
 
     // Clamped versions for array indexing
     ksh = (ksh >= nbas) ? 0 : ksh;

@@ -110,7 +110,7 @@ def generate_basis_for_angular_momentum(l, symbol="H"):
     # Generate appropriate exponents for the given angular momentum
     # Use a sequence of exponents with reasonable spacing
     if l == 0:  # s shell
-        exponents = [0.027, 0.27]#[1.27, 0.27, 0.027]
+        exponents = [0.027, 0.027]#[1.27, 0.27, 0.027]
     elif l == 1:  # p shell
         exponents = [2.5, 0.6, 0.15]
     elif l == 2:  # d shell
@@ -151,12 +151,25 @@ def benchmark(ang, dtype):
         L = li
 
     # Setup test molecule with custom basis for the given angular momentum
-    mol = gto.Mole()
-    xyz_atoms = load_xyz('molecules/0084-elongated-halogenated.xyz')
-    mol.atom = [(sym, coords) for sym, coords in xyz_atoms]
-    mol.unit = "Angstrom"
+    # Use simple H2 molecule for screening tests (set to False to use complex molecule)
+    use_simple_molecule = False
+    h2_distance = 100.0  # Angstroms - far apart for screening test
 
-    unique_symbols = sorted({sym for sym, _ in xyz_atoms})
+    mol = gto.Mole()
+    if use_simple_molecule:
+        # Simple two-hydrogen molecule far apart to test screening
+        mol.atom = [
+            ['H', (0.0, 0.0, 0.0)],
+            ['H', (h2_distance, 0.0, 0.0)]
+        ]
+        mol.unit = "Angstrom"
+        unique_symbols = ['H']
+        print(f"\nUsing simple H2 molecule with separation: {h2_distance} Angstrom")
+    else:
+        xyz_atoms = load_xyz('molecules/0084-elongated-halogenated.xyz')
+        mol.atom = [(sym, coords) for sym, coords in xyz_atoms]
+        mol.unit = "Angstrom"
+        unique_symbols = sorted({sym for sym, _ in xyz_atoms})
     basis_blocks = [
         generate_basis_for_angular_momentum(L, symbol=sym) for sym in unique_symbols
     ]
@@ -265,9 +278,40 @@ def benchmark(ang, dtype):
     ij_pairs = cp.ascontiguousarray(ij_pairs.ravel())
     kl_pairs = cp.ascontiguousarray(kl_pairs.ravel())
 
-    # Execute JK computation
+    # Generate per-pair q_cond arrays for Schwarz screening
+    def extract_q_cond(pairs_flat, nbas_val, q_mat):
+        """Extract q screening values for each pair"""
+        n_pairs = len(pairs_flat)
+        q_cond = cp.zeros(n_pairs, dtype=cp.float32)
+        for idx in range(n_pairs):
+            pair = int(pairs_flat[idx].get())
+            if pair >= nbas_val * nbas_val:
+                # Padding pair - set to very negative value
+                q_cond[idx] = -1000.0
+            else:
+                ish = pair // nbas_val
+                jsh = pair % nbas_val
+                q_cond[idx] = float(q_mat[ish, jsh].get())
+        return q_cond
+
+    q_cond_ij = extract_q_cond(ij_pairs, nbas, q_matrix)
+    q_cond_kl = extract_q_cond(kl_pairs, nbas, q_matrix)
+    log_cutoff = np.float32(cutoff)
+
+    # Print screening statistics
+    if use_simple_molecule:
+        total_quartets = len(q_cond_ij) * len(q_cond_kl)
+        screened_count = 0
+        for q_ij_val in q_cond_ij.get():
+            for q_kl_val in q_cond_kl.get():
+                if q_ij_val + q_kl_val >= log_cutoff:
+                    screened_count += 1
+        print(f"Screening: {screened_count}/{total_quartets} quartets screened out ({100*screened_count/total_quartets:.1f}%)")
+
+    # Execute JK computation with per-pair Schwarz screening
     args = (nbas, nao, ao_loc, coords, ce_data, dms_jqc, vj, vk,
-            omega_kernel, ij_pairs, n_ij_pairs, kl_pairs, n_kl_pairs)
+            omega_kernel, ij_pairs, n_ij_pairs, kl_pairs, n_kl_pairs,
+            q_cond_ij, q_cond_kl, log_cutoff)
 
     start_evt = cp.cuda.Event()
     stop_evt = cp.cuda.Event()

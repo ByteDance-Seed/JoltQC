@@ -163,16 +163,27 @@ def gen_kernel(
     kernel_vk = mod.get_function("rys_vk_2d") if do_k else None
 
     def fun(*args):
-        n_ij_pairs = args[-3]
-        n_kl_pairs = args[-1]
+        # Args: (nbas, nao, ao_loc, coords, ce_data, dm, vj, vk, omega,
+        #        ij_pairs, n_ij_pairs, kl_pairs, n_kl_pairs,
+        #        q_cond_ij, q_cond_kl, log_cutoff)
+        n_ij_pairs = args[10]
+        n_kl_pairs = args[12]
+
+        # Debug: print log_cutoff value
+        if len(args) > 15:
+            import numpy as np
+            log_cutoff_val = float(args[15]) if isinstance(args[15], (int, float, np.number)) else float(args[15].get())
+            print(f"Python side log_cutoff: {log_cutoff_val}")
 
         if do_j:
-            vj_args = args[:7] + args[8:]
+            # VJ: per-pair screening for both ij and kl dimensions
+            vj_args = args[:7] + (args[8],) + args[9:]
             grid_vj = (n_ij_pairs * 16, (n_kl_pairs + 15) // 16)
             block_vj = (256,)
             kernel_vj(grid_vj, block_vj, vj_args)
         if do_k:
-            vk_args = args[:6] + args[7:]
+            # VK: per-pair screening with 2D thread indexing
+            vk_args = args[:6] + (args[7], args[8]) + args[9:]
             grid_vk = (n_ij_pairs, n_kl_pairs)
             block_vk = THREADS
             kernel_vk(grid_vk, block_vk, vk_args)
