@@ -60,7 +60,7 @@ __device__ __forceinline__ T blockReduceSum2D(T val) {
     }
 
     // Final barrier to ensure all threads sync before function returns
-    __syncthreads();
+    //__syncthreads();
 
     return val;  // Thread 0 contains the final sum
 }
@@ -153,14 +153,8 @@ void rys_vj_2d(const int nbas,
     constexpr int gstride_i = gstride_j * nfj;
     constexpr int integral_size = nfi*nfj*nfk*nfl;
 
-
-    DataType4 ri, rj;
-    ri.x = __ldg(&coords[ish].x);
-    ri.y = __ldg(&coords[ish].y);
-    ri.z = __ldg(&coords[ish].z);
-    rj.x = __ldg(&coords[jsh].x);
-    rj.y = __ldg(&coords[jsh].y);
-    rj.z = __ldg(&coords[jsh].z);
+    DataType4 ri = coords[ish]; 
+    DataType4 rj = coords[jsh];
 
     const DataType rij0 = rj.x - ri.x;
     const DataType rij1 = rj.y - ri.y;
@@ -172,13 +166,11 @@ void rys_vj_2d(const int nbas,
     DataType2 reg_cei[npi], reg_cej[npj];
     for (int ip = 0; ip < npi; ip++){
         const int ish_ip = ip + ish*prim_stride;
-        reg_cei[ip].c = __ldg(&coeff_exp[ish_ip].c);
-        reg_cei[ip].e = __ldg(&coeff_exp[ish_ip].e);
+        reg_cei[ip] = coeff_exp[ish_ip];
     }
     for (int jp = 0; jp < npj; jp++){
         const int jsh_jp = jp + jsh*prim_stride;
-        reg_cej[jp].c = __ldg(&coeff_exp[jsh_jp].c);
-        reg_cej[jp].e = __ldg(&coeff_exp[jsh_jp].e);
+        reg_cej[jp] = coeff_exp[jsh_jp];
     }
 
     // Cache per-(ip,jp) terms in shared memory to avoid repeated expensive exp/div computations
@@ -222,13 +214,8 @@ void rys_vj_2d(const int nbas,
     ksh = (ksh >= nbas) ? 0 : ksh;
     lsh = (lsh >= nbas) ? 0 : lsh;
 
-    DataType4 rk, rl;
-    rk.x = __ldg(&coords[ksh].x);
-    rk.y = __ldg(&coords[ksh].y);
-    rk.z = __ldg(&coords[ksh].z);
-    rl.x = __ldg(&coords[lsh].x);
-    rl.y = __ldg(&coords[lsh].y);
-    rl.z = __ldg(&coords[lsh].z);
+    DataType4 rk = coords[ksh]; 
+    DataType4 rl = coords[lsh];
 
     const DataType rkl0 = rl.x - rk.x;
     const DataType rkl1 = rl.y - rk.y;

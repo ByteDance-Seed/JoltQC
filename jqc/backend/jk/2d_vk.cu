@@ -56,7 +56,7 @@ __device__ __forceinline__ T blockReduceSum2D(T val) {
     }
 
     // Final barrier to ensure all threads sync before function returns
-    __syncthreads();
+    //__syncthreads();
 
     return val;  // Thread (0,0) contains the final sum
 }
@@ -114,9 +114,15 @@ void rys_vk_2d(const int nbas,
     const int ij_offset = ij_idx * 16 + threadIdx.x;
     const int kl_offset = kl_idx * 16 + threadIdx.y;
 
+    __shared__ int kl_pairs_sh[16];
+    if (threadIdx.y == 0){
+        kl_pairs_sh[threadIdx.x] = kl_pairs[kl_idx * 16 + threadIdx.x];
+    }
+    __syncthreads();
+
     // Load pair with bounds checking
     const int ij = ij_pairs[ij_offset];
-    const int kl = kl_pairs[kl_offset];
+    const int kl = kl_pairs_sh[threadIdx.y];//kl_pairs[kl_offset];
 
     // Decode shell indices from flattened pair indices
     int ish = ij / nbas;
@@ -156,19 +162,8 @@ void rys_vk_2d(const int nbas,
     ksh = (ksh >= nbas) ? 0 : ksh;
     lsh = (lsh >= nbas) ? 0 : lsh;
 
-    DataType4 ri, rj, rk, rl;
-    ri.x = __ldg(&coords[ish].x);
-    ri.y = __ldg(&coords[ish].y);
-    ri.z = __ldg(&coords[ish].z);
-    rj.x = __ldg(&coords[jsh].x);
-    rj.y = __ldg(&coords[jsh].y);
-    rj.z = __ldg(&coords[jsh].z);
-    rk.x = __ldg(&coords[ksh].x);
-    rk.y = __ldg(&coords[ksh].y);
-    rk.z = __ldg(&coords[ksh].z);
-    rl.x = __ldg(&coords[lsh].x);
-    rl.y = __ldg(&coords[lsh].y);
-    rl.z = __ldg(&coords[lsh].z);
+    DataType4 ri = coords[ish];
+    DataType4 rj = coords[jsh];
 
     const DataType rij0 = rj.x - ri.x;
     const DataType rij1 = rj.y - ri.y;
@@ -176,6 +171,10 @@ void rys_vk_2d(const int nbas,
 
     const DataType rjri[3] = {rij0, rij1, rij2};
     const DataType rr_ij = rjri[0]*rjri[0] + rjri[1]*rjri[1] + rjri[2]*rjri[2];
+    
+    DataType4 rk = coords[ksh];
+    DataType4 rl = coords[lsh];
+
     const DataType rkl0 = rl.x - rk.x;
     const DataType rkl1 = rl.y - rk.y;
     const DataType rkl2 = rl.z - rk.z;
@@ -187,13 +186,11 @@ void rys_vk_2d(const int nbas,
     DataType2 reg_cei[npi], reg_cej[npj];
     for (int ip = 0; ip < npi; ip++){
         const int ish_ip = ip + ish*prim_stride;
-        reg_cei[ip].c = __ldg(&coeff_exp[ish_ip].c);
-        reg_cei[ip].e = __ldg(&coeff_exp[ish_ip].e);
+        reg_cei[ip] = coeff_exp[ish_ip];
     }
     for (int jp = 0; jp < npj; jp++){
         const int jsh_jp = jp + jsh*prim_stride;
-        reg_cej[jp].c = __ldg(&coeff_exp[jsh_jp].c);
-        reg_cej[jp].e = __ldg(&coeff_exp[jsh_jp].e);
+        reg_cej[jp] = coeff_exp[jsh_jp];
     }
 
     // Cache per-(ip,jp) terms to avoid repeated expensive exp/div computations if register usage is reasonable
@@ -227,11 +224,8 @@ void rys_vk_2d(const int nbas,
     for (int lp = 0; lp < npl; lp++){
         const int ksh_kp = kp + ksh*prim_stride;
         const int lsh_lp = lp + lsh*prim_stride;
-        DataType2 cek, cel;
-        cek.c = __ldg(&coeff_exp[ksh_kp].c);
-        cek.e = __ldg(&coeff_exp[ksh_kp].e);
-        cel.c = __ldg(&coeff_exp[lsh_lp].c);
-        cel.e = __ldg(&coeff_exp[lsh_lp].e);
+        DataType2 cek = coeff_exp[ksh_kp];
+        DataType2 cel = coeff_exp[lsh_lp];
         const DataType ak = cek.e;
         const DataType al = cel.e;
         const DataType akl = ak + al;
@@ -244,11 +238,9 @@ void rys_vk_2d(const int nbas,
         const DataType ckcl = fac_sym_kl * ck * cl * Kcd;
         for (int ip = 0; ip < npi; ip++)
         for (int jp = 0; jp < npj; jp++){
-            DataType ai, aj, ci, cj;
+            DataType ai, aj;
             ai = reg_cei[ip].e;
             aj = reg_cej[jp].e;
-            ci = reg_cei[ip].c;
-            cj = reg_cej[jp].c;
 
             const DataType aij = ai + aj;
 
