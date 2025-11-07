@@ -26,40 +26,42 @@ constexpr int threadx = 16;
 constexpr int thready = 16;
 
 template <typename T>
-__device__ __forceinline__ T blockReduceSum2D(T val) {
-    // Optimized for (16, 16) thread layout: 16×16 = 256 threads = 8 warps
-    // Uses 2D-aware reduction for better efficiency
+__inline__ __device__ T warpReduceSum(T v) {
+    v += __shfl_down_sync(0xffffffff, v, 16);
+    v += __shfl_down_sync(0xffffffff, v, 8);
+    v += __shfl_down_sync(0xffffffff, v, 4);
+    v += __shfl_down_sync(0xffffffff, v, 2);
+    v += __shfl_down_sync(0xffffffff, v, 1);
+    return v;
+}
 
-    // Step 1: Reduce within each row (16 threads per row)
-    // Each row is a half-warp, use mask 0xffff for first 16 threads
-    #pragma unroll
-    for (int offset = 8; offset > 0; offset >>= 1) {
-        val += __shfl_down_sync(0xffff, val, offset);
-    }
+template <typename T>
+__inline__ __device__ T blockReduceSum2D(T v) {
+    __shared__ T warpSum[8];  // 256 / 32 = 8 warps
+    const int tid  = threadIdx.y * blockDim.x + threadIdx.x;
+    const int warp = tid >> 5;   // warp index 0–7
+    const int lane = tid & 31;   // lane index 0–31
 
-    // Step 2: Collect column results in shared memory
-    // Thread 0 of each row (threadIdx.x == 0) writes row sum
-    __shared__ T col_sums[16];
-    if (threadIdx.x == 0) {
-        col_sums[threadIdx.y] = val;
-    }
+    // First reduction: inside each warp (registers only)
+    v = warpReduceSum(v);
+
+    // Write per-warp sum to shared memory
+    if (lane == 0) warpSum[warp] = v;
     __syncthreads();
 
-    // Step 3: Final reduction across rows (single half-warp)
-    // Only first row (threadIdx.y == 0) performs final reduction
-    if (threadIdx.y == 0) {
-        val = col_sums[threadIdx.x];
-        #pragma unroll
-        for (int offset = 8; offset > 0; offset >>= 1) {
-            val += __shfl_down_sync(0xffff, val, offset);
-        }
+    // Only first warp handles the 8 partials
+    T val = (warp == 0 && lane < 8) ? warpSum[lane] : T(0);
+
+    // Final warp reduction (only 8 valid lanes)
+    if (warp == 0) {
+        val += __shfl_down_sync(0xffffffff, val, 4);
+        val += __shfl_down_sync(0xffffffff, val, 2);
+        val += __shfl_down_sync(0xffffffff, val, 1);
     }
 
-    // Final barrier to ensure all threads sync before function returns
-    //__syncthreads();
-
-    return val;  // Thread (0,0) contains the final sum
+    return val;
 }
+
 
 // Make coordinate stride configurable via COORD_STRIDE
 static_assert(COORD_STRIDE >= 3, "COORD_STRIDE must be >= 3");
@@ -114,15 +116,9 @@ void rys_vk_2d(const int nbas,
     const int ij_offset = ij_idx * 16 + threadIdx.x;
     const int kl_offset = kl_idx * 16 + threadIdx.y;
 
-    __shared__ int kl_pairs_sh[16];
-    if (threadIdx.y == 0){
-        kl_pairs_sh[threadIdx.x] = kl_pairs[kl_idx * 16 + threadIdx.x];
-    }
-    __syncthreads();
-
     // Load pair with bounds checking
     const int ij = ij_pairs[ij_offset];
-    const int kl = kl_pairs_sh[threadIdx.y];//kl_pairs[kl_offset];
+    const int kl = kl_pairs[kl_offset];
 
     // Decode shell indices from flattened pair indices
     int ish = ij / nbas;
@@ -482,7 +478,6 @@ void rys_vk_2d(const int nbas,
                     off_k += gstride_j;
                 }
 
-                //double vk_tmp = (double)vk_ik;
                 DataType vk_tmp = blockReduceSum2D(vk_ik);
                 if (threadIdx.x == 0 && threadIdx.y == 0)
                     atomicAdd(vk_ptr + i*nao + k, vk_tmp);
