@@ -414,6 +414,66 @@ def make_pairs(l_ctr_bas_loc, q_matrix, cutoff, column_size: int = 16):
     return pairs
 
 
+def make_pairs_symmetric(l_ctr_bas_loc, q_matrix, cutoff):
+    """Make shell pairs with symmetry (i >= j) enforced"""
+    pairs = {}
+    n_groups = len(l_ctr_bas_loc) - 1
+    nbas = q_matrix.shape[0]
+    bas_loc = l_ctr_bas_loc
+
+    i_indices = cp.arange(nbas, dtype=np.int32)
+    j_indices = cp.arange(nbas, dtype=np.int32)
+
+    for i in range(n_groups):
+        i0, i1 = bas_loc[i], bas_loc[i + 1]
+        i_range = i_indices[i0:i1]
+
+        for j in range(i + 1):
+            j0, j1 = bas_loc[j], bas_loc[j + 1]
+            j_range = j_indices[j0:j1]
+
+            sub_q_idx = q_matrix[i0:i1, j0:j1]
+            mask = sub_q_idx > cutoff
+
+            if i == j:
+                # Keep only the lower-triangular shell pairs for symmetry
+                tri_mask = j_range[None, :] <= i_range[:, None]
+                mask = cp.logical_and(mask, tri_mask)
+
+            if not mask.any():
+                continue
+
+            pair_chunks = []
+            q_chunks = []
+            for idx, sh_i in enumerate(i_range):
+                row_mask = mask[idx, :]
+                if not row_mask.any():
+                    continue
+
+                valid_j_indices = j_range[row_mask]
+                current_pairs = sh_i * nbas + valid_j_indices
+
+                q_values = sub_q_idx[idx, :][row_mask]
+                sort_indices = cp.argsort(q_values)
+                sorted_pairs = current_pairs[sort_indices]
+                sorted_qvals = q_values[sort_indices]
+
+                if sorted_pairs.size > 0:
+                    pair_chunks.append(sorted_pairs)
+                    q_chunks.append(sorted_qvals)
+
+            if not pair_chunks:
+                continue
+
+            final_pairs_1d = cp.concatenate(pair_chunks)
+            qvals_1d = cp.concatenate(q_chunks)
+            if final_pairs_1d.size > 0:
+                order = cp.argsort(qvals_1d)
+                pairs[i, j] = final_pairs_1d[order]
+
+    return pairs
+
+
 def make_tile_pairs(l_ctr_bas_loc, q_matrix, cutoff, tile=TILE):
     """Make tile pairs with GTO pairing screening and symmetry
     Filter out the tiles that are not within cutoff

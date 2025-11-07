@@ -45,7 +45,7 @@ from pyscf import gto
 
 from jqc.backend.jk import gen_jk_kernel
 from jqc.pyscf.basis import BasisLayout
-from jqc.pyscf.jk import make_pairs, generate_get_jk
+from jqc.pyscf.jk import make_pairs, make_pairs_symmetric, generate_get_jk
 from jqc.backend.linalg_helper import inplace_add_transpose
 
 def load_xyz(xyz_path):
@@ -110,7 +110,7 @@ def generate_basis_for_angular_momentum(l, symbol="H"):
     # Generate appropriate exponents for the given angular momentum
     # Use a sequence of exponents with reasonable spacing
     if l == 0:  # s shell
-        exponents = [0.027]#[1.27, 0.27, 0.027]
+        exponents = [0.27]#[1.27, 0.27, 0.027]
     elif l == 1:  # p shell
         exponents = [2.5, 0.6, 0.15]
     elif l == 2:  # d shell
@@ -246,13 +246,21 @@ def benchmark(ang, dtype):
     print(f"\nBasis: {nbas} shells, {nao} AOs")
     print(f"Precision: {dtype.__name__}, omega={omega}")
 
-    # Use 2D algorithm (frags=[-2])
-    print("\nUsing 2D algorithm (frags=[-2])")
-    fun = gen_jk_kernel(
-        ang, nprim, dtype=dtype, frags=(-2,), n_dm=dms_jqc.shape[0], omega=omega, do_j=True, do_k=True
+    # Use 2D algorithm (frags=[-2]) - generate separate VJ and VK kernels
+    print("\nUsing 2D algorithm (frags=[-2]) with separate VJ and VK kernels")
+
+    # Generate VJ kernel
+    fun_vj = gen_jk_kernel(
+        ang, nprim, dtype=dtype, frags=(-2,), n_dm=dms_jqc.shape[0], omega=omega, do_j=True, do_k=False
+    )
+
+    # Generate VK kernel
+    fun_vk = gen_jk_kernel(
+        ang, nprim, dtype=dtype, frags=(-2,), n_dm=dms_jqc.shape[0], omega=omega, do_j=False, do_k=True
     )
 
     pairs = make_pairs(group_offset, q_matrix, cutoff)
+    pairs_sym = make_pairs_symmetric(group_offset, q_matrix, cutoff)
 
     # Map angular momentum to group indices for pair selection
     group_key_arr = np.asarray(group_key)
@@ -262,13 +270,40 @@ def benchmark(ang, dtype):
                 return idx
         return 0
 
+    def get_symmetric_pairs(pairs_dict, gi, gj, nbas_val):
+        """Fetch symmetric pairs for ordered (gi, gj)"""
+        key = (gi, gj) if gi >= gj else (gj, gi)
+        pairs_arr = pairs_dict.get(key, cp.array([], dtype=cp.int32))
+        pairs_arr = cp.asarray(pairs_arr, dtype=cp.int32)
+        if pairs_arr.size == 0:
+            return pairs_arr
+        if gi < gj:
+            ish = pairs_arr // nbas_val
+            jsh = pairs_arr % nbas_val
+            pairs_arr = jsh * nbas_val + ish
+        return cp.ascontiguousarray(pairs_arr)
+
     gi, gj, gk, gl = map(find_group_idx, ang)
     ij_pairs = pairs.get((gi, gj), cp.array([], dtype=cp.int32))
     kl_pairs = pairs.get((gk, gl), cp.array([], dtype=cp.int32))
 
+    ij_pairs_sym = get_symmetric_pairs(pairs_sym, gi, gj, nbas)
+    kl_pairs_sym = get_symmetric_pairs(pairs_sym, gk, gl, nbas)
+
+    ij_pairs_vj = cp.ascontiguousarray(ij_pairs_sym)
+    kl_pairs_vj = cp.ascontiguousarray(kl_pairs_sym)
+    n_ij_pairs_vj = int(ij_pairs_vj.size)
+    n_kl_pairs_vj = int(kl_pairs_vj.size)
+
     n_ij_pairs = len(ij_pairs)
     n_kl_pairs = len(kl_pairs)
-    if n_ij_pairs == 0 or n_kl_pairs == 0:
+
+    if (
+        n_ij_pairs_vj == 0
+        or n_kl_pairs_vj == 0
+        or n_ij_pairs == 0
+        or n_kl_pairs == 0
+    ):
         print("\nNo pairs found for the given angular momenta.")
         print(f"Angular momenta: {ang}")
         print(f"Group offset: {group_offset}")
@@ -294,25 +329,43 @@ def benchmark(ang, dtype):
                 q_cond[idx] = float(q_mat[ish, jsh].get())
         return q_cond
 
+    q_cond_ij_vj = extract_q_cond(ij_pairs_vj, nbas, q_matrix)
+    q_cond_kl_vj = extract_q_cond(kl_pairs_vj, nbas, q_matrix)
     q_cond_ij = extract_q_cond(ij_pairs, nbas, q_matrix)
     q_cond_kl = extract_q_cond(kl_pairs, nbas, q_matrix)
     log_cutoff = np.float32(cutoff)
 
-    # Execute JK computation with per-pair Schwarz screening
-    args = (nbas, nao, ao_loc, coords, ce_data, dms_jqc, vj, vk,
-            omega_kernel, ij_pairs, n_ij_pairs, kl_pairs, n_kl_pairs,
-            q_cond_ij, q_cond_kl, log_cutoff)
+    # Execute VJ kernel with per-pair Schwarz screening
+    vj_args = (nbas, nao, ao_loc, coords, ce_data, dms_jqc, vj, None,
+               omega_kernel, ij_pairs_vj, n_ij_pairs_vj, kl_pairs_vj, n_kl_pairs_vj,
+               q_cond_ij_vj, q_cond_kl_vj, log_cutoff)
 
-    start_evt = cp.cuda.Event()
-    stop_evt = cp.cuda.Event()
-    start_evt.record()
-    fun(*args)
-    stop_evt.record()
-    stop_evt.synchronize()
-    elapsed_2d = cp.cuda.get_elapsed_time(start_evt, stop_evt) * 1e-3
+    start_vj = cp.cuda.Event()
+    stop_vj = cp.cuda.Event()
+    start_vj.record()
+    fun_vj(*vj_args)
+    stop_vj.record()
+    stop_vj.synchronize()
+    elapsed_vj = cp.cuda.get_elapsed_time(start_vj, stop_vj) * 1e-3
+
+    # Execute VK kernel with per-pair Schwarz screening
+    vk_args = (nbas, nao, ao_loc, coords, ce_data, dms_jqc, None, vk,
+               omega_kernel, ij_pairs, n_ij_pairs, kl_pairs, n_kl_pairs,
+               q_cond_ij, q_cond_kl, log_cutoff)
+
+    start_vk = cp.cuda.Event()
+    stop_vk = cp.cuda.Event()
+    start_vk.record()
+    fun_vk(*vk_args)
+    stop_vk.record()
+    stop_vk.synchronize()
+    elapsed_vk = cp.cuda.get_elapsed_time(start_vk, stop_vk) * 1e-3
+
+    elapsed_2d = elapsed_vj + elapsed_vk
 
     inplace_add_transpose(vj)
     inplace_add_transpose(vk)
+    vj *= 2.0
 
     # Convert results back to molecular basis layout
     vj_mol = basis_layout.dm_to_mol(vj)
@@ -335,7 +388,9 @@ def benchmark(ang, dtype):
     print(f"  vj error: {vj_diff:.2e}")
     print(f"  vk error: {vk_diff:.2e}")
     print(f"\nTiming:")
-    print(f"  2D kernel   : {elapsed_2d:.6f} s")
+    print(f"  VJ kernel   : {elapsed_vj:.6f} s")
+    print(f"  VK kernel   : {elapsed_vk:.6f} s")
+    print(f"  2D total    : {elapsed_2d:.6f} s")
     print(f"  Reference   : {elapsed_ref:.6f} s")
     print(f"  Speedup     : {elapsed_ref/elapsed_2d:.2f}x")
 
