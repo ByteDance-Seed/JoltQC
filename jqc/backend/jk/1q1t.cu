@@ -93,19 +93,11 @@ void rys_jk(const int nbas,
     fac_sym *= (ish == jsh) ? half : one;
     fac_sym *= (ksh == lsh) ? half : one;
     fac_sym *= (ish*nbas+jsh == ksh*nbas+lsh) ? half : one;
-    DataType4 ri, rj, rk, rl;
-    ri.x = __ldg(&coords[ish].x);
-    ri.y = __ldg(&coords[ish].y);
-    ri.z = __ldg(&coords[ish].z);
-    rj.x = __ldg(&coords[jsh].x);
-    rj.y = __ldg(&coords[jsh].y);
-    rj.z = __ldg(&coords[jsh].z);
-    rk.x = __ldg(&coords[ksh].x);
-    rk.y = __ldg(&coords[ksh].y);
-    rk.z = __ldg(&coords[ksh].z);
-    rl.x = __ldg(&coords[lsh].x);
-    rl.y = __ldg(&coords[lsh].y);
-    rl.z = __ldg(&coords[lsh].z);
+
+    DataType4 ri = coords[ish];
+    DataType4 rj = coords[jsh];
+    DataType4 rk = coords[ksh];
+    DataType4 rl = coords[lsh];
 
     const DataType rij0 = rj.x - ri.x;
     const DataType rij1 = rj.y - ri.y;
@@ -175,11 +167,8 @@ void rys_jk(const int nbas,
     for (int lp = 0; lp < npl; lp++){
         const int ksh_kp = kp + ksh*prim_stride;
         const int lsh_lp = lp + lsh*prim_stride;
-        DataType2 cek, cel;
-        cek.c = __ldg(&coeff_exp[ksh_kp].c);
-        cek.e = __ldg(&coeff_exp[ksh_kp].e);
-        cel.c = __ldg(&coeff_exp[lsh_lp].c);
-        cel.e = __ldg(&coeff_exp[lsh_lp].e);
+        DataType2 cek = coeff_exp[ksh_kp]; 
+        DataType2 cel = coeff_exp[lsh_lp];
         const DataType ak = cek.e;
         const DataType al = cel.e;
         const DataType akl = ak + al;
@@ -201,11 +190,8 @@ void rys_jk(const int nbas,
             } else {
                 const int ish_ip = ip + ish*prim_stride;
                 const int jsh_jp = jp + jsh*prim_stride;
-                DataType2 cei, cej;
-                cei.c = __ldg(&coeff_exp[ish_ip].c);
-                cei.e = __ldg(&coeff_exp[ish_ip].e);
-                cej.c = __ldg(&coeff_exp[jsh_jp].c);
-                cej.e = __ldg(&coeff_exp[jsh_jp].e);
+                DataType2 cei = coeff_exp[ish_ip]; 
+                DataType2 cej = coeff_exp[jsh_jp];
                 ai = cei.e;
                 aj = cej.e;
                 ci = cei.c;
