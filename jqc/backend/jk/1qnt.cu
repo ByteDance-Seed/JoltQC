@@ -25,6 +25,7 @@ constexpr DataType half = .5;
 constexpr DataType one = 1.0;
 constexpr DataType zero = 0.0;
 constexpr int prim_stride = PRIM_STRIDE / 2;
+constexpr DataType max_exp = 36.8; // To avoid overflow in exp(-x)
 
 // Make coordinate stride configurable via COORD_STRIDE
 static_assert(COORD_STRIDE >= 3, "COORD_STRIDE must be >= 3");
@@ -138,6 +139,11 @@ void rys_jk(const int nbas,
     const int lsh = (int)sq.w;
     
     DataType fac_sym = active ? PI_FAC : zero;
+    fac_sym *= (jsh <= ish) ? one : zero;
+    fac_sym *= (ksh <= ish) ? one : zero;
+    fac_sym *= (lsh <= ksh) ? one : zero;
+    fac_sym *= (ksh*nbas+lsh <= ish*nbas+jsh) ? one : zero;
+    
     fac_sym *= (ish == jsh) ? half : one;
     fac_sym *= (ksh == lsh) ? half : one;
     fac_sym *= (ish*nbas+jsh == ksh*nbas+lsh) ? half : one;
@@ -272,6 +278,7 @@ void rys_jk(const int nbas,
                 const DataType Kab = exp(-theta_ij * rr_ij);
                 cicj = fac_sym * ci * cj * Kab;
             }
+            
             const DataType aj_aij = aj * inv_aij;
             
             const DataType xij = rjri0 * aj_aij + ri.x;
@@ -296,7 +303,9 @@ void rys_jk(const int nbas,
             rys_roots(rr, rw, ty, gx_stride, theta, omega);
             
             DataType g0xyz;
-            if (ty == 0) g0xyz = ckcl; 
+            if (ty == 0) {
+                g0xyz = ckcl;
+            }
             if (ty == 1) g0xyz = cicj * inv_aij * inv_akl * sqrt(inv_aijkl);
             
             __syncthreads();
@@ -489,10 +498,10 @@ void rys_jk(const int nbas,
         }
     }
 
-    const int i0 = ao_loc[ish];
-    const int j0 = ao_loc[jsh];
-    const int k0 = ao_loc[ksh];
-    const int l0 = ao_loc[lsh];
+    const int i0 = ao_loc[ish] >= nao ? 0 : ao_loc[ish];
+    const int j0 = ao_loc[jsh] >= nao ? 0 : ao_loc[jsh];
+    const int k0 = ao_loc[ksh] >= nao ? 0 : ao_loc[ksh];
+    const int l0 = ao_loc[lsh] >= nao ? 0 : ao_loc[lsh];
 
     DataType *smem = shared_memory + tx;
     const bool ty_active = (ty < nt_active);

@@ -38,9 +38,17 @@ PRIM_STRIDE = ((2 * NPRIM_MAX + 15) // 16) * 16
 # Tile size for block-based algorithms
 TILE = 4
 
+# Basis alignment for accessing shell quartets in fragments
+# With BAS_ALIGN=1, each fragment contains exactly 1 shell quartet.
+# With BAS_ALIGN=2, each fragment contains up to 16 shell quartets, but symmetry
+# constraints are applied at the individual quartet level (not just the base quartet),
+# ensuring only valid quartets are screened and output to the task queue.
+BAS_ALIGN = 2
+
 MAX_SMEM = 48 * 1024  # Maximum shared memory per block in bytes
 
 __all__ = [
+    "BAS_ALIGN",
     "COORD_STRIDE",
     "LMAX",
     "MAX_L_ECP",

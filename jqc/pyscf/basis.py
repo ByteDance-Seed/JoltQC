@@ -502,6 +502,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
         if idx < padded_count:
             coords_by_pattern[pattern][idx:] = coords_by_pattern[pattern][0]
             ce_by_pattern[pattern][idx:] = ce_by_pattern[pattern][0]
+            ce_by_pattern[pattern][idx:, 0 : 2 * nprim : 2] = 0.0   # Assign zero to coeff
             to_split_map_by_pattern[pattern][idx:] = to_split_map_by_pattern[pattern][0]
             pad_id_by_pattern[pattern][idx:] = True
 

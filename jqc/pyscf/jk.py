@@ -104,6 +104,8 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     ce_fp64 = basis_layout.ce_fp64
     coords_fp64 = basis_layout.coords_fp64
     ao_loc = cp.asarray(basis_layout.ao_loc)
+    # nbas_padded includes padding shells for bounds checking in screening kernel
+    nbas_padded = len(ao_loc) - 1
 
     def get_jk(
         mol_ref,
@@ -254,10 +256,11 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             for t_ij0, t_ij1 in lib.prange(0, ntile_ij, PAIR_TILE_SIZE):
                 for t_kl0, t_kl1 in lib.prange(0, ntile_kl, PAIR_TILE_SIZE):
                     # Generate tasks for fp32 and fp64
+                    # Use nbas_padded for bounds checking in screening kernel
                     gen_tasks_fun(
                         quartet_list,
                         info,
-                        nbas,
+                        nbas_padded,
                         tile_ij[t_ij0:t_ij1],
                         tile_kl[t_kl0:t_kl1],
                         q_matrix,
