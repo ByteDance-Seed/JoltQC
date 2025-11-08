@@ -79,9 +79,9 @@ H          0.00000       -0.75545       -0.47116
 '''
 
 #atom = 'molecules/h2o.xyz'
-atom = 'molecules/0031-irregular-nitrogenous.xyz'
+# atom = 'molecules/0031-irregular-nitrogenous.xyz'
 # atom = 'molecules/0084-elongated-halogenated.xyz'
-# atom = "molecules/0401-globular-nitrogenous.xyz"
+atom = "molecules/0401-globular-nitrogenous.xyz"
 # atom = 'molecules/0753-globular.xyz'
 n_dm = 1
 n_warmup = 0
