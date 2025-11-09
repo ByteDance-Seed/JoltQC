@@ -142,12 +142,10 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
         for (int i = 0; i < TILE; ++i){
             const int ish = ish0 + i;
             const int ish_base = ish * nbas;
-            // j must satisfy jsh <= ish -> j <= ish - jsh0
-            int j_end = ish - jsh0 + 1; // exclusive upper bound
-            j_end = (j_end < 0) ? 0 : (j_end > TILE ? TILE : j_end);
 
-            for (int j = 0; j < j_end; ++j){
+            for (int j = 0; j < TILE; ++j){
                 const int jsh = jsh0 + j;
+                if (ish < jsh) continue;
                 const int jsh_base = jsh * nbas;
                 const int bas_ij = ish_base + jsh;
                 const float q_ij = __ldg(&q_cond[bas_ij]);
@@ -164,22 +162,17 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
                 }
 
                 // k must satisfy ksh <= ish -> k <= ish - ksh0
-                int k_end = ish - ksh0 + 1; // exclusive upper bound
-                k_end = (k_end < 0) ? 0 : (k_end > TILE ? TILE : k_end);
-
-                for (int k = 0; k < k_end; ++k){
+                for (int k = 0; k < TILE; ++k){
                     const int ksh = ksh0 + k;
+                    if (ksh > ish) continue;
                     const float d_ik = __ldg(&dm_cond[ish_base + ksh]);
                     const float d_jk = __ldg(&dm_cond[jsh_base + ksh]);
 
-                    // l must satisfy lsh <= ksh -> l <= k + (ksh0 - lsh0)
-                    int l_end = k + (ksh0 - lsh0) + 1; // exclusive upper bound
-                    l_end = (l_end < 0) ? 0 : (l_end > TILE ? TILE : l_end);
-
-                    for (int l = 0; l < l_end; ++l){
+                    for (int l = 0; l < TILE; ++l){
                         const int lsh = lsh0 + l;
                         const int bas_kl = ksh * nbas + lsh;
                         if (bas_ij < bas_kl) continue;
+                        if (lsh > ksh) continue;
 
                         const float q_ijkl = q_ij + q_kl[k * TILE + l];
                         float d_large = -36.8f;
