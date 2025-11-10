@@ -1,0 +1,58 @@
+{
+  "timestamp": "2025-11-09T17:59:40.615889",
+  "engine": "jqc",
+  "gpu4pyscf_version": "1.4.3",
+  "xc_functional": "wb97m-v",
+  "basis_set": "def2-tzvpd",
+  "grid_points": [
+    99,
+    590
+  ],
+  "molecules": [
+    {
+      "molecule": "0029-elongated-halogenated.xyz",
+      "n_electrons": 152,
+      "n_basis_functions": 839,
+      "energy": -1408.8624329488148,
+      "wall_time_s": 36.11552405357361,
+      "gpu_time_ms": 36136.7578125,
+      "success": true
+    },
+    {
+      "molecule": "0051-elongated-halogenated.xyz",
+      "n_electrons": 220,
+      "n_basis_functions": 1314,
+      "energy": -1515.2651756099535,
+      "wall_time_s": 70.44976925849915,
+      "gpu_time_ms": 70468.546875,
+      "success": true
+    },
+    {
+      "molecule": "0084-elongated-halogenated.xyz",
+      "n_electrons": 374,
+      "n_basis_functions": 2192,
+      "energy": -2897.1047738361895,
+      "wall_time_s": 203.21179723739624,
+      "gpu_time_ms": 203004.703125,
+      "success": true
+    },
+    {
+      "molecule": "0112-elongated-nitrogenous.xyz",
+      "n_electrons": 432,
+      "n_basis_functions": 2706,
+      "energy": -2673.7066690764395,
+      "wall_time_s": 341.2981505393982,
+      "gpu_time_ms": 341274.15625,
+      "success": true
+    },
+    {
+      "molecule": "0152-elongated-nitrogenous.xyz",
+      "n_electrons": 620,
+      "n_basis_functions": 3704,
+      "energy": -4346.572511474422,
+      "wall_time_s": 948.0260627269745,
+      "gpu_time_ms": 948024.9375,
+      "success": true
+    }
+  ]
+}

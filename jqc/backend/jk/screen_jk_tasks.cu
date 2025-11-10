@@ -19,6 +19,8 @@
 // Copyright 2025 PySCF developer.
 // Licensed under the Apache License, Version 2.0.
 
+constexpr float minval = -36.8f; // exp(-36.8) ~ 1e-16
+
 // Ensure 64-bit integer width across platforms
 typedef unsigned long long uint64_t;
 
@@ -32,6 +34,7 @@ int global_offset(int* batch_head, int val){
     const int lane  = tid & (warp_size - 1);    
     const int warp  = tid / warp_size;
     int inclusive = val;
+#pragma unroll
     for (int ofs = 1; ofs < warp_size; ofs <<= 1) {
         int n = __shfl_up_sync(0xffffffff, inclusive, ofs);
         if (lane >= ofs) inclusive += n;                
@@ -94,12 +97,11 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
 
     // Load tile mappings only if active to avoid OOB when mappings are empty
     const int nbas_tiles = nbas / TILE;
-    int tile_ij = 0, tile_kl = 0;
     int tile_i = 0, tile_j = 0, tile_k = 0, tile_l = 0;
     int ish0 = 0, jsh0 = 0, ksh0 = 0, lsh0 = 0;
     if (active) {
-        tile_ij = tile_ij_mapping[ij];
-        tile_kl = tile_kl_mapping[kl];
+        const int tile_ij = tile_ij_mapping[ij];
+        const int tile_kl = tile_kl_mapping[kl];
         // Optimize division and modulo operations
         tile_i = tile_ij / nbas_tiles;
         tile_j = tile_ij - tile_i * nbas_tiles;  // Replace modulo with subtraction
@@ -123,89 +125,117 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
 
     int count_fp32 = 0;
     int count_fp64 = 0;
-    if (active){
-        // Prefetch KL tile only for active threads
+
+    // Prefetch KL tile only for active threads
+#pragma unroll
+    for (int k = 0; k < TILE; k++){
+        const int ksh = ksh0 + k;
+#pragma unroll
+        for (int l = 0; l < TILE; l++){
+            const int lsh = lsh0 + l;
+            const int bas_kl = ksh * nbas + lsh;
+            const int kl_idx = k * TILE + l;
+            if constexpr(do_j){
+                dm_kl[kl_idx] = active ? __ldg(dm_cond + bas_kl) : minval;
+            }
+            q_kl[kl_idx] = active ? __ldg(&q_cond[bas_kl]) : minval;
+        }
+    }
+    
+    float dm_ik[TILE*TILE];
+    float dm_il[TILE*TILE];
+#pragma unroll
+    for (int i = 0; i < TILE; ++i){
+        const int ish = ish0 + i;
+#pragma unroll
         for (int k = 0; k < TILE; k++){
             const int ksh = ksh0 + k;
-            const int ksh_base = ksh * nbas;
-            for (int l = 0; l < TILE; l++){
-                const int lsh = lsh0 + l;
-                const int bas_kl = ksh_base + lsh;
-                const int kl_idx = k * TILE + l;
-                if constexpr(do_j){
-                    dm_kl[kl_idx] = __ldg(&dm_cond[bas_kl]);
-                }
-                q_kl[kl_idx] = __ldg(&q_cond[bas_kl]);
-            }
+            dm_ik[i * TILE + k] = active ?__ldg(&dm_cond[ish * nbas + ksh]) : minval;
         }
+#pragma unroll
+        for (int l = 0; l < TILE; l++){
+            const int lsh = lsh0 + l;
+            dm_il[i * TILE + l] = active ? __ldg(&dm_cond[ish * nbas + lsh]) : minval;
+        }
+    }
 
-        for (int i = 0; i < TILE; ++i){
-            const int ish = ish0 + i;
-            const int ish_base = ish * nbas;
+    float dm_jk[TILE*TILE];
+    float dm_jl[TILE*TILE];
+#pragma unroll
+    for (int j = 0; j < TILE; ++j){
+        const int jsh = jsh0 + j;
+#pragma unroll
+        for (int k = 0; k < TILE; k++){
+            const int ksh = ksh0 + k;
+            dm_jk[j * TILE + k] = active ? __ldg(&dm_cond[jsh * nbas + ksh]) : minval;
+        }
+#pragma unroll
+        for (int l = 0; l < TILE; l++){
+            const int lsh = lsh0 + l;
+            dm_jl[j * TILE + l] = active ? __ldg(&dm_cond[jsh * nbas + lsh]) : minval;
+        }
+    }
+    
+#pragma unroll
+    for (int i = 0; i < TILE; ++i){
+        const int ish = ish0 + i;
 
-            for (int j = 0; j < TILE; ++j){
-                const int jsh = jsh0 + j;
-                if (ish < jsh) continue;
-                const int jsh_base = jsh * nbas;
-                const int bas_ij = ish_base + jsh;
-                const float q_ij = __ldg(&q_cond[bas_ij]);
-                float d_ij = 0.0f;
-                if constexpr(do_j){
-                    d_ij = __ldg(&dm_cond[bas_ij]);
-                }
+#pragma unroll
+        for (int j = 0; j < TILE; ++j){
+            const int jsh = jsh0 + j;
+            if (ish < jsh) continue;
+            const int bas_ij = ish * nbas + jsh;
+            const float q_ij = active ? __ldg(&q_cond[bas_ij]) : minval;
+            float d_ij = 0.0f;
+            if constexpr(do_j){
+                d_ij = active ? __ldg(&dm_cond[bas_ij]) : minval;
+            }
+            // k must satisfy ksh <= ish -> k <= ish - ksh0
+#pragma unroll
+            for (int k = 0; k < TILE; ++k){
+                const int ksh = ksh0 + k;
+                if (ksh > ish) continue;
+                const float d_ik = dm_ik[k + i * TILE];
+                const float d_jk = dm_jk[k + j * TILE];
 
-                float dm_il[TILE], dm_jl[TILE];
-                for (int l = 0; l < TILE; l++){
+#pragma unroll
+                for (int l = 0; l < TILE; ++l){
                     const int lsh = lsh0 + l;
-                    dm_il[l] = __ldg(&dm_cond[ish_base + lsh]);
-                    dm_jl[l] = __ldg(&dm_cond[jsh_base + lsh]);
-                }
+                    const int bas_kl = ksh * nbas + lsh;
+                    if (bas_ij < bas_kl) continue;
+                    if (lsh > ksh) continue;
 
-                // k must satisfy ksh <= ish -> k <= ish - ksh0
-                for (int k = 0; k < TILE; ++k){
-                    const int ksh = ksh0 + k;
-                    if (ksh > ish) continue;
-                    const float d_ik = __ldg(&dm_cond[ish_base + ksh]);
-                    const float d_jk = __ldg(&dm_cond[jsh_base + ksh]);
+                    const float q_ijkl = q_ij + q_kl[k * TILE + l];
+                    float d_large = -36.8f;
 
-                    for (int l = 0; l < TILE; ++l){
-                        const int lsh = lsh0 + l;
-                        const int bas_kl = ksh * nbas + lsh;
-                        if (bas_ij < bas_kl) continue;
-                        if (lsh > ksh) continue;
-
-                        const float q_ijkl = q_ij + q_kl[k * TILE + l];
-                        float d_large = -36.8f;
-
-                        if constexpr(do_k){
-                            const float d_il = dm_il[l];
-                            const float d_jl = dm_jl[l];
-                            d_large = max(d_large, d_ik);
-                            d_large = max(d_large, d_jk);
-                            d_large = max(d_large, d_il);
-                            d_large = max(d_large, d_jl);
-                        }
-                        if constexpr(do_j){
-                            const float d_kl = dm_kl[k * TILE + l];
-                            d_large = max(d_large, d_ij);
-                            d_large = max(d_large, d_kl);
-                        }
-
-                        const float dq = q_ijkl + d_large;
-                        if (dq <= cutoff) continue;
-                        const bool sel_fp64 = (dq > cutoff_fp64);
-                        const bool sel_fp32 = !sel_fp64;
-
-                        const uint64_t idx = ((i * TILE + j) * TILE + k) * TILE + l;
-                        const uint64_t word = idx >> 6;
-                        const uint64_t bit = idx & 63;
-                        const uint64_t bitmask = 1ull << bit;
-
-                        mask_bits_fp32[word] |= bitmask & (-sel_fp32);
-                        mask_bits_fp64[word] |= bitmask & (-sel_fp64);
-                        count_fp32 += sel_fp32;
-                        count_fp64 += sel_fp64;
+                    if constexpr(do_k){
+                        const float d_il = dm_il[l + i * TILE];
+                        const float d_jl = dm_jl[l + j * TILE];
+                        d_large = max(d_large, d_ik);
+                        d_large = max(d_large, d_jk);
+                        d_large = max(d_large, d_il);
+                        d_large = max(d_large, d_jl);
                     }
+                    if constexpr(do_j){
+                        const float d_kl = dm_kl[k * TILE + l];
+                        d_large = max(d_large, d_ij);
+                        d_large = max(d_large, d_kl);
+                    }
+
+                    const float dq = q_ijkl + d_large;
+                    if (dq <= cutoff) continue;
+                    const bool sel_fp64 = (dq > cutoff_fp64);
+                    const bool sel_fp32 = !sel_fp64;
+
+                    const uint64_t idx = ((i * TILE + j) * TILE + k) * TILE + l;
+                    const uint64_t word = idx >> 6;
+                    const uint64_t bit = idx & 63;
+                    const uint64_t bitmask = 1ull << bit;
+
+                    mask_bits_fp32[word] |= bitmask & (-sel_fp32);
+                    mask_bits_fp64[word] |= bitmask & (-sel_fp64);
+                    count_fp32 += sel_fp32;
+                    count_fp64 += sel_fp64;
                 }
             }
         }
@@ -229,34 +259,35 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
 
     int offset_fp32 = global_offset(batch_head+1, count_fp32);
     int offset_fp64 = global_offset(batch_head+2, -count_fp64) - 1;
-    
-    if (active){
+
 #pragma unroll
-        for (int i = 0; i < TILE; i++){
-            for (int j = 0; j < TILE; j++){
-                for (int k = 0; k < TILE; k++){
-                    for (int l = 0; l < TILE; l++){
-                        const uint64_t idx = ((i * TILE + j) * TILE + k) * TILE + l;
-                        const uint64_t word = idx >> 6;
-                        const uint64_t bit = idx & 63;
-                        
-                        const bool sel_fp32 = (mask_bits_fp32[word] >> bit) & 1ull;
-                        const bool sel_fp64 = (mask_bits_fp64[word] >> bit) & 1ull;
-                        
-                        ushort4 sq;
-                        sq.x = ish0 + i; 
-                        sq.y = jsh0 + j; 
-                        sq.z = ksh0 + k; 
-                        sq.w = lsh0 + l;
-                        
-                        if (sel_fp32) {
-                            shl_quartet_idx[offset_fp32] = sq;
-                            ++offset_fp32;
-                        }
-                        if (sel_fp64) {
-                            shl_quartet_idx[offset_fp64] = sq;
-                            --offset_fp64;
-                        }
+    for (int i = 0; i < TILE; i++){
+#pragma unroll
+        for (int j = 0; j < TILE; j++){
+#pragma unroll
+            for (int k = 0; k < TILE; k++){
+#pragma unroll
+                for (int l = 0; l < TILE; l++){
+                    const uint64_t idx = ((i * TILE + j) * TILE + k) * TILE + l;
+                    const uint64_t word = idx >> 6;
+                    const uint64_t bit = idx & 63;
+
+                    const bool sel_fp32 = (mask_bits_fp32[word] >> bit) & 1ull;
+                    const bool sel_fp64 = (mask_bits_fp64[word] >> bit) & 1ull;
+                    
+                    ushort4 sq;
+                    sq.x = ish0 + i; 
+                    sq.y = jsh0 + j; 
+                    sq.z = ksh0 + k; 
+                    sq.w = lsh0 + l;
+                    
+                    if (sel_fp32) {
+                        shl_quartet_idx[offset_fp32] = sq;
+                        ++offset_fp32;
+                    }
+                    if (sel_fp64) {
+                        shl_quartet_idx[offset_fp64] = sq;
+                        --offset_fp64;
                     }
                 }
             }
