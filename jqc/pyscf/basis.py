@@ -464,7 +464,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
             (padded_count, COORD_STRIDE), dtype=np.float64
         )
         # Initialize CE buffer to zeros so padded primitive slots are well-defined
-        ce_by_pattern[pattern] = np.zeros((padded_count, PRIM_STRIDE), dtype=dtype)
+        ce_by_pattern[pattern] = np.empty((padded_count, PRIM_STRIDE), dtype=dtype)
         to_split_map_by_pattern[pattern] = np.empty(padded_count, dtype=np.int32)
         pad_id_by_pattern[pattern] = np.empty(padded_count, dtype=bool)
 
@@ -605,7 +605,7 @@ def split_basis(mol):
     new_mol.spin = mol.spin
     new_mol.unit = mol.unit
     # Internal split representation always uses cartesian for kernel compatibility
-    new_mol.cart = True
+    new_mol.cart = mol.cart
     new_mol.verbose = mol.verbose
 
     # Process basis functions to create decontracted versions
