@@ -487,7 +487,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
             exps = _env[exp_ptr : exp_ptr + nprim]
 
             # Get coordinates - optimize by direct slicing
-            coord = np.zeros(COORD_STRIDE, dtype=np.float64)
+            coord = np.empty(COORD_STRIDE, dtype=np.float64)
             coord[:3] = _env[coord_ptr : coord_ptr + 3]
 
             # Fill arrays directly (no loop needed since nctr=1)
