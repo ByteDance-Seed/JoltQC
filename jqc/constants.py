@@ -29,11 +29,11 @@ NPRIM_MAX = 3
 # Choose strides so each shell record is at least 64B aligned for both fp32/fp64
 # - COORD_STRIDE scalars per shell (x,y,z plus padding)
 #   16 floats  -> 64B, 16 doubles -> 128B (>=64B)
-COORD_STRIDE = 16
+COORD_STRIDE = 4
 # - PRIM_STRIDE counts scalars for (c,e) interleaved storage; device uses pairs
 #   Make scalars a multiple of 16 => pairs multiple of 8
 #   8 pairs: 8*8B=64B (fp32), 8*16B=128B (fp64)
-PRIM_STRIDE = ((2 * NPRIM_MAX + 15) // 16) * 16
+PRIM_STRIDE = ((2 * NPRIM_MAX + 3) // 4) * 4
 
 # Tile size for block-based algorithms
 TILE = 4

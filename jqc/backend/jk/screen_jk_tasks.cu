@@ -113,15 +113,16 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
         ksh0 = tile_k * TILE;
         lsh0 = tile_l * TILE;
     }
-    // Removed unused ish1/jsh1/ksh1/lsh1 to reduce register pressure
+    
     // Number of (i,j,k,l) combinations is TILE^4; we need ceil(TILE^4/64) words
     constexpr int N_BITS = TILE*TILE*TILE*TILE;
     constexpr int mask_size = (N_BITS + 63) / 64;
     uint64_t mask_bits_fp32[mask_size] = {0};
     uint64_t mask_bits_fp64[mask_size] = {0};
 
-    float dm_kl[TILE*TILE];
+    // Cache only frequently accessed read-only data to reduce register pressure
     float q_kl[TILE*TILE];
+    float dm_kl[TILE*TILE];  // Only used if do_j is true
 
     int count_fp32 = 0;
     int count_fp64 = 0;
@@ -135,46 +136,14 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
             const int lsh = lsh0 + l;
             const int bas_kl = ksh * nbas + lsh;
             const int kl_idx = k * TILE + l;
+            q_kl[kl_idx] = active ? __ldg(&q_cond[bas_kl]) : minval;
             if constexpr(do_j){
                 dm_kl[kl_idx] = active ? __ldg(dm_cond + bas_kl) : minval;
             }
-            q_kl[kl_idx] = active ? __ldg(&q_cond[bas_kl]) : minval;
-        }
-    }
-    
-    float dm_ik[TILE*TILE];
-    float dm_il[TILE*TILE];
-#pragma unroll
-    for (int i = 0; i < TILE; ++i){
-        const int ish = ish0 + i;
-#pragma unroll
-        for (int k = 0; k < TILE; k++){
-            const int ksh = ksh0 + k;
-            dm_ik[i * TILE + k] = active ?__ldg(&dm_cond[ish * nbas + ksh]) : minval;
-        }
-#pragma unroll
-        for (int l = 0; l < TILE; l++){
-            const int lsh = lsh0 + l;
-            dm_il[i * TILE + l] = active ? __ldg(&dm_cond[ish * nbas + lsh]) : minval;
         }
     }
 
-    float dm_jk[TILE*TILE];
-    float dm_jl[TILE*TILE];
-#pragma unroll
-    for (int j = 0; j < TILE; ++j){
-        const int jsh = jsh0 + j;
-#pragma unroll
-        for (int k = 0; k < TILE; k++){
-            const int ksh = ksh0 + k;
-            dm_jk[j * TILE + k] = active ? __ldg(&dm_cond[jsh * nbas + ksh]) : minval;
-        }
-#pragma unroll
-        for (int l = 0; l < TILE; l++){
-            const int lsh = lsh0 + l;
-            dm_jl[j * TILE + l] = active ? __ldg(&dm_cond[jsh * nbas + lsh]) : minval;
-        }
-    }
+    // Load other dm values on-demand in inner loops to reduce register pressure
     
 #pragma unroll
     for (int i = 0; i < TILE; ++i){
@@ -184,19 +153,37 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
         for (int j = 0; j < TILE; ++j){
             const int jsh = jsh0 + j;
             if (ish < jsh) continue;
-            const int bas_ij = ish * nbas + jsh;
+            const int ish_base = ish * nbas;
+            const int jsh_base = jsh * nbas;
+            const int bas_ij = ish_base + jsh;
             const float q_ij = active ? __ldg(&q_cond[bas_ij]) : minval;
             float d_ij = 0.0f;
             if constexpr(do_j){
                 d_ij = active ? __ldg(&dm_cond[bas_ij]) : minval;
+            }
+            float dm_il_prefetch[TILE];
+            float dm_jl_prefetch[TILE];
+            if constexpr(do_k){
+#pragma unroll
+                for (int l = 0; l < TILE; ++l){
+                    const int lsh = lsh0 + l;
+                    dm_il_prefetch[l] = active ? __ldg(&dm_cond[ish_base + lsh]) : minval;
+                    dm_jl_prefetch[l] = active ? __ldg(&dm_cond[jsh_base + lsh]) : minval;
+                }
             }
             // k must satisfy ksh <= ish -> k <= ish - ksh0
 #pragma unroll
             for (int k = 0; k < TILE; ++k){
                 const int ksh = ksh0 + k;
                 if (ksh > ish) continue;
-                const float d_ik = dm_ik[k + i * TILE];
-                const float d_jk = dm_jk[k + j * TILE];
+
+                // Load density matrix elements on-demand to reduce register pressure
+                float d_ik = minval;
+                float d_jk = minval;
+                if constexpr(do_k){
+                    d_ik = active ? __ldg(&dm_cond[ish_base + ksh]) : minval;
+                    d_jk = active ? __ldg(&dm_cond[jsh_base + ksh]) : minval;
+                }
 
 #pragma unroll
                 for (int l = 0; l < TILE; ++l){
@@ -209,8 +196,8 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
                     float d_large = -36.8f;
 
                     if constexpr(do_k){
-                        const float d_il = dm_il[l + i * TILE];
-                        const float d_jl = dm_jl[l + j * TILE];
+                        const float d_il = dm_il_prefetch[l];
+                        const float d_jl = dm_jl_prefetch[l];
                         d_large = max(d_large, d_ik);
                         d_large = max(d_large, d_jk);
                         d_large = max(d_large, d_il);
@@ -241,19 +228,8 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
         }
     }
 
-    // Check if entire block has no work - all threads must participate
-    __shared__ bool has_work;
-    if (threadIdx.x == 0 && threadIdx.y == 0) {
-        has_work = false;
-    }
-    __syncthreads();
-
-    if (count_fp32 > 0 || count_fp64 > 0) {
-        atomicOr((int*)&has_work, 1);
-    }
-    __syncthreads();
-
-    if (!has_work) {
+    // Early exit when the entire block produced nothing
+    if (!__syncthreads_or(count_fp32 | count_fp64)) {
         return;
     }
 

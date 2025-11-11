@@ -59,7 +59,7 @@ constexpr int TILE = {tile};
     """
     mod = cp.RawModule(code=const + screen_jk_tasks_code, options=compile_options)
     kernel = mod.get_function("screen_jk_tasks")
-    if kernel.local_size_bytes > 256:
+    if kernel.local_size_bytes > 0:
         msg = (
             f"Local memory usage is high in jk_screen: {kernel.local_size_bytes} Bytes"
         )
