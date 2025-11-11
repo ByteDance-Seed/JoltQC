@@ -334,8 +334,8 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         exc, vxc = ni.eval_xc_eff(xc_code, rho, deriv=1, xctype=xctype)[:2]
 
         # Integrate vxc on grids using fused elementwise kernel for better performance
-        vxc = cp.asarray(vxc, dtype=vxc.dtype, order="C")
-        exc = cp.asarray(exc, dtype=exc.dtype, order="C")
+        vxc = cp.ascontiguousarray(vxc)
+        exc = cp.ascontiguousarray(exc)
         nelec_contrib, excsum_contrib = _nelec_excsum_elementwise(
             rho[0], weights, exc[:, 0]
         )
@@ -404,8 +404,8 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         ao_sparsity = compute_ao_sparsity(grid_coords, log_aodm_cutoff)
 
         rho = cp.zeros((ndim, ngrids), dtype=np.float64, order="C")
-        # Optimize array conversions - compute both dtypes together
-        dm = cp.asarray(dm, dtype=np.float64, order="C")
+        # Ensure contiguity for optimal performance
+        dm = cp.ascontiguousarray(dm)
 
         for i in range(n_groups):
             for j in range(i, n_groups):

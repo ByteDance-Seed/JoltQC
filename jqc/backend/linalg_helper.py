@@ -31,27 +31,79 @@ def inplace_add_transpose(mat: cp.ndarray):
 
     _kernel = cp.RawKernel(
         r"""
+#define TILE_DIM 32
+
 extern "C" __global__
-void add_transpose_inplace(double* A, int batch_size, int n) {
-    int batch_idx = blockIdx.z;
-    if (batch_idx >= batch_size) return;
+void add_transpose_inplace(double* __restrict__ A, int batch_size, int n) {
+    // Shared memory with padding to avoid bank conflicts
+    __shared__ double tile_ij[TILE_DIM][TILE_DIM + 1];
+    __shared__ double tile_ji[TILE_DIM][TILE_DIM + 1];
 
-    int i = blockIdx.y * blockDim.y + threadIdx.y;
-    int j = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= n || j >= n || j < i) return;
+    // No need to check batch_idx bounds - grid is sized exactly
+    const size_t matrix_offset = (size_t)blockIdx.z * n * n;
+    double* __restrict__ matrix_A = A + matrix_offset;
 
-    size_t matrix_offset = (size_t)batch_idx * n * n;
-    double* matrix_A = A + matrix_offset;
+    const int tile_i = blockIdx.y;
+    const int tile_j = blockIdx.x;
 
-    double aij = matrix_A[i * n + j];
-    double aji = matrix_A[j * n + i];
+    // Only process upper triangular tiles (including diagonal)
+    if (tile_j < tile_i) return;
 
-    if (i == j) {
-        matrix_A[i * n + j] = 2.0 * aij;
-    } else {
-        double sum = aij + aji;
-        matrix_A[i * n + j] = sum;
-        matrix_A[j * n + i] = sum;
+    const int tx = threadIdx.x;
+    const int ty = threadIdx.y;
+
+    // Precompute global indices
+    const int row = tile_i * TILE_DIM + ty;
+    const int col = tile_j * TILE_DIM + tx;
+    const int row_t = tile_j * TILE_DIM + ty;
+    const int col_t = tile_i * TILE_DIM + tx;
+
+    // Precompute masks to reduce branches
+    const bool is_diag_tile = (tile_i == tile_j);
+    const bool in_bounds_ij = (row < n) & (col < n);
+    const bool in_bounds_ji = (row_t < n) & (col_t < n);
+
+    // Load primary tile with coalesced access and __ldg for read-only
+    const double val_ij = in_bounds_ij ? __ldg(&matrix_A[row * n + col]) : 0.0;
+    const double val_ji = (!is_diag_tile && in_bounds_ji) ? __ldg(&matrix_A[row_t * n + col_t]) : val_ij;
+
+    // Store to shared memory
+    tile_ij[ty][tx] = val_ij;
+    tile_ji[ty][tx] = val_ji;
+    __syncthreads();
+
+    // Transpose access through shared memory
+    const double trans_ij = tile_ji[tx][ty];
+    const double trans_ji = tile_ij[tx][ty];
+
+    // Compute results with minimal branching
+    const bool is_diag_elem = (ty == tx);
+    const bool is_upper = (col > row);
+
+    const double sum_ij = val_ij + trans_ij;
+    const double sum_ji = val_ji + trans_ji;
+
+    // Select final values using ternary (compiles to predicated instructions)
+    const double result_ij = (is_diag_tile & is_diag_elem) ? (2.0 * val_ij) : sum_ij;
+    const double result_ji = sum_ji;
+
+    // Write results with minimal branching
+    // For diagonal tiles: write upper triangle + diagonal symmetrically
+    // For off-diagonal tiles: write both tiles fully
+    if (in_bounds_ij) {
+        const bool should_write_ij = !is_diag_tile | is_upper | is_diag_elem;
+        if (should_write_ij) {
+            matrix_A[row * n + col] = result_ij;
+            // Symmetric write for diagonal tiles
+            if (is_diag_tile & is_upper) {
+                matrix_A[col * n + row] = result_ij;
+            }
+        }
+    }
+
+    // Write transpose tile for off-diagonal only
+    if (!is_diag_tile && in_bounds_ji) {
+        matrix_A[row_t * n + col_t] = result_ji;
     }
 }
 """,
@@ -60,10 +112,10 @@ void add_transpose_inplace(double* A, int batch_size, int n) {
     )
 
     batch_size = int(np.prod(mat.shape[:-2]))
-    threads = (16, 16, 1)
+    threads = (32, 32, 1)
     blocks = (
-        (n + threads[0] - 1) // threads[0],
-        (n + threads[1] - 1) // threads[1],
+        (n + 32 - 1) // 32,
+        (n + 32 - 1) // 32,
         batch_size,
     )
     _kernel(blocks, threads, (mat, batch_size, n))
@@ -129,7 +181,8 @@ def max_block_pooling(matrix: cp.ndarray, offsets: cp.ndarray) -> cp.ndarray:
                 for (int c = c0; c < c1; ++c) {{
                     const {data_type} val = mat[b * stride * stride + r * stride + c];
                     const {data_type} abs_val = abs(val);
-                    if (abs_val > maxval) maxval = abs_val;
+                    //if (abs_val > maxval) maxval = abs_val;
+                    maxval = max(maxval, abs_val);
                 }}
             }}
         }}

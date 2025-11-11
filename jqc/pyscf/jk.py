@@ -166,8 +166,8 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         dms = basis_layout.dm_from_mol(dms)
         dms = dms.reshape(-1, nao, nao)
 
-        # Optimize array conversions - compute both fp64 and fp32 versions together
-        dms = cp.asarray(dms, dtype=np.float64, order="C")
+        # Ensure contiguity for optimal GPU performance
+        dms = cp.ascontiguousarray(dms)
         dms_fp32 = dms.astype(np.float32)
         dm_cond = max_block_pooling(dms_fp32, ao_loc)
 
