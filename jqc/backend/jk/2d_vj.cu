@@ -101,22 +101,23 @@ void rys_vj_2d(const int nbas,
         const float log_cutoff)
 {
     const int ij_idx = blockIdx.x;
-    __shared__ double sh_block_sum[num_warps];
-
-    const int kl_block_base = blockIdx.y * thready;
+    constexpr int n_kl = 1;
+    const int kl_block_base = blockIdx.y * thready * n_kl;
+    constexpr int nfi = (li+1)*(li+2)/2;
+    constexpr int nfj = (lj+1)*(lj+2)/2;
+    constexpr int nfk = (lk+1)*(lk+2)/2;
+    constexpr int nfl = (ll+1)*(ll+2)/2;
+    
     if (kl_block_base >= n_kl_pairs) {
         return;
     }
-    int kl_idx = kl_block_base + threadIdx.y;
-    DataType fac_sym_kl = (kl_idx < n_kl_pairs) ? one : zero;
-    kl_idx = (kl_idx < n_kl_pairs) ? kl_idx : 0;
 
     const float q_ij = __ldg(&q_cond_ij[ij_idx]);
     const float q_kl = __ldg(&q_cond_kl[kl_block_base]);
 
     // Apply Schwarz screening, skip entire block if inactive
     if (q_ij + q_kl < log_cutoff) { return; }
-
+    
     // Load ij pair index
     const int ij = ij_pairs[ij_idx];
 
@@ -124,17 +125,20 @@ void rys_vj_2d(const int nbas,
     int ish = ij / nbas;
     int jsh = ij - ish * nbas;
 
+    const int i0 = ao_loc[ish];
+    const int j0 = ao_loc[jsh];
+    
     // Apply ij symmetry screening
     DataType fac_sym_ij = PI_FAC;
-    fac_sym_ij = (ish >= nbas) ? zero : fac_sym_ij;
-    fac_sym_ij = (jsh >= nbas) ? zero : fac_sym_ij;
+    fac_sym_ij = (ish >= nbas || jsh >= nbas) ? zero : fac_sym_ij;
+    //fac_sym_ij = (jsh >= nbas) ? zero : fac_sym_ij;
     fac_sym_ij *= (ish == jsh) ? half : one;
     //fac_sym_ij = (ish < jsh) ? zero : fac_sym_ij;
 
     // Clamped versions for array indexing
     ish = (ish >= nbas) ? 0 : ish;
     jsh = (jsh >= nbas) ? 0 : jsh;
-
+    
     constexpr int stride_i = 1;
     constexpr int stride_j = stride_i * (li+1);
     constexpr int stride_k = stride_j * (lj+1);
@@ -142,19 +146,14 @@ void rys_vj_2d(const int nbas,
     constexpr int gsize = (li+1)*(lj+1)*(lk+1)*(ll+1);
     constexpr int gsize2 = 2*gsize;
 
-    constexpr int nfi = (li+1)*(li+2)/2;
-    constexpr int nfj = (lj+1)*(lj+2)/2;
-    constexpr int nfk = (lk+1)*(lk+2)/2;
-    constexpr int nfl = (ll+1)*(ll+2)/2;
-
     constexpr int gstride_l = 1;
     constexpr int gstride_k = gstride_l * nfl;
     constexpr int gstride_j = gstride_k * nfk;
     constexpr int gstride_i = gstride_j * nfj;
     constexpr int integral_size = nfi*nfj*nfk*nfl;
 
-    DataType4 ri = coords[ish]; 
-    DataType4 rj = coords[jsh];
+    const DataType4 ri = coords[ish]; 
+    const DataType4 rj = coords[jsh];
 
     const DataType rij0 = rj.x - ri.x;
     const DataType rij1 = rj.y - ri.y;
@@ -198,6 +197,13 @@ void rys_vj_2d(const int nbas,
         }
     }
     __syncthreads();
+    DataType reg_vj[nfi*nfj] = {zero};
+
+#pragma unroll
+    for (int i_kl = 0; i_kl < n_kl; i_kl++){
+    int kl_idx = kl_block_base + threadIdx.y * n_kl + i_kl;
+    DataType fac_sym_kl = (kl_idx < n_kl_pairs) ? one : zero;
+    kl_idx = (kl_idx < n_kl_pairs) ? kl_idx : 0;
 
     DataType integral[integral_size] = {zero};
 
@@ -207,15 +213,15 @@ void rys_vj_2d(const int nbas,
     int ksh = kl / nbas;
     int lsh = kl - ksh * nbas;
 
-    fac_sym_kl = (ksh >= nbas) ? zero : fac_sym_kl;
-    fac_sym_kl = (lsh >= nbas) ? zero : fac_sym_kl;
+    fac_sym_kl = (ksh >= nbas || lsh >= nbas) ? zero : fac_sym_kl;
+    //fac_sym_kl = (lsh >= nbas) ? zero : fac_sym_kl;
     fac_sym_kl *= (ksh == lsh) ? half : one;
     
     ksh = (ksh >= nbas) ? 0 : ksh;
     lsh = (lsh >= nbas) ? 0 : lsh;
 
-    DataType4 rk = coords[ksh]; 
-    DataType4 rl = coords[lsh];
+    const DataType4 rk = coords[ksh]; 
+    const DataType4 rl = coords[lsh];
 
     const DataType rkl0 = rl.x - rk.x;
     const DataType rkl1 = rl.y - rk.y;
@@ -421,7 +427,7 @@ void rys_vj_2d(const int nbas,
                             int integral_off = ij_off + k*gstride_k;
                             for (int l = 0; l < nfl; l++){
                                 uint32_t addr = addr_ijk + l_idx[l];
-                                uint32_t addrx =  addr        & 0x3FF;
+                                uint32_t addrx = addr        & 0x3FF;
                                 uint32_t addry = (addr >> 10) & 0x3FF;
                                 uint32_t addrz = (addr >> 20) & 0x3FF;
                                 integral[integral_off + l*gstride_l] += gx[addrx] * gy[addry] * gz[addrz];
@@ -433,8 +439,6 @@ void rys_vj_2d(const int nbas,
         }
     }
 
-    const int i0 = ao_loc[ish];
-    const int j0 = ao_loc[jsh];
     const int k0 = ao_loc[ksh];
     const int l0 = ao_loc[lsh];
     constexpr int nfkl = nfk*nfl;
@@ -452,8 +456,6 @@ void rys_vj_2d(const int nbas,
             dm_ptr += nao;
         }
 
-        const int vj_offset = i0 + j0*nao + i_dm*nao*nao;
-        double *vj_ptr = vj + vj_offset;
 #pragma unroll
         for (int i = 0; i < nfi; i++){
             const int base_off_i = i*gstride_i;
@@ -470,16 +472,25 @@ void rys_vj_2d(const int nbas,
                         cache_idx += nfk;
                     }
                 }
-                const int offset = j*nao + i;
-                DataType vj_tmp = blockReduceSum2D(vj_ji);
-                if (threadIdx.x == 0 && threadIdx.y == 0)
-                    atomicAdd(vj_ptr + offset, (double)vj_tmp);
-                //atomicAdd(vj_ptr + offset, (double)vj_ji);
-                //double vj_tmp = block_reduce_sum((double)vj_ji, sh_block_sum);
-                //if (threadIdx.x == 0 && threadIdx.y == 0)
-                //    atomicAdd(vj_ptr + offset, vj_tmp);
+                reg_vj[i*nfj + j] += vj_ji;
+
             }
         }
     }
+}
+
+const int vj_offset = i0 + j0*nao;// + i_dm*nao*nao;
+double *vj_ptr = vj + vj_offset;
+for (int i = 0; i < nfi; i++){
+    for (int j = 0; j < nfj; j++){
+        const int offset = j*nao + i;
+        DataType vj_ji = reg_vj[i*nfj + j];
+        //atomicAdd(vj_ptr + offset, (double)vj_ji);
+        DataType vj_tmp = blockReduceSum2D(vj_ji);
+        if (threadIdx.x == 0 && threadIdx.y == 0)
+            atomicAdd(vj_ptr + offset, (double)vj_tmp);
+    }
+}
+
 }
 

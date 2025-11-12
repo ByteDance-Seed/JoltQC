@@ -268,7 +268,7 @@ def gen_vj_kernel(
 
         # VJ: full grid with per-pair screening
         vj_args = args[:8] + args[8:]
-        block_vj = THREADS_VJ
+        block_vj = THREADS_VJ * 1
         grid_vj = (
             n_ij_pairs,
             (n_kl_pairs + block_vj[1] - 1) // block_vj[1],

@@ -166,7 +166,7 @@ def benchmark(ang, dtype):
         unique_symbols = ['H']
         print(f"\nUsing simple H2 molecule with separation: {h2_distance} Angstrom")
     else:
-        xyz_atoms = load_xyz('molecules/0084-elongated-halogenated.xyz')
+        xyz_atoms = load_xyz("molecules/0401-globular-nitrogenous.xyz")#'molecules/0084-elongated-halogenated.xyz')
         mol.atom = [(sym, coords) for sym, coords in xyz_atoms]
         mol.unit = "Angstrom"
         unique_symbols = sorted({sym for sym, _ in xyz_atoms})
@@ -208,10 +208,11 @@ def benchmark(ang, dtype):
     # Build a deterministic symmetric density matrix in MOLECULAR basis
     # Then convert it to Cartesian basis for the kernel
     rng = np.random.default_rng(42)
-    dm_cpu = rng.standard_normal((nao_mol, nao_mol))
-    dm_cpu = (dm_cpu + dm_cpu.T) * 0.5
+    n_dm = 1
+    dm_cpu = rng.standard_normal((n_dm, nao_mol, nao_mol))
+    dm_cpu = (dm_cpu + dm_cpu.transpose(0,2,1)) * 0.5
     dm_gpu = cp.asarray(dm_cpu, dtype=np.float64)
-    dms = dm_gpu[None, :, :]
+    dms = dm_gpu
     # Convert from molecular to Cartesian basis for the 2D kernel
     dms_jqc = basis_layout.dm_from_mol(dms)
 
@@ -237,7 +238,6 @@ def benchmark(ang, dtype):
     if hermi == 0:
         # Contract the tril and triu parts separately
         dms = cp.vstack([dms, dms.transpose(0, 2, 1)])
-    n_dm = dms.shape[0]
 
     # Note: 2D kernel always expects vj/vk in fp64, regardless of dm precision
     vj = cp.zeros(dms_jqc.shape, dtype=np.float64)
@@ -312,7 +312,7 @@ def benchmark(ang, dtype):
     # Flatten - kernel expects contiguous 1D arrays
     ij_pairs = cp.ascontiguousarray(ij_pairs.ravel())
     kl_pairs = cp.ascontiguousarray(kl_pairs.ravel())
-
+    print(n_ij_pairs_vj, n_kl_pairs_vj, n_ij_pairs, n_kl_pairs)
     # Generate per-pair q_cond arrays for Schwarz screening
     def extract_q_cond(pairs_flat, nbas_val, q_mat):
         """Extract q screening values for each pair"""
@@ -410,28 +410,26 @@ if __name__ == "__main__":
         print("Example: python benchmark_algorithms.py 0 0 0 0 fp64")
         sys.exit(1)
 
-    try:
-        ang = tuple(map(int, sys.argv[1:5]))
+    
 
-        # Validate angular momentum range
-        max_l = 4  # Maximum supported angular momentum (g shell)
-        if any(l < 0 or l > max_l for l in ang):
-            print(f"Error: Angular momentum {ang} out of range")
-            print(f"Supported range: 0 (s shell) to {max_l} (g shell)")
-            sys.exit(1)
+    ang = tuple(map(int, sys.argv[1:5]))
 
-        dtype = np.float32 if sys.argv[5] == "fp32" else np.float64
-
-        # Print configuration
-        shell_names = ['s', 'p', 'd', 'f', 'g']
-        shell_str = '-'.join(shell_names[l] for l in ang)
-        print(f"\n{'='*60}")
-        print(f"2D JK Algorithm Benchmark")
-        print(f"  Shells: {shell_str} | Precision: {sys.argv[5]}")
-        print(f"{'='*60}")
-
-        benchmark(ang, dtype)
-    except ValueError as e:
-        print(f"Error: Invalid angular momentum values. Expected integers.")
-        print(__doc__)
+    # Validate angular momentum range
+    max_l = 4  # Maximum supported angular momentum (g shell)
+    if any(l < 0 or l > max_l for l in ang):
+        print(f"Error: Angular momentum {ang} out of range")
+        print(f"Supported range: 0 (s shell) to {max_l} (g shell)")
         sys.exit(1)
+
+    dtype = np.float32 if sys.argv[5] == "fp32" else np.float64
+
+    # Print configuration
+    shell_names = ['s', 'p', 'd', 'f', 'g']
+    shell_str = '-'.join(shell_names[l] for l in ang)
+    print(f"\n{'='*60}")
+    print(f"2D JK Algorithm Benchmark")
+    print(f"  Shells: {shell_str} | Precision: {sys.argv[5]}")
+    print(f"{'='*60}")
+
+    benchmark(ang, dtype)
+
