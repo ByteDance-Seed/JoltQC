@@ -92,9 +92,9 @@ void rys_vj_2d(const int nbas,
         DataType* __restrict__ dm,
         double* __restrict__ vj,
         const DataType omega,
-        const int* __restrict__ ij_pairs,
+        const int2* __restrict__ ij_pairs,
         const int n_ij_pairs,
-        const int* __restrict__ kl_pairs,
+        const int2* __restrict__ kl_pairs,
         const int n_kl_pairs,
         const float* __restrict__ q_cond_ij,
         const float* __restrict__ q_cond_kl,
@@ -119,11 +119,12 @@ void rys_vj_2d(const int nbas,
     if (q_ij + q_kl < log_cutoff) { return; }
     
     // Load ij pair index
-    const int ij = ij_pairs[ij_idx];
-
+    const int2 ij = ij_pairs[ij_idx];
+    int ish = ij.x;
+    int jsh = ij.y;
     // Decode shell indices from flattened pair indices
-    int ish = ij / nbas;
-    int jsh = ij - ish * nbas;
+    //int ish = ij / nbas;
+    //int jsh = ij - ish * nbas;
 
     const int i0 = ao_loc[ish];
     const int j0 = ao_loc[jsh];
@@ -131,9 +132,7 @@ void rys_vj_2d(const int nbas,
     // Apply ij symmetry screening
     DataType fac_sym_ij = PI_FAC;
     fac_sym_ij = (ish >= nbas || jsh >= nbas) ? zero : fac_sym_ij;
-    //fac_sym_ij = (jsh >= nbas) ? zero : fac_sym_ij;
     fac_sym_ij *= (ish == jsh) ? half : one;
-    //fac_sym_ij = (ish < jsh) ? zero : fac_sym_ij;
 
     // Clamped versions for array indexing
     ish = (ish >= nbas) ? 0 : ish;
@@ -179,11 +178,10 @@ void rys_vj_2d(const int nbas,
     if (threadIdx.y == 0){
         for (int ip = 0; ip < npi; ip++)
         for (int jp = 0; jp < npj; jp++){
-            DataType ai, aj, ci, cj;
-            ai = reg_cei[ip].e;
-            aj = reg_cej[jp].e;
-            ci = reg_cei[ip].c;
-            cj = reg_cej[jp].c;
+            const DataType ai = reg_cei[ip].e;
+            const DataType aj = reg_cej[jp].e;
+            const DataType ci = reg_cei[ip].c;
+            const DataType cj = reg_cej[jp].c;
 
             const DataType aij = ai + aj;
             const DataType inv_aij = one / aij;
@@ -207,14 +205,15 @@ void rys_vj_2d(const int nbas,
 
     DataType integral[integral_size] = {zero};
 
-    const int kl = kl_pairs[kl_idx];
+    const int2 kl = kl_pairs[kl_idx];
+    int ksh = kl.x;
+    int lsh = kl.y;
 
     // Decode kl shell indices and preload coordinates
-    int ksh = kl / nbas;
-    int lsh = kl - ksh * nbas;
+    //int ksh = kl / nbas;
+    //int lsh = kl - ksh * nbas;
 
     fac_sym_kl = (ksh >= nbas || lsh >= nbas) ? zero : fac_sym_kl;
-    //fac_sym_kl = (lsh >= nbas) ? zero : fac_sym_kl;
     fac_sym_kl *= (ksh == lsh) ? half : one;
     
     ksh = (ksh >= nbas) ? 0 : ksh;
@@ -235,11 +234,8 @@ void rys_vj_2d(const int nbas,
     for (int lp = 0; lp < npl; lp++){
         const int ksh_kp = kp + ksh*prim_stride;
         const int lsh_lp = lp + lsh*prim_stride;
-        DataType2 cek, cel;
-        cek.c = __ldg(&coeff_exp[ksh_kp].c);
-        cek.e = __ldg(&coeff_exp[ksh_kp].e);
-        cel.c = __ldg(&coeff_exp[lsh_lp].c);
-        cel.e = __ldg(&coeff_exp[lsh_lp].e);
+        const DataType2 cek = coeff_exp[ksh_kp]; 
+        const DataType2 cel = coeff_exp[lsh_lp];
         const DataType ak = cek.e;
         const DataType al = cel.e;
         const DataType akl = ak + al;
@@ -252,17 +248,13 @@ void rys_vj_2d(const int nbas,
         const DataType ckcl = fac_sym_kl * ck * cl * Kcd;
         for (int ip = 0; ip < npi; ip++)
         for (int jp = 0; jp < npj; jp++){
-            DataType ai, aj, ci, cj;
-            ai = reg_cei[ip].e;
-            aj = reg_cej[jp].e;
-            ci = reg_cei[ip].c;
-            cj = reg_cej[jp].c;
+            const DataType ai = reg_cei[ip].e;
+            const DataType aj = reg_cej[jp].e;
             const DataType aij = ai + aj;
 
-            DataType inv_aij, cicj;
-            const int idx = ip + jp*npi;
-            inv_aij = sh_inv_aij[idx * threadx + threadIdx.x];
-            cicj = sh_cicj[idx * threadx + threadIdx.x];
+            const int idx = (ip + jp*npi) * threadx + threadIdx.x;
+            const DataType inv_aij = sh_inv_aij[idx];
+            const DataType cicj = sh_cicj[idx];
             const DataType aj_aij = aj * inv_aij;
 
             const DataType xij = rjri[0] * aj_aij + ri.x;
@@ -473,7 +465,6 @@ void rys_vj_2d(const int nbas,
                     }
                 }
                 reg_vj[i*nfj + j] += vj_ji;
-
             }
         }
     }

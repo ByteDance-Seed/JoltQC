@@ -110,7 +110,7 @@ def generate_basis_for_angular_momentum(l, symbol="H"):
     # Generate appropriate exponents for the given angular momentum
     # Use a sequence of exponents with reasonable spacing
     if l == 0:  # s shell
-        exponents = [0.27]#[1.27, 0.27, 0.027]
+        exponents = [0.27, 0.27]#[1.27, 0.27, 0.027]
     elif l == 1:  # p shell
         exponents = [2.5, 0.6, 0.15]
     elif l == 2:  # d shell
@@ -318,15 +318,10 @@ def benchmark(ang, dtype):
         """Extract q screening values for each pair"""
         n_pairs = len(pairs_flat)
         q_cond = cp.zeros(n_pairs, dtype=cp.float32)
-        for idx in range(n_pairs):
-            pair = int(pairs_flat[idx].get())
-            if pair >= nbas_val * nbas_val:
-                # Padding pair - set to very negative value
-                q_cond[idx] = -1000.0
-            else:
-                ish = pair // nbas_val
-                jsh = pair % nbas_val
-                q_cond[idx] = float(q_mat[ish, jsh].get())
+        ish = pairs_flat // nbas_val
+        jsh = pairs_flat % nbas_val
+        q_cond = q_mat[ish, jsh]
+        q_cond[pairs_flat >= nbas_val * nbas_val] = -1000.0
         return q_cond
 
     q_cond_ij_vj = extract_q_cond(ij_pairs_vj, nbas, q_matrix)
@@ -335,9 +330,21 @@ def benchmark(ang, dtype):
     q_cond_kl = extract_q_cond(kl_pairs, nbas, q_matrix)
     log_cutoff = np.float32(cutoff)
 
+    i = ij_pairs_vj % nbas
+    j = ij_pairs_vj // nbas
+    ij = cp.empty([2*n_ij_pairs_vj], dtype=cp.int32)
+    ij[::2] = i
+    ij[1::2] = j
+
+    k = kl_pairs_vj % nbas
+    l = kl_pairs_vj // nbas
+    kl = cp.empty([2*n_kl_pairs_vj], dtype=cp.int32)
+    kl[::2] = k
+    kl[1::2] = l
+
     # Execute VJ kernel with per-pair Schwarz screening
     vj_args = (nbas, nao, ao_loc, coords, ce_data, dms_jqc, vj, None,
-               omega_kernel, ij_pairs_vj, n_ij_pairs_vj, kl_pairs_vj, n_kl_pairs_vj,
+               omega_kernel, ij, n_ij_pairs_vj, kl, n_kl_pairs_vj,
                q_cond_ij_vj, q_cond_kl_vj, log_cutoff)
 
     start_vj = cp.cuda.Event()
@@ -348,9 +355,21 @@ def benchmark(ang, dtype):
     stop_vj.synchronize()
     elapsed_vj = cp.cuda.get_elapsed_time(start_vj, stop_vj) * 1e-3
 
+    i = ij_pairs // nbas
+    j = ij_pairs % nbas
+    ij = cp.empty([2*len(ij_pairs)], dtype=cp.int32)
+    ij[::2] = i
+    ij[1::2] = j
+
+    k = kl_pairs // nbas
+    l = kl_pairs % nbas
+    kl = cp.empty([2*len(kl_pairs)], dtype=cp.int32)
+    kl[::2] = k
+    kl[1::2] = l
+
     # Execute VK kernel with per-pair Schwarz screening
     vk_args = (nbas, nao, ao_loc, coords, ce_data, dms_jqc, None, vk,
-               omega_kernel, ij_pairs, n_ij_pairs, kl_pairs, n_kl_pairs,
+               omega_kernel, ij, n_ij_pairs, kl, n_kl_pairs,
                q_cond_ij, q_cond_kl, log_cutoff)
 
     start_vk = cp.cuda.Event()

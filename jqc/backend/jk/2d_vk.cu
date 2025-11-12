@@ -90,9 +90,9 @@ void rys_vk_2d(const int nbas,
         DataType* __restrict__ dm,
         double* __restrict__ vk,
         const DataType omega,
-        const int* __restrict__ ij_pairs,
+        const int2* __restrict__ ij_pairs,
         const int n_ij_pairs,
-        const int* __restrict__ kl_pairs,
+        const int2* __restrict__ kl_pairs,
         const int n_kl_pairs,
         const float* __restrict__ q_cond_ij,
         const float* __restrict__ q_cond_kl,
@@ -102,29 +102,6 @@ void rys_vk_2d(const int nbas,
     const int kl_idx = blockIdx.y;
 
     if (ij_idx < kl_idx) return;  // 2-fold symmetry: only compute ij >= kl quartets
-
-    // Load per-pair q_cond values for Schwarz screening
-    const int ij0 = ij_idx * 16;
-    const int kl0 = kl_idx * 16;
-    const float q_ij = __ldg(&q_cond_ij[ij0]);
-    const float q_kl = __ldg(&q_cond_kl[kl0]);
-
-    if (q_ij + q_kl < log_cutoff) return;
-
-    // Extract pair indices with thread indexing
-    // Pairs are stored in blocks of 16, with padding for incomplete blocks
-    const int ij_offset = ij_idx * 16 + threadIdx.x;
-    const int kl_offset = kl_idx * 16 + threadIdx.y;
-
-    // Load pair with bounds checking
-    const int ij = ij_pairs[ij_offset];
-    const int kl = kl_pairs[kl_offset];
-
-    // Decode shell indices from flattened pair indices
-    int ish = ij / nbas;
-    int jsh = ij - ish * nbas;  // Equivalent to ij % nbas but potentially faster
-    int ksh = kl / nbas;
-    int lsh = kl - ksh * nbas;
 
     constexpr int stride_i = 1;
     constexpr int stride_j = stride_i * (li+1);
@@ -143,6 +120,36 @@ void rys_vk_2d(const int nbas,
     constexpr int gstride_j = gstride_k * nfk;
     constexpr int gstride_i = gstride_j * nfj;
     constexpr int integral_size = nfi*nfj*nfk*nfl;
+
+    // Load per-pair q_cond values for Schwarz screening
+    const int ij0 = ij_idx * 16;
+    const int kl0 = kl_idx * 16;
+    const float q_ij = __ldg(&q_cond_ij[ij0]);
+    const float q_kl = __ldg(&q_cond_kl[kl0]);
+
+    if (q_ij + q_kl < log_cutoff) return;
+
+    // Extract pair indices with thread indexing
+    // Pairs are stored in blocks of 16, with padding for incomplete blocks
+    const int ij_offset = ij_idx * 16 + threadIdx.x;
+    //const int kl_offset = kl_idx * 16 + threadIdx.y;
+    __shared__ int2 kl_smem[16];
+    if (threadIdx.y == 0){
+        const int kl_offset = kl_idx * 16 + threadIdx.x;
+        kl_smem[threadIdx.x] = kl_pairs[kl_offset];
+    }
+    __syncthreads();
+    const int2 kl = kl_smem[threadIdx.y];
+
+    // Load pair with bounds checking
+    const int2 ij = ij_pairs[ij_offset];
+    //const int2 kl = kl_pairs[kl_offset];
+
+    // Decode shell indices from flattened pair indices
+    int ish = ij.x;//ij / nbas;
+    int jsh = ij.y;//ij - ish * nbas;  // Equivalent to ij % nbas but potentially faster
+    int ksh = kl.x;//kl / nbas;
+    int lsh = kl.y;//kl - ksh * nbas;
 
     DataType fac_sym_ij = PI_FAC;
     fac_sym_ij = (ish >= nbas) ? zero : fac_sym_ij;
@@ -234,16 +241,14 @@ void rys_vk_2d(const int nbas,
         const DataType ckcl = fac_sym_kl * ck * cl * Kcd;
         for (int ip = 0; ip < npi; ip++)
         for (int jp = 0; jp < npj; jp++){
-            DataType ai, aj;
-            ai = reg_cei[ip].e;
-            aj = reg_cej[jp].e;
+            const DataType ai = reg_cei[ip].e;
+            const DataType aj = reg_cej[jp].e;
 
             const DataType aij = ai + aj;
 
-            DataType inv_aij, cicj;
-            const int idx = ip + jp*npi;
-            inv_aij = reg_inv_aij[idx * threadx + threadIdx.x];
-            cicj = reg_cicj[idx * threadx + threadIdx.x];
+            const int idx = (ip + jp*npi) * threadx + threadIdx.x;
+            const DataType inv_aij = reg_inv_aij[idx];
+            const DataType cicj = reg_cicj[idx];
 
             const DataType aj_aij = aj * inv_aij;
 
