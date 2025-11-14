@@ -134,11 +134,8 @@ void type1_rad_ang(double* __restrict__ rad_ang,
 }
 
 
-// COORD_STRIDE is always 4: [x, y, z, ao_loc]
-static_assert(COORD_STRIDE == 4, "COORD_STRIDE must be 4");
-
-// Packed basis data structure: [coords (4), ce (PRIM_STRIDE)]
-constexpr int basis_stride = 4 + PRIM_STRIDE;
+// Packed basis data structure: [coords (4), ce (BASIS_STRIDE-4)]
+constexpr int basis_stride = BASIS_STRIDE;
 
 // Helper to load coords (with ao_loc in .w field) from packed basis_data
 __device__ __forceinline__ DataType4 load_coords_ecp(const DataType* __restrict__ basis_data, int ish) {
@@ -169,10 +166,6 @@ void type1_cart(double* __restrict__ gctr,
     const int ish = tasks[task_id];
     const int jsh = tasks[task_id + ntasks];
     const int ksh = tasks[task_id + 2*ntasks];
-
-    // Coefficient layout: each shell occupies PRIM_STRIDE scalars -> PRIM_STRIDE/2 (c,e) pairs
-    // Use pair-stride indexing to access the (c,e) DataType2 records of a given shell
-    constexpr int prim_stride = PRIM_STRIDE / 2;
 
     // Load coordinates from packed basis_data
     DataType4 ri = load_coords_ecp(basis_data, ish);

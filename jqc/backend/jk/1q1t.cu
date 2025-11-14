@@ -24,11 +24,13 @@ constexpr DataType PI_FAC = 34.98683665524972497;
 constexpr DataType half = .5;
 constexpr DataType one = 1.0;
 constexpr DataType zero = 0.0;
-constexpr int prim_stride = PRIM_STRIDE / 2;
 
+// BASIS_STRIDE is the total stride: [coords (4), ce (BASIS_STRIDE-4)]
+// prim_stride is for ce pairs: (BASIS_STRIDE-4)/2
+constexpr int prim_stride = (BASIS_STRIDE - 4) / 2;
+constexpr int basis_stride = BASIS_STRIDE;
 
-// COORD_STRIDE is always 4: [x, y, z, ao_loc]
-static_assert(COORD_STRIDE == 4, "COORD_STRIDE must be 4");
+// Coords are always 4: [x, y, z, ao_loc]
 struct __align__(4*sizeof(DataType)) DataType4 {
     DataType x, y, z, w;  // w stores ao_loc
 };
@@ -36,10 +38,6 @@ struct __align__(4*sizeof(DataType)) DataType4 {
 struct __align__(2*sizeof(DataType)) DataType2 {
     DataType c, e;
 };
-
-// Packed basis data structure: [coords (4), ce (PRIM_STRIDE)]
-// Total stride per basis: 4 + PRIM_STRIDE (scalars, not pairs)
-constexpr int basis_stride = 4 + PRIM_STRIDE;
 
 // Helper to get pointer to ce data for a basis
 __device__ __forceinline__ const DataType2* load_ce_ptr(const DataType* __restrict__ basis_data, int ish) {

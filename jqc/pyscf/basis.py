@@ -55,7 +55,7 @@ from pyscf.scf import _vhf
 
 # Import transformation functions at module level to avoid repeated local imports
 from jqc.backend.cart2sph import cart2cart, cart2sph, sph2cart
-from jqc.constants import COORD_STRIDE, NPRIM_MAX, PRIM_STRIDE
+from jqc.constants import BASIS_STRIDE, NPRIM_MAX
 
 __all__ = ["compute_q_matrix", "sort_group_basis", "split_basis"]
 PTR_BAS_COORD = 7
@@ -65,8 +65,8 @@ ArrayLike = np.ndarray
 
 @dataclass
 class BasisLayout:
-    ce: ArrayLike  # shape (nbasis_total, PRIM_STRIDE), np/cp
-    coords: ArrayLike  # shape (nbasis_total, COORD_STRIDE),  np/cp
+    ce: ArrayLike  # shape (nbasis_total, BASIS_STRIDE-4), np/cp
+    coords: ArrayLike  # shape (nbasis_total, 4),  np/cp
     angs: np.ndarray  # shape (nbasis_total,),               int32
     nprims: np.ndarray  # shape (nbasis_total,),               int32
 
@@ -282,20 +282,20 @@ class BasisLayout:
         Contiguous FP32 basis data structure for efficient CUDA kernel access.
 
         For each basis function, stores data in contiguous memory layout:
-        [coords (COORD_STRIDE), ce (PRIM_STRIDE)]
-        where coords[3] (last element of COORD_STRIDE) stores ao_loc
+        [coords (4), ce (BASIS_STRIDE-4)]
+        where coords[3] stores ao_loc
 
         Memory layout per basis:
             packed[i, 0:3] = coords[i, 0:3]  (x, y, z)
             packed[i, 3] = ao_loc[i]
-            packed[i, 4:4+PRIM_STRIDE] = ce[i]
+            packed[i, 4:BASIS_STRIDE] = ce[i]
 
         Returns:
             dict with keys:
-                - 'coords': (nbasis, COORD_STRIDE) fp32 array with ao_loc in coords[:, 3]
-                - 'ce': (nbasis, PRIM_STRIDE) fp32 array
+                - 'coords': (nbasis, 4) fp32 array with ao_loc in coords[:, 3]
+                - 'ce': (nbasis, BASIS_STRIDE-4) fp32 array
                 - 'ao_loc': (nbasis+1,) fp32 array (cast from int32)
-                - 'packed': (nbasis, COORD_STRIDE+PRIM_STRIDE) fp32 array
+                - 'packed': (nbasis, BASIS_STRIDE) fp32 array
         """
         if self._basis_data_fp32 is None:
             # Get base data in fp32
@@ -305,16 +305,15 @@ class BasisLayout:
 
             # Create packed array: coords (with ao_loc in last element) + ce
             nbasis = self.nbasis
-            packed_stride = COORD_STRIDE + PRIM_STRIDE
-            packed = cp.empty((nbasis, packed_stride), dtype=np.float32, order='C')
+            packed = cp.empty((nbasis, BASIS_STRIDE), dtype=np.float32, order='C')
 
             # Pack coords with ao_loc in the last element
             coords_with_ao_loc = coords_fp32.copy()
-            coords_with_ao_loc[:, COORD_STRIDE-1] = ao_loc_fp32[:-1]  # Store ao_loc in coords[:, 3]
+            coords_with_ao_loc[:, 3] = ao_loc_fp32[:-1]  # Store ao_loc in coords[:, 3]
 
             # Pack data contiguously: [coords with ao_loc, ce]
-            packed[:, 0:COORD_STRIDE] = coords_with_ao_loc
-            packed[:, COORD_STRIDE:] = ce_fp32
+            packed[:, 0:4] = coords_with_ao_loc
+            packed[:, 4:] = ce_fp32
 
             self._basis_data_fp32 = {
                 'coords': coords_with_ao_loc,
@@ -330,20 +329,20 @@ class BasisLayout:
         Contiguous FP64 basis data structure for efficient CUDA kernel access.
 
         For each basis function, stores data in contiguous memory layout:
-        [coords (COORD_STRIDE), ce (PRIM_STRIDE)]
-        where coords[3] (last element of COORD_STRIDE) stores ao_loc
+        [coords (4), ce (BASIS_STRIDE-4)]
+        where coords[3] stores ao_loc
 
         Memory layout per basis:
             packed[i, 0:3] = coords[i, 0:3]  (x, y, z)
             packed[i, 3] = ao_loc[i]
-            packed[i, 4:4+PRIM_STRIDE] = ce[i]
+            packed[i, 4:BASIS_STRIDE] = ce[i]
 
         Returns:
             dict with keys:
-                - 'coords': (nbasis, COORD_STRIDE) fp64 array with ao_loc in coords[:, 3]
-                - 'ce': (nbasis, PRIM_STRIDE) fp64 array
+                - 'coords': (nbasis, 4) fp64 array with ao_loc in coords[:, 3]
+                - 'ce': (nbasis, BASIS_STRIDE-4) fp64 array
                 - 'ao_loc': (nbasis+1,) fp64 array (cast from int32)
-                - 'packed': (nbasis, COORD_STRIDE+PRIM_STRIDE) fp64 array
+                - 'packed': (nbasis, BASIS_STRIDE) fp64 array
         """
         if self._basis_data_fp64 is None:
             # Get base data in fp64
@@ -353,16 +352,15 @@ class BasisLayout:
 
             # Create packed array: coords (with ao_loc in last element) + ce
             nbasis = self.nbasis
-            packed_stride = COORD_STRIDE + PRIM_STRIDE
-            packed = cp.empty((nbasis, packed_stride), dtype=np.float64, order='C')
+            packed = cp.empty((nbasis, BASIS_STRIDE), dtype=np.float64, order='C')
 
             # Pack coords with ao_loc in the last element
             coords_with_ao_loc = coords_fp64.copy()
-            coords_with_ao_loc[:, COORD_STRIDE-1] = ao_loc_fp64[:-1]  # Store ao_loc in coords[:, 3]
+            coords_with_ao_loc[:, 3] = ao_loc_fp64[:-1]  # Store ao_loc in coords[:, 3]
 
             # Pack data contiguously: [coords with ao_loc, ce]
-            packed[:, 0:COORD_STRIDE] = coords_with_ao_loc
-            packed[:, COORD_STRIDE:] = ce_fp64
+            packed[:, 0:4] = coords_with_ao_loc
+            packed[:, 4:] = ce_fp64
 
             self._basis_data_fp64 = {
                 'coords': coords_with_ao_loc,
@@ -560,10 +558,10 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
 
         # Pre-allocate final arrays
         coords_by_pattern[pattern] = np.empty(
-            (padded_count, COORD_STRIDE), dtype=np.float64
+            (padded_count, 4), dtype=np.float64
         )
         # Initialize CE buffer to zeros so padded primitive slots are well-defined
-        ce_by_pattern[pattern] = np.empty((padded_count, PRIM_STRIDE), dtype=dtype)
+        ce_by_pattern[pattern] = np.empty((padded_count, BASIS_STRIDE - 4), dtype=dtype)
         to_split_map_by_pattern[pattern] = np.empty(padded_count, dtype=np.int32)
         pad_id_by_pattern[pattern] = np.empty(padded_count, dtype=bool)
 
@@ -586,7 +584,7 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
             exps = _env[exp_ptr : exp_ptr + nprim]
 
             # Get coordinates - optimize by direct slicing
-            coord = np.empty(COORD_STRIDE, dtype=np.float64)
+            coord = np.empty(4, dtype=np.float64)
             coord[:3] = _env[coord_ptr : coord_ptr + 3]
 
             # Fill arrays directly (no loop needed since nctr=1)
@@ -616,9 +614,9 @@ def sort_group_basis(mol, alignment=4, dtype=np.float64):
     total_count = sum(len(to_split_map_by_pattern[key]) for key in sorted_keys)
 
     # Pre-allocate CPU arrays for batching
-    # Use PRIM_STRIDE (padded) to match per-pattern CE buffers
-    all_ce_data = np.empty((total_count, PRIM_STRIDE), dtype=dtype, order="C")
-    all_coords_data = np.empty((total_count, COORD_STRIDE), dtype=dtype, order="C")
+    # Use BASIS_STRIDE - 4 (padded) to match per-pattern CE buffers
+    all_ce_data = np.empty((total_count, BASIS_STRIDE - 4), dtype=dtype, order="C")
+    all_coords_data = np.empty((total_count, 4), dtype=dtype, order="C")
     to_split_map = np.empty(total_count, dtype=np.int32)
     pad_id = np.empty(total_count, dtype=bool)
     angs = np.empty(total_count, dtype=np.int32)

@@ -32,12 +32,10 @@
 
 
 extern "C" __global__
-void type1_cart_ip1(double* __restrict__ gctr,
-                const int* __restrict__ ao_loc, const int nao,
+void type1_cart_ip1(double* __restrict__ gctr, const int nao,
                 const int* __restrict__ tasks, const int ntasks,
                 const int* __restrict__ ecpbas, const int* __restrict__ ecploc,
-                const DataType4* __restrict__ coords,
-                const DataType2* __restrict__ coeff_exp,
+                const DataType* __restrict__ basis_data,
                 const int* __restrict__ atm, const double* __restrict__ env,
                 const int npi, const int npj)
 {
@@ -49,8 +47,17 @@ void type1_cart_ip1(double* __restrict__ gctr,
     const int ish = tasks[task_id];
     const int jsh = tasks[task_id + ntasks];
     const int ksh = tasks[task_id + 2*ntasks];
-    const int ioff = ao_loc[ish];
-    const int joff = ao_loc[jsh];
+
+    // Extract coords and coeff_exp from packed basis_data
+    constexpr int basis_stride = BASIS_STRIDE;
+    const DataType* basis_i = basis_data + ish * basis_stride;
+    const DataType* basis_j = basis_data + jsh * basis_stride;
+    const DataType4 ri = *reinterpret_cast<const DataType4*>(basis_i);
+    const DataType4 rj = *reinterpret_cast<const DataType4*>(basis_j);
+
+    const int ioff = static_cast<int>(ri.w);
+    const int joff = static_cast<int>(rj.w);
+
     const int ecp_id = ecpbas[ECP_ATOM_ID+ecploc[ksh]*BAS_SLOTS];
     gctr += ioff*nao + joff + 3*ecp_id*nao*nao;
     
@@ -77,8 +84,8 @@ void type1_cart_ip1(double* __restrict__ gctr,
     // Accumulate derivative contributions with respect to AO i.
     // j-side contributions are accumulated via (j,i) tasks in host tasking (full tasks).
     // Use LI+1 for orderi=1 to match unrolled cache pattern
-    type1_cart_kernel<LI+1, LJ, 1, 0>(buf, ish, jsh, ksh, ecpbas, ecploc, 
-        coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+    type1_cart_kernel<LI+1, LJ, 1, 0>(buf, ish, jsh, ksh, ecpbas, ecploc,
+        basis_data, atm, env, npi, npj, kernel_shared_mem);
     __syncthreads();
     _li_down<LI, LJ>(gctr_smem, buf);
     __syncthreads();
@@ -86,8 +93,8 @@ void type1_cart_ip1(double* __restrict__ gctr,
     if constexpr (LI > 0){
         // Use LI-1 for orderi=0 companion
         set_shared_memory(buf, 3 * nfi_max * nfj_max);
-        type1_cart_kernel<LI-1, LJ, 0, 0>(buf, ish, jsh, ksh, ecpbas, ecploc, 
-            coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+        type1_cart_kernel<LI-1, LJ, 0, 0>(buf, ish, jsh, ksh, ecpbas, ecploc,
+            basis_data, atm, env, npi, npj, kernel_shared_mem);
         __syncthreads();
         _li_up<LI, LJ>(gctr_smem, buf);
         __syncthreads();

@@ -31,7 +31,7 @@ import cupy as cp
 import numpy as np
 from pyscf import gto
 
-from jqc.constants import COORD_STRIDE, PRIM_STRIDE, MAX_L_ECP
+from jqc.constants import BASIS_STRIDE, MAX_L_ECP
 
 __all__ = [
     "ecp_generator",
@@ -423,8 +423,7 @@ constexpr int LC = {lc};
     # Inject layout constants via -D to avoid string duplication
     opts = (
         *_get_compile_options(),
-        f"-DPRIM_STRIDE={PRIM_STRIDE}",
-        f"-DCOORD_STRIDE={COORD_STRIDE}",
+        f"-DBASIS_STRIDE={BASIS_STRIDE}",
     )
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function("type2_cart")
@@ -508,8 +507,7 @@ constexpr int LJ = {lj};
     # Compile module following JoltQC pattern
     opts = (
         *_get_compile_options(),
-        f"-DPRIM_STRIDE={PRIM_STRIDE}",
-        f"-DCOORD_STRIDE={COORD_STRIDE}",
+        f"-DBASIS_STRIDE={BASIS_STRIDE}",
     )
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function("type1_cart")
@@ -595,8 +593,7 @@ constexpr int LJ = {lj};
     # Compile module
     opts = (
         *_get_compile_options(),
-        f"-DPRIM_STRIDE={PRIM_STRIDE}",
-        f"-DCOORD_STRIDE={COORD_STRIDE}",
+        f"-DBASIS_STRIDE={BASIS_STRIDE}",
     )
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function("type1_cart_ip1")
@@ -685,8 +682,7 @@ constexpr int LC = {lk};
     # Compile module
     opts = (
         *_get_compile_options(),
-        f"-DPRIM_STRIDE={PRIM_STRIDE}",
-        f"-DCOORD_STRIDE={COORD_STRIDE}",
+        f"-DBASIS_STRIDE={BASIS_STRIDE}",
     )
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function("type2_cart_ip1")
@@ -780,8 +776,7 @@ constexpr int LJ = {lj};
     # Compile module
     opts = (
         *_get_compile_options(),
-        f"-DPRIM_STRIDE={PRIM_STRIDE}",
-        f"-DCOORD_STRIDE={COORD_STRIDE}",
+        f"-DBASIS_STRIDE={BASIS_STRIDE}",
     )
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel_name = f"type1_cart_{variant}"
@@ -878,8 +873,7 @@ constexpr int LC = {lk};
     # Compile module
     opts = (
         *_get_compile_options(),
-        f"-DPRIM_STRIDE={PRIM_STRIDE}",
-        f"-DCOORD_STRIDE={COORD_STRIDE}",
+        f"-DBASIS_STRIDE={BASIS_STRIDE}",
     )
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel_name = f"type2_cart_{variant}"
