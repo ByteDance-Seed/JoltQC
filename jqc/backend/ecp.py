@@ -1003,16 +1003,17 @@ def get_ecp_ip(
     # Get packed basis data (coords with ao_loc embedded, plus coefficients/exponents)
     basis_data_dict = basis_layout.basis_data_fp64
     basis_data = basis_data_dict['packed']
-    nao = basis_layout._mol.nao_nr()
+    # ECP kernels write to cartesian AO indices, so use cart nao from ao_loc
+    nao_cart = int(basis_layout.ao_loc_no_pad[-1])
 
     ecpbas = cp.asarray(sorted_ecpbas, dtype=cp.int32)
     ecploc = cp.asarray(ecp_loc, dtype=cp.int32)
 
-    # Initialize result matrix in splitted_mol basis
+    # Initialize result matrix in internal cartesian basis
     # IP integrals have 3 components for each ECP atom (x,y,z derivatives)
     # For now, keep backward compatibility with flattened format for kernel interface
     n_ecp_atoms = len(ecp_atoms)
-    mat1_flat = cp.zeros((3 * n_ecp_atoms, nao, nao), dtype=dtype)
+    mat1_flat = cp.zeros((3 * n_ecp_atoms, nao_cart, nao_cart), dtype=dtype)
 
     # Compute ECP IP integrals for each basis group combination and ECP type
     # Use full (i,j) combinations to capture both i- and j-side contributions
@@ -1054,7 +1055,7 @@ def get_ecp_ip(
                 if lk < 0:
                     _compile_ecp_type1_ip_kernel(li, lj, precision)(
                         mat1_flat,
-                        nao,
+                        nao_cart,
                         tasks,
                         ntasks,
                         ecpbas,
@@ -1069,7 +1070,7 @@ def get_ecp_ip(
                     # Type2 IP kernel for semi-local channels
                     _compile_ecp_type2_ip_kernel(li, lj, lk, precision)(
                         mat1_flat,
-                        nao,
+                        nao_cart,
                         tasks,
                         ntasks,
                         ecpbas,
@@ -1082,12 +1083,12 @@ def get_ecp_ip(
                     )
     result = cp.zeros((n_ecp_atoms, 3, nao_orig, nao_orig), dtype=dtype)
 
-    # Map ECP atoms and transform each component from flattened format
+    # Map ECP atoms and transform each component from internal cart basis to mol basis
     for i in range(n_ecp_atoms):
         for comp in range(3):
             flat_idx = 3 * i + comp
             result[i, comp] = basis_layout.dm_to_mol(
-                mat1_flat[flat_idx : flat_idx + 1].reshape(1, nao, nao)
+                mat1_flat[flat_idx : flat_idx + 1].reshape(1, nao_cart, nao_cart)
             )[0]
 
     return result
@@ -1163,16 +1164,17 @@ def get_ecp_ipip(
     # Get packed basis data (coords with ao_loc embedded, plus coefficients/exponents)
     basis_data_dict = basis_layout.basis_data_fp64
     basis_data = basis_data_dict['packed']
-    nao = basis_layout._mol.nao_nr()
+    # ECP kernels write to cartesian AO indices, so use cart nao from ao_loc
+    nao_cart = int(basis_layout.ao_loc_no_pad[-1])
 
     ecpbas = cp.asarray(sorted_ecpbas, dtype=cp.int32)
     ecploc = cp.asarray(ecp_loc, dtype=cp.int32)
 
-    # Initialize result matrix in splitted_mol basis
+    # Initialize result matrix in internal cartesian basis
     # IPIP integrals have 9 components for each ECP atom (xx,xy,xz,yx,yy,yz,zx,zy,zz derivatives)
     # For now, keep backward compatibility with flattened format for kernel interface
     n_ecp_atoms = len(ecp_atoms)
-    mat1_flat = cp.zeros((9 * n_ecp_atoms, nao, nao), dtype=dtype)
+    mat1_flat = cp.zeros((9 * n_ecp_atoms, nao_cart, nao_cart), dtype=dtype)
 
     # Compute ECP IPIP integrals for each basis group combination and ECP type
     # Use full (i,j) combinations to capture both i- and j-side contributions
@@ -1211,7 +1213,7 @@ def get_ecp_ipip(
                 if lk < 0:
                     _compile_ecp_type1_ipip_kernel(li, lj, ip_type, precision)(
                         mat1_flat,
-                        nao,
+                        nao_cart,
                         tasks,
                         ntasks,
                         ecpbas,
@@ -1226,7 +1228,7 @@ def get_ecp_ipip(
                     # Type2 IPIP kernel for semi-local channels
                     _compile_ecp_type2_ipip_kernel(li, lj, lk, ip_type, precision)(
                         mat1_flat,
-                        nao,
+                        nao_cart,
                         tasks,
                         ntasks,
                         ecpbas,
@@ -1240,12 +1242,12 @@ def get_ecp_ipip(
 
     result = cp.zeros((n_ecp_atoms, 9, nao_orig, nao_orig), dtype=dtype)
 
-    # Map ECP atoms and transform each component from flattened format
+    # Map ECP atoms and transform each component from internal cart basis to mol basis
     for i in range(n_ecp_atoms):
         for comp in range(9):
             flat_idx = 9 * i + comp
             result[i, comp] = basis_layout.dm_to_mol(
-                mat1_flat[flat_idx : flat_idx + 1].reshape(1, nao, nao)
+                mat1_flat[flat_idx : flat_idx + 1].reshape(1, nao_cart, nao_cart)
             )[0]
 
     return result
@@ -1373,13 +1375,14 @@ def get_ecp(mol_or_basis_layout, precision: str = "fp64") -> cp.ndarray:
     # Get packed basis data (coords with ao_loc embedded, plus coefficients/exponents)
     basis_data_dict = basis_layout.basis_data_fp64
     basis_data = basis_data_dict['packed']
-    nao = basis_layout._mol.nao_nr()
+    # ECP kernels write to cartesian AO indices, so use cart nao from ao_loc
+    nao_cart = int(basis_layout.ao_loc_no_pad[-1])
 
     ecpbas = cp.asarray(sorted_ecpbas, dtype=cp.int32)
     ecploc = cp.asarray(ecp_loc, dtype=cp.int32)
 
-    # Initialize result matrix in splitted_mol basis
-    mat1 = cp.zeros((nao, nao), dtype=dtype)
+    # Initialize result matrix in internal cartesian basis
+    mat1 = cp.zeros((nao_cart, nao_cart), dtype=dtype)
 
     # Compute ECP integrals for each basis group combination and ECP type
     # Following gpu4pyscf's triple loop pattern
@@ -1422,7 +1425,7 @@ def get_ecp(mol_or_basis_layout, precision: str = "fp64") -> cp.ndarray:
                 if lk < 0:
                     _compile_ecp_type1_kernel(li, lj, precision)(
                         mat1,
-                        nao,
+                        nao_cart,
                         tasks,
                         ntasks,
                         ecpbas,
@@ -1437,7 +1440,7 @@ def get_ecp(mol_or_basis_layout, precision: str = "fp64") -> cp.ndarray:
                     # Type2 kernel for semi-local channels
                     _compile_ecp_type2_kernel(li, lj, lk, precision)(
                         mat1,
-                        nao,
+                        nao_cart,
                         tasks,
                         ntasks,
                         ecpbas,
@@ -1449,9 +1452,9 @@ def get_ecp(mol_or_basis_layout, precision: str = "fp64") -> cp.ndarray:
                         npj,
                     )
 
-    # Transform result from splitted_mol basis back to original mol basis
+    # Transform result from internal cartesian basis back to original mol basis
     # Kernels already write symmetric contributions; no host-side symmetrization needed
-    result = basis_layout.dm_to_mol(mat1.reshape(1, nao, nao))[0]
+    result = basis_layout.dm_to_mol(mat1.reshape(1, nao_cart, nao_cart))[0]
     return result
 
 
