@@ -62,7 +62,7 @@ _ecp_kernel_cache = {}
 def _get_compile_options():
     # Compilation options following JoltQC style
     # Note: ECP derivative normalization is handled in basis coefficients; no extra scaling.
-    return ("-std=c++17", "--use_fast_math", "--minimal")
+    return ("-std=c++17", "--use_fast_math")
 
 
 def _estimate_type1_shared_memory(li: int, lj: int, precision: str = "fp64") -> int:

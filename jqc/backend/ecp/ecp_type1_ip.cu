@@ -67,7 +67,7 @@ void type1_cart_ip1(double* __restrict__ gctr, const int nao,
 
     // Allocate gctr_smem from shared memory
     double* gctr_smem = reinterpret_cast<double*>(shared_mem);
-    size_t gctr_offset = nfi * nfj * 3 * sizeof(double);
+    constexpr size_t gctr_offset = nfi * nfj * 3 * sizeof(double);
 
     for (int ij = threadIdx.x; ij < nfi*nfj*3; ij+=blockDim.x){
         gctr_smem[ij] = 0.0;

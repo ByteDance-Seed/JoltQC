@@ -79,13 +79,12 @@ void type1_rad_ang(double* __restrict__ rad_ang,
 
     // Allocate buffers large enough for the maximum l value used in type1_ang_nuc_l functions (l=10)
     // This ensures we don't have illegal memory access when functions access rx[10], ry[10], rz[10]
-    constexpr int max_l = 10;
-    double rx[max_l+1], ry[max_l+1], rz[max_l+1];
-    double c_buf[2*max_l+1];
+    double rx[LIJ+1], ry[LIJ+1], rz[LIJ+1];
+    double c_buf[2*LIJ+1];
 
-    // Initialize power arrays up to max_l
+    // Initialize power arrays up to LIJ
     rx[0] = ry[0] = rz[0] = 1.0;
-    for (int i = 1; i <= max_l; i++) {
+    for (int i = 1; i <= LIJ; i++) {
         rx[i] = rx[i-1] * unitr[0];
         ry[i] = ry[i-1] * unitr[1];
         rz[i] = rz[i-1] * unitr[2];
@@ -194,7 +193,7 @@ void type1_cart(double* __restrict__ gctr,
 
     // Allocate rad_ang from shared memory
     double* rad_ang = reinterpret_cast<double*>(shared_mem);
-    size_t rad_ang_offset = LIJ1*LIJ1*LIJ1 * sizeof(double);
+    constexpr size_t rad_ang_offset = LIJ1*LIJ1*LIJ1 * sizeof(double);
 
     // Allocate rad_all from shared memory
     double* rad_all = reinterpret_cast<double*>(shared_mem + rad_ang_offset);
@@ -236,9 +235,9 @@ void type1_cart(double* __restrict__ gctr,
     constexpr int nfj = (LJ+1) * (LJ+2) / 2;
 
     // Allocate fi and fj from shared memory
-    size_t rad_all_offset = rad_ang_offset + LIJ1*LIJ1 * sizeof(double);
+    constexpr size_t rad_all_offset = rad_ang_offset + LIJ1*LIJ1 * sizeof(double);
     double* fi = reinterpret_cast<double*>(shared_mem + rad_all_offset);
-    size_t fi_offset = rad_all_offset + 3*nfi * sizeof(double);
+    constexpr size_t fi_offset = rad_all_offset + 3*nfi * sizeof(double);
     double* fj = reinterpret_cast<double*>(shared_mem + fi_offset);
 
     cache_fac<LI>(fi, rca);

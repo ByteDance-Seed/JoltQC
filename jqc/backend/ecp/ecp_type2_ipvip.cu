@@ -69,11 +69,11 @@ void type2_cart_ipvip(double* __restrict__ gctr, const int nao,
 
     // Allocate buf1 first
     double* buf1 = reinterpret_cast<double*>(shared_mem);
-    size_t buf1_offset = nfi1_max * nfj1_max * sizeof(double);
+    constexpr size_t buf1_offset = nfi1_max * nfj1_max * sizeof(double);
 
     // Allocate buf BEFORE kernel_shared_mem to avoid overlap
     double* buf = reinterpret_cast<double*>(shared_mem + buf1_offset);
-    size_t buf_offset = buf1_offset + 3 * nfi_max * nfj1_max * sizeof(double);
+    constexpr size_t buf_offset = buf1_offset + 3 * nfi_max * nfj1_max * sizeof(double);
 
     // Allocate kernel_shared_mem after buf
     char* kernel_shared_mem = shared_mem + buf_offset;

@@ -69,9 +69,9 @@ void type1_cart_ipvip(double* __restrict__ gctr, const int nao,
 
     // Allocate buffers from dynamic shared memory
     double* buf1 = reinterpret_cast<double*>(shared_mem);
-    size_t buf1_offset = nfi1_max * nfj1_max * sizeof(double);
+    constexpr size_t buf1_offset = nfi1_max * nfj1_max * sizeof(double);
     double* buf = reinterpret_cast<double*>(shared_mem + buf1_offset);
-    size_t buf_offset = buf1_offset + 3 * nfi_max * nfj1_max * sizeof(double);
+    constexpr size_t buf_offset = buf1_offset + 3 * nfi_max * nfj1_max * sizeof(double);
     char* kernel_shared_mem = shared_mem + buf_offset;
 
     // Start with LI+1, LJ+1 for mixed order
