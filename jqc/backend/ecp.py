@@ -436,7 +436,8 @@ constexpr int LC = {lc};
     # Create wrapper function following JoltQC style
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
-        ntasks = args[4]  # Number of tasks
+        # After removing ao_loc, ntasks is now at index 3
+        ntasks = args[3]  # Number of tasks
         npi = args[-2]  # npi is second-to-last argument
         npj = args[-1]  # npj is last argument
         block_size = 128
@@ -524,7 +525,8 @@ constexpr int LJ = {lj};
     # Create wrapper function following JoltQC style
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
-        ntasks = args[4]  # Number of tasks
+        # After removing ao_loc, ntasks is now at index 3
+        ntasks = args[3]  # Number of tasks
         npi = args[-2]  # npi is second-to-last argument
         npj = args[-1]  # npj is last argument
         block_size = 128
@@ -610,7 +612,8 @@ constexpr int LJ = {lj};
 
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
-        ntasks = args[4]  # Number of tasks
+        # After removing ao_loc, ntasks is now at index 3
+        ntasks = args[3]  # Number of tasks
         npi = args[-2]  # npi is second-to-last argument
         npj = args[-1]  # npj is last argument
         block_size = 128
@@ -795,7 +798,8 @@ constexpr int LJ = {lj};
 
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
-        ntasks = args[4]  # Number of tasks
+        # After removing ao_loc, ntasks is now at index 3
+        ntasks = args[3]  # Number of tasks
         npi = args[-2]  # npi is second-to-last argument
         npj = args[-1]  # npj is last argument
         block_size = 128
@@ -999,8 +1003,11 @@ def get_ecp_ip(
     # Use splitted_mol for computation (like gpu4pyscf)
     atm = cp.asarray(splitted_mol._atm, dtype=cp.int32)
     env = cp.asarray(splitted_mol._env, dtype=dtype)
-    ao_loc = cp.asarray(basis_layout.ao_loc, dtype=cp.int32)
-    nao = int(ao_loc[-1].item())
+
+    # Get packed basis data (coords with ao_loc embedded, plus coefficients/exponents)
+    basis_data_dict = basis_layout.basis_data_fp64
+    basis_data = basis_data_dict['packed']
+    nao = basis_layout._mol.nao_nr()
 
     ecpbas = cp.asarray(sorted_ecpbas, dtype=cp.int32)
     ecploc = cp.asarray(ecp_loc, dtype=cp.int32)
@@ -1010,9 +1017,6 @@ def get_ecp_ip(
     # For now, keep backward compatibility with flattened format for kernel interface
     n_ecp_atoms = len(ecp_atoms)
     mat1_flat = cp.zeros((3 * n_ecp_atoms, nao, nao), dtype=dtype)
-    # Ensure device arrays for coords and coeff/exp
-    coords_dev = cp.asarray(basis_layout.coords, dtype=dtype)
-    ce_dev = cp.asarray(basis_layout.ce, dtype=dtype)
 
     # Compute ECP IP integrals for each basis group combination and ECP type
     # Use full (i,j) combinations to capture both i- and j-side contributions
@@ -1054,14 +1058,12 @@ def get_ecp_ip(
                 if lk < 0:
                     _compile_ecp_type1_ip_kernel(li, lj, precision)(
                         mat1_flat,
-                        ao_loc,
                         nao,
                         tasks,
                         ntasks,
                         ecpbas,
                         ecploc,
-                        coords_dev,
-                        ce_dev,
+                        basis_data,
                         atm,
                         env,
                         npi,
@@ -1071,14 +1073,12 @@ def get_ecp_ip(
                     # Type2 IP kernel for semi-local channels
                     _compile_ecp_type2_ip_kernel(li, lj, lk, precision)(
                         mat1_flat,
-                        ao_loc,
                         nao,
                         tasks,
                         ntasks,
                         ecpbas,
                         ecploc,
-                        coords_dev,
-                        ce_dev,
+                        basis_data,
                         atm,
                         env,
                         npi,
@@ -1163,8 +1163,11 @@ def get_ecp_ipip(
     # Use splitted_mol for computation (like gpu4pyscf)
     atm = cp.asarray(splitted_mol._atm, dtype=cp.int32)
     env = cp.asarray(splitted_mol._env, dtype=dtype)
-    ao_loc = cp.asarray(basis_layout.ao_loc, dtype=cp.int32)
-    nao = int(ao_loc[-1].item())
+
+    # Get packed basis data (coords with ao_loc embedded, plus coefficients/exponents)
+    basis_data_dict = basis_layout.basis_data_fp64
+    basis_data = basis_data_dict['packed']
+    nao = basis_layout._mol.nao_nr()
 
     ecpbas = cp.asarray(sorted_ecpbas, dtype=cp.int32)
     ecploc = cp.asarray(ecp_loc, dtype=cp.int32)
@@ -1174,9 +1177,6 @@ def get_ecp_ipip(
     # For now, keep backward compatibility with flattened format for kernel interface
     n_ecp_atoms = len(ecp_atoms)
     mat1_flat = cp.zeros((9 * n_ecp_atoms, nao, nao), dtype=dtype)
-    # Ensure device arrays for coords and coeff/exp
-    coords_dev = cp.asarray(basis_layout.coords, dtype=dtype)
-    ce_dev = cp.asarray(basis_layout.ce, dtype=dtype)
 
     # Compute ECP IPIP integrals for each basis group combination and ECP type
     # Use full (i,j) combinations to capture both i- and j-side contributions
@@ -1215,14 +1215,12 @@ def get_ecp_ipip(
                 if lk < 0:
                     _compile_ecp_type1_ipip_kernel(li, lj, ip_type, precision)(
                         mat1_flat,
-                        ao_loc,
                         nao,
                         tasks,
                         ntasks,
                         ecpbas,
                         ecploc,
-                        coords_dev,
-                        ce_dev,
+                        basis_data,
                         atm,
                         env,
                         npi,
@@ -1232,14 +1230,12 @@ def get_ecp_ipip(
                     # Type2 IPIP kernel for semi-local channels
                     _compile_ecp_type2_ipip_kernel(li, lj, lk, ip_type, precision)(
                         mat1_flat,
-                        ao_loc,
                         nao,
                         tasks,
                         ntasks,
                         ecpbas,
                         ecploc,
-                        coords_dev,
-                        ce_dev,
+                        basis_data,
                         atm,
                         env,
                         npi,
@@ -1377,19 +1373,17 @@ def get_ecp(mol_or_basis_layout, precision: str = "fp64") -> cp.ndarray:
     # Use splitted_mol for computation (like gpu4pyscf)
     atm = cp.asarray(splitted_mol._atm, dtype=cp.int32)
     env = cp.asarray(splitted_mol._env, dtype=dtype)
-    # Use AO offsets with padding entries (dims for padded shells are zero)
-    # This matches how tasks index shells in the grouped layout
-    ao_loc = cp.asarray(basis_layout.ao_loc, dtype=cp.int32)
-    nao = int(ao_loc[-1].item())
+
+    # Get packed basis data (coords with ao_loc embedded, plus coefficients/exponents)
+    basis_data_dict = basis_layout.basis_data_fp64
+    basis_data = basis_data_dict['packed']
+    nao = basis_layout._mol.nao_nr()
 
     ecpbas = cp.asarray(sorted_ecpbas, dtype=cp.int32)
     ecploc = cp.asarray(ecp_loc, dtype=cp.int32)
 
     # Initialize result matrix in splitted_mol basis
     mat1 = cp.zeros((nao, nao), dtype=dtype)
-    # Ensure device arrays for coords and coeff/exp
-    coords_dev = cp.asarray(basis_layout.coords, dtype=dtype)
-    ce_dev = cp.asarray(basis_layout.ce, dtype=dtype)
 
     # Compute ECP integrals for each basis group combination and ECP type
     # Following gpu4pyscf's triple loop pattern
@@ -1432,14 +1426,12 @@ def get_ecp(mol_or_basis_layout, precision: str = "fp64") -> cp.ndarray:
                 if lk < 0:
                     _compile_ecp_type1_kernel(li, lj, precision)(
                         mat1,
-                        ao_loc,
                         nao,
                         tasks,
                         ntasks,
                         ecpbas,
                         ecploc,
-                        coords_dev,
-                        ce_dev,
+                        basis_data,
                         atm,
                         env,
                         npi,
@@ -1449,14 +1441,12 @@ def get_ecp(mol_or_basis_layout, precision: str = "fp64") -> cp.ndarray:
                     # Type2 kernel for semi-local channels
                     _compile_ecp_type2_kernel(li, lj, lk, precision)(
                         mat1,
-                        ao_loc,
                         nao,
                         tasks,
                         ntasks,
                         ecpbas,
                         ecploc,
-                        coords_dev,
-                        ce_dev,
+                        basis_data,
                         atm,
                         env,
                         npi,

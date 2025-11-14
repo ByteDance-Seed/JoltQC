@@ -30,6 +30,23 @@ static double rnorm3d(double x, double y, double z) {
     return rsqrt(x*x + y*y + z*z);
 }
 
+// COORD_STRIDE is always 4: [x, y, z, ao_loc]
+static_assert(COORD_STRIDE == 4, "COORD_STRIDE must be 4");
+
+// Packed basis data structure: [coords (4), ce (PRIM_STRIDE)]
+constexpr int basis_stride = 4 + PRIM_STRIDE;
+
+// Helper to load coords (with ao_loc in .w field) from packed basis_data
+__device__ __forceinline__ DataType4 load_coords_ecp(const DataType* __restrict__ basis_data, int ish) {
+    const DataType* base = basis_data + ish * basis_stride;
+    return *reinterpret_cast<const DataType4*>(base);
+}
+
+// Helper to get pointer to ce data for a basis
+__device__ __forceinline__ const DataType2* load_ce_ptr_ecp(const DataType* __restrict__ basis_data, int ish) {
+    return reinterpret_cast<const DataType2*>(basis_data + ish * basis_stride + 4);
+}
+
 template <int order, int LIC> __device__
 void type2_facs_rad(double facs[LIC+1], const double rca, const DataType2* __restrict__ ce, const int np){
     double root = 0.0;
@@ -251,11 +268,10 @@ void type2_ang(double* __restrict__ facs, const double* __restrict__ fi, const d
 // Refactored to take nprim as runtime parameters instead of constexpr injection
 extern "C" __global__
 void type2_cart(double* __restrict__ gctr,
-                const int* __restrict__ ao_loc, const int nao,
+                const int nao,
                 const int* __restrict__ tasks, const int ntasks,
                 const int* __restrict__ ecpbas, const int* __restrict__ ecploc,
-                const DataType4* __restrict__ coords,
-                const DataType2* __restrict__ coeff_exp,
+                const DataType* __restrict__ basis_data,
                 const int* __restrict__ atm, const double* __restrict__ env,
                 const int npi, const int npj)
 {
@@ -268,11 +284,13 @@ void type2_cart(double* __restrict__ gctr,
     const int jsh = tasks[task_id + ntasks];
     const int ksh = tasks[task_id + 2*ntasks];
 
-    // Coordinates from basis layout with explicit COORD_STRIDE handling.
-    // Treat coords as scalar array to avoid relying on struct alignment.
-    const DataType *coords_scalar = reinterpret_cast<const DataType*>(coords);
-    const DataType *ri = coords_scalar + ish * COORD_STRIDE;
-    const DataType *rj = coords_scalar + jsh * COORD_STRIDE;
+    // Coefficient layout: each shell occupies PRIM_STRIDE scalars -> PRIM_STRIDE/2 (c,e) pairs
+    // Use pair-stride indexing to access the (c,e) DataType2 records of a given shell
+    constexpr int prim_stride = PRIM_STRIDE / 2;
+
+    // Load coordinates from packed basis_data
+    DataType4 ri = load_coords_ecp(basis_data, ish);
+    DataType4 rj = load_coords_ecp(basis_data, jsh);
 
     const int atm_id = ecpbas[ATOM_OF+ecploc[ksh]*BAS_SLOTS];
     const double *rc = env + atm[PTR_COORD+atm_id*ATM_SLOTS];
@@ -299,24 +317,24 @@ void type2_cart(double* __restrict__ gctr,
     size_t omegaj_offset = omegai_offset + omegaj_size * sizeof(double);
 
     double rca[3];
-    rca[0] = rc[0] - ri[0];
-    rca[1] = rc[1] - ri[1];
-    rca[2] = rc[2] - ri[2];
+    rca[0] = rc[0] - ri.x;
+    rca[1] = rc[1] - ri.y;
+    rca[2] = rc[2] - ri.z;
     type2_facs_omega<LI>(omegai, rca);
     const double dca = norm3d(rca[0], rca[1], rca[2]);
 
     double rcb[3];
-    rcb[0] = rc[0] - rj[0];
-    rcb[1] = rc[1] - rj[1];
-    rcb[2] = rc[2] - rj[2];
+    rcb[0] = rc[0] - rj.x;
+    rcb[1] = rc[1] - rj.y;
+    rcb[2] = rc[2] - rj.z;
     type2_facs_omega<LJ>(omegaj, rcb);
     const double dcb = norm3d(rcb[0], rcb[1], rcb[2]);
 
     __syncthreads();
 
-    // Coefficient pointers for primitive (c,e) pairs of each shell
-    const DataType2* cei = coeff_exp + ish * prim_stride;
-    const DataType2* cej = coeff_exp + jsh * prim_stride;
+    // Load ce pointers from packed basis_data
+    const DataType2* cei = load_ce_ptr_ecp(basis_data, ish);
+    const DataType2* cej = load_ce_ptr_ecp(basis_data, jsh);
     
     double radi[LIC1];
     type2_facs_rad<0, LI+LC>(radi, dca, cei, npi);
@@ -439,8 +457,8 @@ void type2_cart(double* __restrict__ gctr,
     
     // Write back: each thread writes only its bucket entry to the
     // corresponding (i,j) index it owns to avoid duplicating sums.
-    const int ioff = ao_loc[ish];
-    const int joff = ao_loc[jsh];
+    const int ioff = (int)ri.w;
+    const int joff = (int)rj.w;
     for (int b = 0; b < nreg; b++){
         const int ij = b * blockDim.x + threadIdx.x;
         if (ij < nfi*nfj){

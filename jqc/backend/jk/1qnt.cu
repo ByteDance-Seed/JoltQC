@@ -40,12 +40,6 @@ struct __align__(2*sizeof(DataType)) DataType2 {
 // Total stride per basis: 4 + PRIM_STRIDE (scalars, not pairs)
 constexpr int basis_stride = 4 + PRIM_STRIDE;
 
-// Helper to load coords from packed basis_data
-__device__ __forceinline__ DataType4 load_coords(const DataType* __restrict__ basis_data, int ish) {
-    const DataType* base = basis_data + ish * basis_stride;
-    return *reinterpret_cast<const DataType4*>(base);
-}
-
 // Helper to get pointer to ce data for a basis
 __device__ __forceinline__ const DataType2* load_ce_ptr(const DataType* __restrict__ basis_data, int ish) {
     return reinterpret_cast<const DataType2*>(basis_data + ish * basis_stride + 4);
@@ -145,13 +139,20 @@ void rys_jk(const int nbas,
     DataType fac_sym = active ? PI_FAC : zero;
     fac_sym *= (ish == jsh) ? half : one;
     fac_sym *= (ksh == lsh) ? half : one;
-    fac_sym *= (ish*nbas+jsh == ksh*nbas+lsh) ? half : one;
+    //fac_sym *= (ish*nbas+jsh == ksh*nbas+lsh) ? half : one;
+    fac_sym *= ((ish == ksh) && (jsh == lsh)) ? half : one;
+    
+    // Compute base addresses for all shells (allows better instruction-level parallelism)
+    const DataType* base_i = basis_data + ish * basis_stride;
+    const DataType* base_j = basis_data + jsh * basis_stride;
+    const DataType* base_k = basis_data + ksh * basis_stride;
+    const DataType* base_l = basis_data + lsh * basis_stride;
 
-    // Load coords from packed basis_data
-    DataType4 ri = load_coords(basis_data, ish);
-    DataType4 rj = load_coords(basis_data, jsh);
-    DataType4 rk = load_coords(basis_data, ksh);
-    DataType4 rl = load_coords(basis_data, lsh);
+    // Load coords from base addresses
+    DataType4 ri = *reinterpret_cast<const DataType4*>(base_i);
+    DataType4 rj = *reinterpret_cast<const DataType4*>(base_j);
+    DataType4 rk = *reinterpret_cast<const DataType4*>(base_k);
+    DataType4 rl = *reinterpret_cast<const DataType4*>(base_l);
 
     const DataType rjri0 = rj.x - ri.x;
     const DataType rjri1 = rj.y - ri.y;
@@ -178,6 +179,8 @@ void rys_jk(const int nbas,
     // Load ce data from packed basis_data
     const DataType2* cei_ptr = load_ce_ptr(basis_data, ish);
     const DataType2* cej_ptr = load_ce_ptr(basis_data, jsh);
+    const DataType2* cek_ptr = load_ce_ptr(basis_data, ksh);
+    const DataType2* cel_ptr = load_ce_ptr(basis_data, lsh);
 
     for (int ip = 0; ip < npi; ip++){
         reg_cei[ip] = cei_ptr[ip];
@@ -185,11 +188,11 @@ void rys_jk(const int nbas,
     for (int jp = 0; jp < npj; jp++){
         reg_cej[jp] = cej_ptr[jp];
     }
-    
+
     // Cache per-(ip,jp) terms to avoid repeated expensive exp/div computations if register usage is reasonable
     DataType reg_cicj[use_cache ? npi*npj : 1];
     DataType reg_inv_aij[use_cache ? npi*npj : 1];
-    
+
     if constexpr (use_cache) {
 #pragma unroll
         for (int ip = 0; ip < npi; ip++){
@@ -216,8 +219,6 @@ void rys_jk(const int nbas,
     DataType integral_frag[frag_size] = {zero};
     for (int kp = 0; kp < npk; kp++)
     for (int lp = 0; lp < npl; lp++){
-        const DataType2* cek_ptr = load_ce_ptr(basis_data, ksh);
-        const DataType2* cel_ptr = load_ce_ptr(basis_data, lsh);
         DataType2 cek = cek_ptr[kp];
         DataType2 cel = cel_ptr[lp];
         const DataType ak = cek.e;
