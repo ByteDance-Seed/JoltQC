@@ -69,18 +69,9 @@ double rad_part(const int ish, const int* __restrict__ ecpbas, const double* __r
         w = w128[threadIdx.x];
     }
     // Avoid pow for small integer r_order (common cases: 0,1,2,3)
-    double rr;
-    if (r_order == 0) {
-        rr = 1.0;
-    } else if (r_order == 1) {
-        rr = r;
-    } else if (r_order == 2) {
-        rr = r * r;
-    } else if (r_order == 3) {
-        rr = r * r * r;
-    } else {
-        rr = pow(r, r_order);
-    }
+    double rr = 1.0;
+    for (int i = 0; i < r_order; i++)
+        rr *= r;
     return u1 * rr * w;
 }
 
