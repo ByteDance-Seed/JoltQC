@@ -131,11 +131,13 @@ def _estimate_type1_ip_shared_memory(li: int, lj: int, precision: str = "fp64") 
     total_doubles = base_memory + gctr_smem_size + buf_size
     total_bytes = total_doubles * dtype_size
 
-    # Raise error if shared memory exceeds 96KB limit
-    if total_bytes > 96 * 1024:
+    # Raise error if shared memory exceeds device limit
+    device = cp.cuda.Device()
+    max_shared_mem = device.attributes['MaxSharedMemoryPerBlock']
+    if total_bytes > max_shared_mem:
         raise RuntimeError(
             f"Shared memory requirement {total_bytes} bytes ({total_bytes/1024:.1f} KB) "
-            f"exceeds 96KB limit for angular momentum combination. "
+            f"exceeds device limit {max_shared_mem} bytes for angular momentum combination. "
             f"Consider using smaller basis sets or enabling global memory fallback."
         )
 
@@ -292,12 +294,12 @@ def _estimate_type2_ip_shared_memory(
 
     total_doubles = gctr_smem_size + buf_size + base_memory
     total_bytes = total_doubles * dtype_size
-
-    # Raise error if shared memory exceeds 96KB limit
-    if total_bytes > 96 * 1024:
+    device = cp.cuda.Device()
+    max_shared_mem = device.attributes['MaxSharedMemoryPerBlock']
+    if total_bytes > max_shared_mem:
         raise RuntimeError(
             f"Shared memory requirement {total_bytes} bytes ({total_bytes/1024:.1f} KB) "
-            f"exceeds 96KB limit for angular momentum combination. "
+            f"exceeds device limit {max_shared_mem} bytes for angular momentum combination. "
             f"Consider using smaller basis sets or enabling global memory fallback."
         )
 
