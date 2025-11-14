@@ -98,6 +98,9 @@ class BasisLayout:
     _ao_loc_no_pad: Optional[np.ndarray] = None
     _to_decontracted_map: Optional[np.ndarray] = None
     _angs_no_pad: Optional[np.ndarray] = None
+    # Contiguous basis data structures (coords, ce, ao_loc packed together)
+    _basis_data_fp32: Optional[dict] = None
+    _basis_data_fp64: Optional[dict] = None
 
     # --------- Compatibility accessors ---------
     @property
@@ -272,6 +275,102 @@ class BasisLayout:
         FP64 coordinates array (base storage is always fp64).
         """
         return self.coords
+
+    @property
+    def basis_data_fp32(self) -> dict:
+        """
+        Contiguous FP32 basis data structure for efficient CUDA kernel access.
+
+        For each basis function, stores data in contiguous memory layout:
+        [coords (COORD_STRIDE), ce (PRIM_STRIDE)]
+        where coords[3] (last element of COORD_STRIDE) stores ao_loc
+
+        Memory layout per basis:
+            packed[i, 0:3] = coords[i, 0:3]  (x, y, z)
+            packed[i, 3] = ao_loc[i]
+            packed[i, 4:4+PRIM_STRIDE] = ce[i]
+
+        Returns:
+            dict with keys:
+                - 'coords': (nbasis, COORD_STRIDE) fp32 array with ao_loc in coords[:, 3]
+                - 'ce': (nbasis, PRIM_STRIDE) fp32 array
+                - 'ao_loc': (nbasis+1,) fp32 array (cast from int32)
+                - 'packed': (nbasis, COORD_STRIDE+PRIM_STRIDE) fp32 array
+        """
+        if self._basis_data_fp32 is None:
+            # Get base data in fp32
+            coords_fp32 = cp.ascontiguousarray(self.coords_fp32, dtype=np.float32)
+            ce_fp32 = cp.ascontiguousarray(self.ce_fp32, dtype=np.float32)
+            ao_loc_fp32 = cp.ascontiguousarray(cp.asarray(self.ao_loc, dtype=np.float32))
+
+            # Create packed array: coords (with ao_loc in last element) + ce
+            nbasis = self.nbasis
+            packed_stride = COORD_STRIDE + PRIM_STRIDE
+            packed = cp.empty((nbasis, packed_stride), dtype=np.float32, order='C')
+
+            # Pack coords with ao_loc in the last element
+            coords_with_ao_loc = coords_fp32.copy()
+            coords_with_ao_loc[:, COORD_STRIDE-1] = ao_loc_fp32[:-1]  # Store ao_loc in coords[:, 3]
+
+            # Pack data contiguously: [coords with ao_loc, ce]
+            packed[:, 0:COORD_STRIDE] = coords_with_ao_loc
+            packed[:, COORD_STRIDE:] = ce_fp32
+
+            self._basis_data_fp32 = {
+                'coords': coords_with_ao_loc,
+                'ce': ce_fp32,
+                'ao_loc': ao_loc_fp32,
+                'packed': packed
+            }
+        return self._basis_data_fp32
+
+    @property
+    def basis_data_fp64(self) -> dict:
+        """
+        Contiguous FP64 basis data structure for efficient CUDA kernel access.
+
+        For each basis function, stores data in contiguous memory layout:
+        [coords (COORD_STRIDE), ce (PRIM_STRIDE)]
+        where coords[3] (last element of COORD_STRIDE) stores ao_loc
+
+        Memory layout per basis:
+            packed[i, 0:3] = coords[i, 0:3]  (x, y, z)
+            packed[i, 3] = ao_loc[i]
+            packed[i, 4:4+PRIM_STRIDE] = ce[i]
+
+        Returns:
+            dict with keys:
+                - 'coords': (nbasis, COORD_STRIDE) fp64 array with ao_loc in coords[:, 3]
+                - 'ce': (nbasis, PRIM_STRIDE) fp64 array
+                - 'ao_loc': (nbasis+1,) fp64 array (cast from int32)
+                - 'packed': (nbasis, COORD_STRIDE+PRIM_STRIDE) fp64 array
+        """
+        if self._basis_data_fp64 is None:
+            # Get base data in fp64
+            coords_fp64 = cp.ascontiguousarray(self.coords_fp64, dtype=np.float64)
+            ce_fp64 = cp.ascontiguousarray(self.ce_fp64, dtype=np.float64)
+            ao_loc_fp64 = cp.ascontiguousarray(cp.asarray(self.ao_loc, dtype=np.float64))
+
+            # Create packed array: coords (with ao_loc in last element) + ce
+            nbasis = self.nbasis
+            packed_stride = COORD_STRIDE + PRIM_STRIDE
+            packed = cp.empty((nbasis, packed_stride), dtype=np.float64, order='C')
+
+            # Pack coords with ao_loc in the last element
+            coords_with_ao_loc = coords_fp64.copy()
+            coords_with_ao_loc[:, COORD_STRIDE-1] = ao_loc_fp64[:-1]  # Store ao_loc in coords[:, 3]
+
+            # Pack data contiguously: [coords with ao_loc, ce]
+            packed[:, 0:COORD_STRIDE] = coords_with_ao_loc
+            packed[:, COORD_STRIDE:] = ce_fp64
+
+            self._basis_data_fp64 = {
+                'coords': coords_with_ao_loc,
+                'ce': ce_fp64,
+                'ao_loc': ao_loc_fp64,
+                'packed': packed
+            }
+        return self._basis_data_fp64
 
     @classmethod
     def from_mol(cls, mol, alignment: int = 4, dtype=np.float64) -> "BasisLayout":

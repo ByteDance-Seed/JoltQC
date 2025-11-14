@@ -21,10 +21,10 @@ from gpu4pyscf import dft
 import jqc.pyscf
 
 # atom = 'molecules/h2o.xyz'
-atom = "molecules/0031-irregular-nitrogenous.xyz"
+# atom = "molecules/0031-irregular-nitrogenous.xyz"
 # atom = 'molecules/0051-elongated-halogenated.xyz'
 # atom = 'molecules/0084-elongated-halogenated.xyz'
-# atom = 'molecules/0152-elongated-nitrogenous.xyz'
+atom = 'molecules/0152-elongated-nitrogenous.xyz'
 basis = "def2-tzvpp"
 #xc = "wb97m-v"
 xc = 'b3lyp'
@@ -37,14 +37,14 @@ lib.num_threads(8)
 # GPU4PySCF
 ##################
 
-verbose = 0
+verbose = 6
 
 mol = pyscf.M(atom=atom, basis=basis, output=f"gpu4pyscf-{basis}.log", verbose=verbose)
 mf = dft.RKS(mol, xc=xc)
 mf.grids.atom_grid = grids
 mf.nlcgrids.atom_grid = (50, 194)
-e_pyscf = mf.kernel()
-dm_pyscf = mf.make_rdm1().get()
+e_pyscf = 0.0 #mf.kernel()
+#dm_pyscf = mf.make_rdm1().get()
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
@@ -53,7 +53,7 @@ for i in range(count):
     mf.verbose = verbose
     mf.grids.atom_grid = grids
     mf.nlcgrids.atom_grid = (50, 194)
-    e_tot = mf.kernel()
+    e_tot = 0 #mf.kernel()
 end.record()
 end.synchronize()
 
