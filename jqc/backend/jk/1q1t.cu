@@ -93,6 +93,10 @@ void rys_jk(const int nao,
     //fac_sym *= (ish*nbas+jsh == ksh*nbas+lsh) ? half : one;
     fac_sym *= (ish == ksh && jsh == lsh) ? half : one;
     
+    fac_sym = (ksh > ish) ? zero : fac_sym;
+    fac_sym = (ish < jsh) ? zero : fac_sym;
+    fac_sym = (lsh > ksh) ? zero : fac_sym;
+
     // Compute base addresses for all shells (allows better instruction-level parallelism)
     const DataType* base_i = basis_data + ish * basis_stride;
     const DataType* base_j = basis_data + jsh * basis_stride;
