@@ -96,8 +96,19 @@ def _estimate_type1_shared_memory(li: int, lj: int, precision: str = "fp64") -> 
     fj_size = 3 * nfj
 
     total_doubles = rad_ang_size + rad_all_size + fi_size + fj_size
+    total_bytes = total_doubles * dtype_size
 
-    return total_doubles * dtype_size
+    # Raise error if shared memory exceeds device limit
+    device = cp.cuda.Device()
+    max_shared_mem = device.attributes['MaxSharedMemoryPerBlockOptin']
+    if total_bytes > max_shared_mem:
+        raise RuntimeError(
+            f"Shared memory requirement {total_bytes} bytes ({total_bytes/1024:.1f} KB) "
+            f"exceeds device limit {max_shared_mem} bytes for angular momentum combination "
+            f"li={li}, lj={lj}. Consider using smaller basis sets."
+        )
+
+    return total_bytes
 
 
 def _estimate_type1_ip_shared_memory(li: int, lj: int, precision: str = "fp64") -> int:
@@ -133,7 +144,7 @@ def _estimate_type1_ip_shared_memory(li: int, lj: int, precision: str = "fp64") 
 
     # Raise error if shared memory exceeds device limit
     device = cp.cuda.Device()
-    max_shared_mem = device.attributes['MaxSharedMemoryPerBlock']
+    max_shared_mem = device.attributes['MaxSharedMemoryPerBlockOptin']
     if total_bytes > max_shared_mem:
         raise RuntimeError(
             f"Shared memory requirement {total_bytes} bytes ({total_bytes/1024:.1f} KB) "
@@ -196,8 +207,19 @@ def _estimate_type1_ipip_shared_memory(
 
     # Total memory: buf1 + buf + kernel_memory (all separate)
     total_doubles = buf1_size + buf_size + kernel_memory
+    total_bytes = total_doubles * dtype_size
 
-    return total_doubles * dtype_size
+    # Raise error if shared memory exceeds device limit
+    device = cp.cuda.Device()
+    max_shared_mem = device.attributes['MaxSharedMemoryPerBlockOptin']
+    if total_bytes > max_shared_mem:
+        raise RuntimeError(
+            f"Shared memory requirement {total_bytes} bytes ({total_bytes/1024:.1f} KB) "
+            f"exceeds device limit {max_shared_mem} bytes for angular momentum combination "
+            f"li={li}, lj={lj}, variant={variant}. Consider using smaller basis sets."
+        )
+
+    return total_bytes
 
 
 def _estimate_type2_shared_memory(
@@ -257,8 +279,19 @@ def _estimate_type2_shared_memory(
         + fi_size
         + fj_size
     )
+    total_bytes = total_doubles * dtype_size
 
-    return total_doubles * dtype_size
+    # Raise error if shared memory exceeds device limit
+    device = cp.cuda.Device()
+    max_shared_mem = device.attributes['MaxSharedMemoryPerBlockOptin']
+    if total_bytes > max_shared_mem:
+        raise RuntimeError(
+            f"Shared memory requirement {total_bytes} bytes ({total_bytes/1024:.1f} KB) "
+            f"exceeds device limit {max_shared_mem} bytes for angular momentum combination "
+            f"li={li}, lj={lj}, lc={lc}. Consider using smaller basis sets."
+        )
+
+    return total_bytes
 
 
 def _estimate_type2_ip_shared_memory(
@@ -295,7 +328,7 @@ def _estimate_type2_ip_shared_memory(
     total_doubles = gctr_smem_size + buf_size + base_memory
     total_bytes = total_doubles * dtype_size
     device = cp.cuda.Device()
-    max_shared_mem = device.attributes['MaxSharedMemoryPerBlock']
+    max_shared_mem = device.attributes['MaxSharedMemoryPerBlockOptin']
     if total_bytes > max_shared_mem:
         raise RuntimeError(
             f"Shared memory requirement {total_bytes} bytes ({total_bytes/1024:.1f} KB) "
@@ -360,8 +393,19 @@ def _estimate_type2_ipip_shared_memory(
 
     # Total memory: buf1 + buf_size + kernel_memory (no longer overlapping after fix)
     total_doubles = buf1_size + buf_size + kernel_memory
+    total_bytes = total_doubles * dtype_size
 
-    return total_doubles * dtype_size
+    # Raise error if shared memory exceeds device limit
+    device = cp.cuda.Device()
+    max_shared_mem = device.attributes['MaxSharedMemoryPerBlockOptin']
+    if total_bytes > max_shared_mem:
+        raise RuntimeError(
+            f"Shared memory requirement {total_bytes} bytes ({total_bytes/1024:.1f} KB) "
+            f"exceeds device limit {max_shared_mem} bytes for angular momentum combination "
+            f"li={li}, lj={lj}, lc={lc}, variant={variant}. Consider using smaller basis sets."
+        )
+
+    return total_bytes
 
 
 def _compile_ecp_type2_kernel(li: int, lj: int, lc: int, precision: str = "fp64"):
