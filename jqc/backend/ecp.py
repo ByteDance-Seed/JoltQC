@@ -698,7 +698,7 @@ constexpr int LC = {lk};
 
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
-        ntasks = args[4]  # Number of tasks
+        ntasks = args[3]  # Number of tasks
         npi = args[-2]  # npi is second-to-last argument
         npj = args[-1]  # npj is last argument
         block_size = 128
@@ -890,7 +890,7 @@ constexpr int LC = {lk};
 
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
-        ntasks = args[4]  # Number of tasks
+        ntasks = args[3]  # Number of tasks
         npi = args[-2]  # npi is second-to-last argument
         npj = args[-1]  # npj is last argument
         block_size = 128
