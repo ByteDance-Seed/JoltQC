@@ -46,8 +46,7 @@ __device__ __forceinline__ const DataType2* load_ce_ptr(const DataType* __restri
 }
 
 extern "C" __global__
-void rys_jk(const int nbas,
-        const int nao,
+void rys_jk(const int nao,
         const DataType* __restrict__ basis_data,
         DataType* __restrict__ dm,
         double* __restrict__ vj,
@@ -141,7 +140,7 @@ void rys_jk(const int nbas,
     fac_sym *= (ksh == lsh) ? half : one;
     //fac_sym *= (ish*nbas+jsh == ksh*nbas+lsh) ? half : one;
     fac_sym *= ((ish == ksh) && (jsh == lsh)) ? half : one;
-    
+
     // Compute base addresses for all shells (allows better instruction-level parallelism)
     const DataType* base_i = basis_data + ish * basis_stride;
     const DataType* base_j = basis_data + jsh * basis_stride;

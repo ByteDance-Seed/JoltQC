@@ -293,7 +293,6 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                             start_fp32.record()
 
                         jk_fp32_kernel(
-                            nbas,
                             nao,
                             basis_data_fp32,
                             dms_fp32,
@@ -316,7 +315,6 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                             start_fp64.record()
 
                         jk_fp64_kernel(
-                            nbas,
                             nao,
                             basis_data_fp64,
                             dms,
