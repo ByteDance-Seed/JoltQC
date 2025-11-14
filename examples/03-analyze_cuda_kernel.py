@@ -28,10 +28,10 @@ import numpy as np
 from jqc.backend.jk_1q1t import gen_kernel
 
 # angular momentum
-li, lj, lk, ll = 0, 0, 0, 0
+li, lj, lk, ll = 3, 2, 1, 0
 
 # number of primitives
-npi, npj, npk, npl = 1, 1, 1, 1
+npi, npj, npk, npl = 1, 1, 3, 3
 
 # fragmentation for 1QnT algorithm
 frags = (10, 10, 1, 1)

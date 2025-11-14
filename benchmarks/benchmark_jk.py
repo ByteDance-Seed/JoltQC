@@ -64,10 +64,10 @@ basis = gto.basis.parse(
 #O    S
 #      0.02700058226E+00      1
 O    S
-      0.02700058226E+00      1
-      0.02700058226E+00      1 
-      0.02700058226E+00      1
-#      0.2700058226E+00      1
+      0.2700058226E+00      1
+      0.2700058226E+00      1 
+      0.2700058226E+00      1
+      0.2700058226E+00      1
 #      0.2700058226E+00      1
 #      0.2700058226E+00      1
 """
@@ -124,9 +124,9 @@ for i in range(n_warmup):
 start = cp.cuda.Event()
 end = cp.cuda.Event()
 start.record()
-mol.verbose = 6
+mol.verbose = 4
 vj_jit, vk_jit = get_jk_fp64(mol, dm, hermi=1)
-mol.verbose = 6
+mol.verbose = 4
 end.record()
 end.synchronize()
 jqc_time_ms = cp.cuda.get_elapsed_time(start, end)
