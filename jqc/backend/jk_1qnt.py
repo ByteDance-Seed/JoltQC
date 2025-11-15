@@ -29,7 +29,7 @@ from jqc.backend.cuda_scripts import (
     rys_roots_parallel_code,
 )
 from jqc.backend.util import generate_lookup_table
-from jqc.constants import COORD_STRIDE, MAX_SMEM, NPRIM_MAX, PRIM_STRIDE
+from jqc.constants import BASIS_STRIDE, MAX_SMEM, NPRIM_MAX
 
 __all__ = ["gen_kernel"]
 
@@ -259,9 +259,7 @@ constexpr int do_k = {int(do_k)};
 constexpr int smem_stride = {padded_stride(nsq_per_block)};
 // Inject constants to match host-side layout
 #define NPRIM_MAX {NPRIM_MAX}
-// PRIM_STRIDE here matches host scalar stride; device uses prim_stride = PRIM_STRIDE/2
-#define PRIM_STRIDE {PRIM_STRIDE}
-#define COORD_STRIDE {COORD_STRIDE}
+#define BASIS_STRIDE {BASIS_STRIDE}
 // for rys_roots
 constexpr int nroots = ((li+lj+lk+ll)/2+1);
 """

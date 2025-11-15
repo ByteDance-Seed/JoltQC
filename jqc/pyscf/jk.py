@@ -99,10 +99,11 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
     group_info = basis_layout.group_info
     nbas = basis_layout.nbasis
     mol = basis_layout._mol
-    ce_fp32 = basis_layout.ce_fp32
-    coords_fp32 = basis_layout.coords_fp32
-    ce_fp64 = basis_layout.ce_fp64
-    coords_fp64 = basis_layout.coords_fp64
+
+    # Get packed basis data arrays [coords (with ao_loc in coords[3]), ce]
+    basis_data_fp32 = basis_layout.basis_data_fp32['packed']
+    basis_data_fp64 = basis_layout.basis_data_fp64['packed']
+
     ao_loc = cp.asarray(basis_layout.ao_loc)
 
     def get_jk(
@@ -224,11 +225,16 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             ntasks_fp32 = 0
 
             # Setup events for timing the critical kernels
-            start = end = None
+            time_gen_tasks = 0.0
+            time_fp32 = 0.0
+            time_fp64 = 0.0
             if logger.verbose > lib.logger.INFO:
-                start = cp.cuda.Event()
-                end = cp.cuda.Event()
-                start.record()
+                start_gen = cp.cuda.Event()
+                end_gen = cp.cuda.Event()
+                start_fp32 = cp.cuda.Event()
+                end_fp32 = cp.cuda.Event()
+                start_fp64 = cp.cuda.Event()
+                end_fp64 = cp.cuda.Event()
 
             # Pre-generate kernels for this (l_i,l_j,l_k,l_l) once
             jk_fp32_kernel = gen_jk_kernel(
@@ -254,6 +260,9 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             for t_ij0, t_ij1 in lib.prange(0, ntile_ij, PAIR_TILE_SIZE):
                 for t_kl0, t_kl1 in lib.prange(0, ntile_kl, PAIR_TILE_SIZE):
                     # Generate tasks for fp32 and fp64
+                    if logger.verbose > lib.logger.INFO:
+                        start_gen.record()
+
                     gen_tasks_fun(
                         quartet_list,
                         info,
@@ -268,6 +277,11 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                     kern_counts += 1
                     info_cpu = info.get()
 
+                    if logger.verbose > lib.logger.INFO:
+                        end_gen.record()
+                        end_gen.synchronize()
+                        time_gen_tasks += cp.cuda.get_elapsed_time(start_gen, end_gen)
+
                     # Get task counts
                     n_quartets_fp32 = int(info_cpu[1].item())
                     offset = int(info_cpu[2].item())
@@ -275,12 +289,12 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
                     # Launch FP32 and FP64 kernels asynchronously
                     if n_quartets_fp32 > 0:
+                        if logger.verbose > lib.logger.INFO:
+                            start_fp32.record()
+
                         jk_fp32_kernel(
-                            nbas,
                             nao,
-                            ao_loc,
-                            coords_fp32,
-                            ce_fp32,
+                            basis_data_fp32,
                             dms_fp32,
                             vj,
                             vk,
@@ -291,13 +305,18 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         kern_counts += 1
                         ntasks_fp32 += n_quartets_fp32
 
+                        if logger.verbose > lib.logger.INFO:
+                            end_fp32.record()
+                            end_fp32.synchronize()
+                            time_fp32 += cp.cuda.get_elapsed_time(start_fp32, end_fp32)
+
                     if n_quartets_fp64 > 0:
+                        if logger.verbose > lib.logger.INFO:
+                            start_fp64.record()
+
                         jk_fp64_kernel(
-                            nbas,
                             nao,
-                            ao_loc,
-                            coords_fp64,
-                            ce_fp64,
+                            basis_data_fp64,
                             dms,
                             vj,
                             vk,
@@ -308,17 +327,21 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         kern_counts += 1
                         ntasks_fp64 += n_quartets_fp64
 
+                        if logger.verbose > lib.logger.INFO:
+                            end_fp64.record()
+                            end_fp64.synchronize()
+                            time_fp64 += cp.cuda.get_elapsed_time(start_fp64, end_fp64)
+
             if logger.verbose > lib.logger.INFO:
-                end.record()
-                end.synchronize()
-                elasped_time = cp.cuda.get_elapsed_time(start, end)
+                elasped_time = time_gen_tasks + time_fp32 + time_fp64
                 ntasks = max(ntasks_fp64 + ntasks_fp32, 1)
                 llll = f"({l_symb[i]}{l_symb[j]}|{l_symb[k]}{l_symb[l]})"
                 msg_kernel = f"kernel type {llll}/({ip}{jp}{kp}{lp}), "
                 msg_fp64 = f"FP64 tasks = {ntasks_fp64:10d}, "
-                msg_fp32 = f"FP32 tasks = {ntasks_fp32:10d}, total time = {elasped_time:5.2f} ms, "
+                msg_fp32 = f"FP32 tasks = {ntasks_fp32:10d}, "
+                msg_time = f"gen_tasks = {time_gen_tasks:5.2f} ms, FP32 = {time_fp32:5.2f} ms, FP64 = {time_fp64:5.2f} ms, total = {elasped_time:5.2f} ms, "
                 msg_ratio = f"FP64 ratio = {ntasks_fp64/ntasks:.2f}"
-                msg = msg_kernel + msg_fp64 + msg_fp32 + msg_ratio
+                msg = msg_kernel + msg_fp64 + msg_fp32 + msg_time + msg_ratio
                 logger.debug1(msg)
                 timing_counter[llll] += elasped_time
 

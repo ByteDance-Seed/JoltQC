@@ -24,7 +24,7 @@ import numpy as np
 
 from jqc.backend.cuda_scripts import jk_1q1t_code, rys_roots_code, rys_roots_data
 from jqc.backend.util import generate_lookup_table
-from jqc.constants import COORD_STRIDE, NPRIM_MAX, PRIM_STRIDE
+from jqc.constants import BASIS_STRIDE, NPRIM_MAX
 
 __all__ = ["gen_kernel"]
 
@@ -66,9 +66,7 @@ constexpr int do_k = {int(do_k)};
 constexpr int nsq_per_block = {nsq_per_block};
 // Inject constants to match host-side layout
 #define NPRIM_MAX {NPRIM_MAX}
-// PRIM_STRIDE here matches host scalar stride; device uses prim_stride = PRIM_STRIDE/2
-#define PRIM_STRIDE {PRIM_STRIDE}
-#define COORD_STRIDE {COORD_STRIDE}
+#define BASIS_STRIDE {BASIS_STRIDE}
 
 // for rys_roots
 constexpr int nroots = ((li+lj+lk+ll)/2+1);

@@ -79,13 +79,12 @@ void type1_rad_ang(double* __restrict__ rad_ang,
 
     // Allocate buffers large enough for the maximum l value used in type1_ang_nuc_l functions (l=10)
     // This ensures we don't have illegal memory access when functions access rx[10], ry[10], rz[10]
-    constexpr int max_l = 10;
-    double rx[max_l+1], ry[max_l+1], rz[max_l+1];
-    double c_buf[2*max_l+1];
+    double rx[LIJ+1], ry[LIJ+1], rz[LIJ+1];
+    double c_buf[2*LIJ+1];
 
-    // Initialize power arrays up to max_l
+    // Initialize power arrays up to LIJ
     rx[0] = ry[0] = rz[0] = 1.0;
-    for (int i = 1; i <= max_l; i++) {
+    for (int i = 1; i <= LIJ; i++) {
         rx[i] = rx[i-1] * unitr[0];
         ry[i] = ry[i-1] * unitr[1];
         rz[i] = rz[i-1] * unitr[2];
@@ -134,14 +133,27 @@ void type1_rad_ang(double* __restrict__ rad_ang,
 }
 
 
+// Packed basis data structure: [coords (4), ce (BASIS_STRIDE-4)]
+constexpr int basis_stride = BASIS_STRIDE;
+
+// Helper to load coords (with ao_loc in .w field) from packed basis_data
+__device__ __forceinline__ DataType4 load_coords_ecp(const DataType* __restrict__ basis_data, int ish) {
+    const DataType* base = basis_data + ish * basis_stride;
+    return *reinterpret_cast<const DataType4*>(base);
+}
+
+// Helper to get pointer to ce data for a basis
+__device__ __forceinline__ const DataType2* load_ce_ptr_ecp(const DataType* __restrict__ basis_data, int ish) {
+    return reinterpret_cast<const DataType2*>(basis_data + ish * basis_stride + 4);
+}
+
 // Refactored to take nprim as runtime parameters instead of constexpr injection
 extern "C" __global__
 void type1_cart(double* __restrict__ gctr,
-                const int* __restrict__ ao_loc, const int nao,
+                const int nao,
                 const int* __restrict__ tasks, const int ntasks,
                 const int* __restrict__ ecpbas, const int* __restrict__ ecploc,
-                const DataType4* __restrict__ coords,
-                const DataType2* __restrict__ coeff_exp,
+                const DataType* __restrict__ basis_data,
                 const int* __restrict__ atm, const double* __restrict__ env,
                 const int npi, const int npj)
 {
@@ -154,27 +166,20 @@ void type1_cart(double* __restrict__ gctr,
     const int jsh = tasks[task_id + ntasks];
     const int ksh = tasks[task_id + 2*ntasks];
 
-    // Coefficient layout: each shell occupies PRIM_STRIDE scalars -> PRIM_STRIDE/2 (c,e) pairs
-    // Use pair-stride indexing to access the (c,e) DataType2 records of a given shell
-    constexpr int prim_stride = PRIM_STRIDE / 2;
-
-    // Coordinates from basis layout. Coordinates are stored as a flat
-    // array with stride COORD_STRIDE. Use scalar pointer + stride to read
-    // x/y/z to avoid relying on struct size/alignment assumptions.
-    const DataType *coords_scalar = reinterpret_cast<const DataType*>(coords);
-    const DataType *ri = coords_scalar + ish * COORD_STRIDE;
-    const DataType *rj = coords_scalar + jsh * COORD_STRIDE;
+    // Load coordinates from packed basis_data
+    DataType4 ri = load_coords_ecp(basis_data, ish);
+    DataType4 rj = load_coords_ecp(basis_data, jsh);
 
     const int atm_id = ecpbas[ATOM_OF+ecploc[ksh]*BAS_SLOTS];
     const double *rc = env + atm[PTR_COORD+atm_id*ATM_SLOTS];
 
     double rca[3], rcb[3];
-    rca[0] = rc[0] - ri[0];
-    rca[1] = rc[1] - ri[1];
-    rca[2] = rc[2] - ri[2];
-    rcb[0] = rc[0] - rj[0];
-    rcb[1] = rc[1] - rj[1];
-    rcb[2] = rc[2] - rj[2];
+    rca[0] = rc[0] - ri.x;
+    rca[1] = rc[1] - ri.y;
+    rca[2] = rc[2] - ri.z;
+    rcb[0] = rc[0] - rj.x;
+    rcb[1] = rc[1] - rj.y;
+    rcb[2] = rc[2] - rj.z;
     const double r2ca = rca[0]*rca[0] + rca[1]*rca[1] + rca[2]*rca[2];
     const double r2cb = rcb[0]*rcb[0] + rcb[1]*rcb[1] + rcb[2]*rcb[2];
 
@@ -188,7 +193,7 @@ void type1_cart(double* __restrict__ gctr,
 
     // Allocate rad_ang from shared memory
     double* rad_ang = reinterpret_cast<double*>(shared_mem);
-    size_t rad_ang_offset = LIJ1*LIJ1*LIJ1 * sizeof(double);
+    constexpr size_t rad_ang_offset = LIJ1*LIJ1*LIJ1 * sizeof(double);
 
     // Allocate rad_all from shared memory
     double* rad_all = reinterpret_cast<double*>(shared_mem + rad_ang_offset);
@@ -197,14 +202,16 @@ void type1_cart(double* __restrict__ gctr,
 
     // ECP Type1 normalization factor - basis layout already includes normalization
     constexpr double fac = 16.0 * M_PI * M_PI;
+    // Load ce pointers from packed basis_data
+    const DataType2* cei_ptr = load_ce_ptr_ecp(basis_data, ish);
+    const DataType2* cej_ptr = load_ce_ptr_ecp(basis_data, jsh);
+
     for (int ip = 0; ip < npi; ip++){
-        const int ish_ip = ip + ish * prim_stride;
-        const DataType2 cei = coeff_exp[ish_ip];
+        const DataType2 cei = cei_ptr[ip];
         const DataType ai = cei.e;
         const DataType ci = cei.c;
         for (int jp = 0; jp < npj; jp++){
-            const int jsh_jp = jp + jsh * prim_stride;
-            const DataType2 cej = coeff_exp[jsh_jp];
+            const DataType2 cej = cej_ptr[jp];
             const DataType aj = cej.e;
             const DataType cj = cej.c;
 
@@ -228,9 +235,9 @@ void type1_cart(double* __restrict__ gctr,
     constexpr int nfj = (LJ+1) * (LJ+2) / 2;
 
     // Allocate fi and fj from shared memory
-    size_t rad_all_offset = rad_ang_offset + LIJ1*LIJ1 * sizeof(double);
+    constexpr size_t rad_all_offset = rad_ang_offset + LIJ1*LIJ1 * sizeof(double);
     double* fi = reinterpret_cast<double*>(shared_mem + rad_all_offset);
-    size_t fi_offset = rad_all_offset + 3*nfi * sizeof(double);
+    constexpr size_t fi_offset = rad_all_offset + 3*nfi * sizeof(double);
     double* fj = reinterpret_cast<double*>(shared_mem + fi_offset);
 
     cache_fac<LI>(fi, rca);
@@ -271,8 +278,8 @@ void type1_cart(double* __restrict__ gctr,
             }}}
         }}}
 
-        const int ioff = ao_loc[ish];
-        const int joff = ao_loc[jsh];
+        const int ioff = (int)ri.w;
+        const int joff = (int)rj.w;
         // Row-major indexing: (row, col) = (mi+ioff, mj+joff)
         // Write both symmetric positions with row-major indexing
         atomicAdd(gctr + (mi+ioff)*nao + (mj+joff), tmp);

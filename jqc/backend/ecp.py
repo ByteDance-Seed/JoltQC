@@ -31,7 +31,7 @@ import cupy as cp
 import numpy as np
 from pyscf import gto
 
-from jqc.constants import COORD_STRIDE, PRIM_STRIDE, MAX_L_ECP
+from jqc.constants import BASIS_STRIDE, MAX_L_ECP
 
 __all__ = [
     "ecp_generator",
@@ -62,7 +62,7 @@ _ecp_kernel_cache = {}
 def _get_compile_options():
     # Compilation options following JoltQC style
     # Note: ECP derivative normalization is handled in basis coefficients; no extra scaling.
-    return ("-std=c++17", "--use_fast_math", "--minimal")
+    return ("-std=c++17", "--use_fast_math")
 
 
 def _estimate_type1_shared_memory(li: int, lj: int, precision: str = "fp64") -> int:
@@ -96,8 +96,19 @@ def _estimate_type1_shared_memory(li: int, lj: int, precision: str = "fp64") -> 
     fj_size = 3 * nfj
 
     total_doubles = rad_ang_size + rad_all_size + fi_size + fj_size
+    total_bytes = total_doubles * dtype_size
 
-    return total_doubles * dtype_size
+    # Raise error if shared memory exceeds device limit
+    device = cp.cuda.Device()
+    max_shared_mem = device.attributes['MaxSharedMemoryPerBlockOptin']
+    if total_bytes > max_shared_mem:
+        raise RuntimeError(
+            f"Shared memory requirement {total_bytes} bytes ({total_bytes/1024:.1f} KB) "
+            f"exceeds device limit {max_shared_mem} bytes for angular momentum combination "
+            f"li={li}, lj={lj}. Consider using smaller basis sets."
+        )
+
+    return total_bytes
 
 
 def _estimate_type1_ip_shared_memory(li: int, lj: int, precision: str = "fp64") -> int:
@@ -131,11 +142,13 @@ def _estimate_type1_ip_shared_memory(li: int, lj: int, precision: str = "fp64") 
     total_doubles = base_memory + gctr_smem_size + buf_size
     total_bytes = total_doubles * dtype_size
 
-    # Raise error if shared memory exceeds 96KB limit
-    if total_bytes > 96 * 1024:
+    # Raise error if shared memory exceeds device limit
+    device = cp.cuda.Device()
+    max_shared_mem = device.attributes['MaxSharedMemoryPerBlockOptin']
+    if total_bytes > max_shared_mem:
         raise RuntimeError(
             f"Shared memory requirement {total_bytes} bytes ({total_bytes/1024:.1f} KB) "
-            f"exceeds 96KB limit for angular momentum combination. "
+            f"exceeds device limit {max_shared_mem} bytes for angular momentum combination. "
             f"Consider using smaller basis sets or enabling global memory fallback."
         )
 
@@ -194,8 +207,19 @@ def _estimate_type1_ipip_shared_memory(
 
     # Total memory: buf1 + buf + kernel_memory (all separate)
     total_doubles = buf1_size + buf_size + kernel_memory
+    total_bytes = total_doubles * dtype_size
 
-    return total_doubles * dtype_size
+    # Raise error if shared memory exceeds device limit
+    device = cp.cuda.Device()
+    max_shared_mem = device.attributes['MaxSharedMemoryPerBlockOptin']
+    if total_bytes > max_shared_mem:
+        raise RuntimeError(
+            f"Shared memory requirement {total_bytes} bytes ({total_bytes/1024:.1f} KB) "
+            f"exceeds device limit {max_shared_mem} bytes for angular momentum combination "
+            f"li={li}, lj={lj}, variant={variant}. Consider using smaller basis sets."
+        )
+
+    return total_bytes
 
 
 def _estimate_type2_shared_memory(
@@ -255,8 +279,19 @@ def _estimate_type2_shared_memory(
         + fi_size
         + fj_size
     )
+    total_bytes = total_doubles * dtype_size
 
-    return total_doubles * dtype_size
+    # Raise error if shared memory exceeds device limit
+    device = cp.cuda.Device()
+    max_shared_mem = device.attributes['MaxSharedMemoryPerBlockOptin']
+    if total_bytes > max_shared_mem:
+        raise RuntimeError(
+            f"Shared memory requirement {total_bytes} bytes ({total_bytes/1024:.1f} KB) "
+            f"exceeds device limit {max_shared_mem} bytes for angular momentum combination "
+            f"li={li}, lj={lj}, lc={lc}. Consider using smaller basis sets."
+        )
+
+    return total_bytes
 
 
 def _estimate_type2_ip_shared_memory(
@@ -292,12 +327,12 @@ def _estimate_type2_ip_shared_memory(
 
     total_doubles = gctr_smem_size + buf_size + base_memory
     total_bytes = total_doubles * dtype_size
-
-    # Raise error if shared memory exceeds 96KB limit
-    if total_bytes > 96 * 1024:
+    device = cp.cuda.Device()
+    max_shared_mem = device.attributes['MaxSharedMemoryPerBlockOptin']
+    if total_bytes > max_shared_mem:
         raise RuntimeError(
             f"Shared memory requirement {total_bytes} bytes ({total_bytes/1024:.1f} KB) "
-            f"exceeds 96KB limit for angular momentum combination. "
+            f"exceeds device limit {max_shared_mem} bytes for angular momentum combination. "
             f"Consider using smaller basis sets or enabling global memory fallback."
         )
 
@@ -358,8 +393,19 @@ def _estimate_type2_ipip_shared_memory(
 
     # Total memory: buf1 + buf_size + kernel_memory (no longer overlapping after fix)
     total_doubles = buf1_size + buf_size + kernel_memory
+    total_bytes = total_doubles * dtype_size
 
-    return total_doubles * dtype_size
+    # Raise error if shared memory exceeds device limit
+    device = cp.cuda.Device()
+    max_shared_mem = device.attributes['MaxSharedMemoryPerBlockOptin']
+    if total_bytes > max_shared_mem:
+        raise RuntimeError(
+            f"Shared memory requirement {total_bytes} bytes ({total_bytes/1024:.1f} KB) "
+            f"exceeds device limit {max_shared_mem} bytes for angular momentum combination "
+            f"li={li}, lj={lj}, lc={lc}, variant={variant}. Consider using smaller basis sets."
+        )
+
+    return total_bytes
 
 
 def _compile_ecp_type2_kernel(li: int, lj: int, lc: int, precision: str = "fp64"):
@@ -423,8 +469,7 @@ constexpr int LC = {lc};
     # Inject layout constants via -D to avoid string duplication
     opts = (
         *_get_compile_options(),
-        f"-DPRIM_STRIDE={PRIM_STRIDE}",
-        f"-DCOORD_STRIDE={COORD_STRIDE}",
+        f"-DBASIS_STRIDE={BASIS_STRIDE}",
     )
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function("type2_cart")
@@ -436,7 +481,8 @@ constexpr int LC = {lc};
     # Create wrapper function following JoltQC style
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
-        ntasks = args[4]  # Number of tasks
+        # After removing ao_loc, ntasks is now at index 3
+        ntasks = args[3]  # Number of tasks
         npi = args[-2]  # npi is second-to-last argument
         npj = args[-1]  # npj is last argument
         block_size = 128
@@ -507,8 +553,7 @@ constexpr int LJ = {lj};
     # Compile module following JoltQC pattern
     opts = (
         *_get_compile_options(),
-        f"-DPRIM_STRIDE={PRIM_STRIDE}",
-        f"-DCOORD_STRIDE={COORD_STRIDE}",
+        f"-DBASIS_STRIDE={BASIS_STRIDE}",
     )
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function("type1_cart")
@@ -524,7 +569,8 @@ constexpr int LJ = {lj};
     # Create wrapper function following JoltQC style
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
-        ntasks = args[4]  # Number of tasks
+        # After removing ao_loc, ntasks is now at index 3
+        ntasks = args[3]  # Number of tasks
         npi = args[-2]  # npi is second-to-last argument
         npj = args[-1]  # npj is last argument
         block_size = 128
@@ -593,8 +639,7 @@ constexpr int LJ = {lj};
     # Compile module
     opts = (
         *_get_compile_options(),
-        f"-DPRIM_STRIDE={PRIM_STRIDE}",
-        f"-DCOORD_STRIDE={COORD_STRIDE}",
+        f"-DBASIS_STRIDE={BASIS_STRIDE}",
     )
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function("type1_cart_ip1")
@@ -610,7 +655,8 @@ constexpr int LJ = {lj};
 
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
-        ntasks = args[4]  # Number of tasks
+        # After removing ao_loc, ntasks is now at index 3
+        ntasks = args[3]  # Number of tasks
         npi = args[-2]  # npi is second-to-last argument
         npj = args[-1]  # npj is last argument
         block_size = 128
@@ -682,8 +728,7 @@ constexpr int LC = {lk};
     # Compile module
     opts = (
         *_get_compile_options(),
-        f"-DPRIM_STRIDE={PRIM_STRIDE}",
-        f"-DCOORD_STRIDE={COORD_STRIDE}",
+        f"-DBASIS_STRIDE={BASIS_STRIDE}",
     )
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel = mod.get_function("type2_cart_ip1")
@@ -699,7 +744,7 @@ constexpr int LC = {lk};
 
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
-        ntasks = args[4]  # Number of tasks
+        ntasks = args[3]  # Number of tasks
         npi = args[-2]  # npi is second-to-last argument
         npj = args[-1]  # npj is last argument
         block_size = 128
@@ -777,8 +822,7 @@ constexpr int LJ = {lj};
     # Compile module
     opts = (
         *_get_compile_options(),
-        f"-DPRIM_STRIDE={PRIM_STRIDE}",
-        f"-DCOORD_STRIDE={COORD_STRIDE}",
+        f"-DBASIS_STRIDE={BASIS_STRIDE}",
     )
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel_name = f"type1_cart_{variant}"
@@ -795,7 +839,8 @@ constexpr int LJ = {lj};
 
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
-        ntasks = args[4]  # Number of tasks
+        # After removing ao_loc, ntasks is now at index 3
+        ntasks = args[3]  # Number of tasks
         npi = args[-2]  # npi is second-to-last argument
         npj = args[-1]  # npj is last argument
         block_size = 128
@@ -874,8 +919,7 @@ constexpr int LC = {lk};
     # Compile module
     opts = (
         *_get_compile_options(),
-        f"-DPRIM_STRIDE={PRIM_STRIDE}",
-        f"-DCOORD_STRIDE={COORD_STRIDE}",
+        f"-DBASIS_STRIDE={BASIS_STRIDE}",
     )
     mod = cp.RawModule(code=cuda_source, options=opts)
     kernel_name = f"type2_cart_{variant}"
@@ -892,7 +936,7 @@ constexpr int LC = {lk};
 
     def kernel_wrapper(*args):
         # Extract nprim values from additional arguments (last 2 arguments)
-        ntasks = args[4]  # Number of tasks
+        ntasks = args[3]  # Number of tasks
         npi = args[-2]  # npi is second-to-last argument
         npj = args[-1]  # npj is last argument
         block_size = 128
@@ -999,20 +1043,21 @@ def get_ecp_ip(
     # Use splitted_mol for computation (like gpu4pyscf)
     atm = cp.asarray(splitted_mol._atm, dtype=cp.int32)
     env = cp.asarray(splitted_mol._env, dtype=dtype)
-    ao_loc = cp.asarray(basis_layout.ao_loc, dtype=cp.int32)
-    nao = int(ao_loc[-1].item())
+
+    # Get packed basis data (coords with ao_loc embedded, plus coefficients/exponents)
+    basis_data_dict = basis_layout.basis_data_fp64
+    basis_data = basis_data_dict['packed']
+    # ECP kernels write to cartesian AO indices, so use cart nao from ao_loc
+    nao_cart = int(basis_layout.ao_loc_no_pad[-1])
 
     ecpbas = cp.asarray(sorted_ecpbas, dtype=cp.int32)
     ecploc = cp.asarray(ecp_loc, dtype=cp.int32)
 
-    # Initialize result matrix in splitted_mol basis
+    # Initialize result matrix in internal cartesian basis
     # IP integrals have 3 components for each ECP atom (x,y,z derivatives)
     # For now, keep backward compatibility with flattened format for kernel interface
     n_ecp_atoms = len(ecp_atoms)
-    mat1_flat = cp.zeros((3 * n_ecp_atoms, nao, nao), dtype=dtype)
-    # Ensure device arrays for coords and coeff/exp
-    coords_dev = cp.asarray(basis_layout.coords, dtype=dtype)
-    ce_dev = cp.asarray(basis_layout.ce, dtype=dtype)
+    mat1_flat = cp.zeros((3 * n_ecp_atoms, nao_cart, nao_cart), dtype=dtype)
 
     # Compute ECP IP integrals for each basis group combination and ECP type
     # Use full (i,j) combinations to capture both i- and j-side contributions
@@ -1054,14 +1099,12 @@ def get_ecp_ip(
                 if lk < 0:
                     _compile_ecp_type1_ip_kernel(li, lj, precision)(
                         mat1_flat,
-                        ao_loc,
-                        nao,
+                        nao_cart,
                         tasks,
                         ntasks,
                         ecpbas,
                         ecploc,
-                        coords_dev,
-                        ce_dev,
+                        basis_data,
                         atm,
                         env,
                         npi,
@@ -1071,14 +1114,12 @@ def get_ecp_ip(
                     # Type2 IP kernel for semi-local channels
                     _compile_ecp_type2_ip_kernel(li, lj, lk, precision)(
                         mat1_flat,
-                        ao_loc,
-                        nao,
+                        nao_cart,
                         tasks,
                         ntasks,
                         ecpbas,
                         ecploc,
-                        coords_dev,
-                        ce_dev,
+                        basis_data,
                         atm,
                         env,
                         npi,
@@ -1086,12 +1127,12 @@ def get_ecp_ip(
                     )
     result = cp.zeros((n_ecp_atoms, 3, nao_orig, nao_orig), dtype=dtype)
 
-    # Map ECP atoms and transform each component from flattened format
+    # Map ECP atoms and transform each component from internal cart basis to mol basis
     for i in range(n_ecp_atoms):
         for comp in range(3):
             flat_idx = 3 * i + comp
             result[i, comp] = basis_layout.dm_to_mol(
-                mat1_flat[flat_idx : flat_idx + 1].reshape(1, nao, nao)
+                mat1_flat[flat_idx : flat_idx + 1].reshape(1, nao_cart, nao_cart)
             )[0]
 
     return result
@@ -1163,20 +1204,21 @@ def get_ecp_ipip(
     # Use splitted_mol for computation (like gpu4pyscf)
     atm = cp.asarray(splitted_mol._atm, dtype=cp.int32)
     env = cp.asarray(splitted_mol._env, dtype=dtype)
-    ao_loc = cp.asarray(basis_layout.ao_loc, dtype=cp.int32)
-    nao = int(ao_loc[-1].item())
+
+    # Get packed basis data (coords with ao_loc embedded, plus coefficients/exponents)
+    basis_data_dict = basis_layout.basis_data_fp64
+    basis_data = basis_data_dict['packed']
+    # ECP kernels write to cartesian AO indices, so use cart nao from ao_loc
+    nao_cart = int(basis_layout.ao_loc_no_pad[-1])
 
     ecpbas = cp.asarray(sorted_ecpbas, dtype=cp.int32)
     ecploc = cp.asarray(ecp_loc, dtype=cp.int32)
 
-    # Initialize result matrix in splitted_mol basis
+    # Initialize result matrix in internal cartesian basis
     # IPIP integrals have 9 components for each ECP atom (xx,xy,xz,yx,yy,yz,zx,zy,zz derivatives)
     # For now, keep backward compatibility with flattened format for kernel interface
     n_ecp_atoms = len(ecp_atoms)
-    mat1_flat = cp.zeros((9 * n_ecp_atoms, nao, nao), dtype=dtype)
-    # Ensure device arrays for coords and coeff/exp
-    coords_dev = cp.asarray(basis_layout.coords, dtype=dtype)
-    ce_dev = cp.asarray(basis_layout.ce, dtype=dtype)
+    mat1_flat = cp.zeros((9 * n_ecp_atoms, nao_cart, nao_cart), dtype=dtype)
 
     # Compute ECP IPIP integrals for each basis group combination and ECP type
     # Use full (i,j) combinations to capture both i- and j-side contributions
@@ -1215,14 +1257,12 @@ def get_ecp_ipip(
                 if lk < 0:
                     _compile_ecp_type1_ipip_kernel(li, lj, ip_type, precision)(
                         mat1_flat,
-                        ao_loc,
-                        nao,
+                        nao_cart,
                         tasks,
                         ntasks,
                         ecpbas,
                         ecploc,
-                        coords_dev,
-                        ce_dev,
+                        basis_data,
                         atm,
                         env,
                         npi,
@@ -1232,14 +1272,12 @@ def get_ecp_ipip(
                     # Type2 IPIP kernel for semi-local channels
                     _compile_ecp_type2_ipip_kernel(li, lj, lk, ip_type, precision)(
                         mat1_flat,
-                        ao_loc,
-                        nao,
+                        nao_cart,
                         tasks,
                         ntasks,
                         ecpbas,
                         ecploc,
-                        coords_dev,
-                        ce_dev,
+                        basis_data,
                         atm,
                         env,
                         npi,
@@ -1248,12 +1286,12 @@ def get_ecp_ipip(
 
     result = cp.zeros((n_ecp_atoms, 9, nao_orig, nao_orig), dtype=dtype)
 
-    # Map ECP atoms and transform each component from flattened format
+    # Map ECP atoms and transform each component from internal cart basis to mol basis
     for i in range(n_ecp_atoms):
         for comp in range(9):
             flat_idx = 9 * i + comp
             result[i, comp] = basis_layout.dm_to_mol(
-                mat1_flat[flat_idx : flat_idx + 1].reshape(1, nao, nao)
+                mat1_flat[flat_idx : flat_idx + 1].reshape(1, nao_cart, nao_cart)
             )[0]
 
     return result
@@ -1377,19 +1415,18 @@ def get_ecp(mol_or_basis_layout, precision: str = "fp64") -> cp.ndarray:
     # Use splitted_mol for computation (like gpu4pyscf)
     atm = cp.asarray(splitted_mol._atm, dtype=cp.int32)
     env = cp.asarray(splitted_mol._env, dtype=dtype)
-    # Use AO offsets with padding entries (dims for padded shells are zero)
-    # This matches how tasks index shells in the grouped layout
-    ao_loc = cp.asarray(basis_layout.ao_loc, dtype=cp.int32)
-    nao = int(ao_loc[-1].item())
+
+    # Get packed basis data (coords with ao_loc embedded, plus coefficients/exponents)
+    basis_data_dict = basis_layout.basis_data_fp64
+    basis_data = basis_data_dict['packed']
+    # ECP kernels write to cartesian AO indices, so use cart nao from ao_loc
+    nao_cart = int(basis_layout.ao_loc_no_pad[-1])
 
     ecpbas = cp.asarray(sorted_ecpbas, dtype=cp.int32)
     ecploc = cp.asarray(ecp_loc, dtype=cp.int32)
 
-    # Initialize result matrix in splitted_mol basis
-    mat1 = cp.zeros((nao, nao), dtype=dtype)
-    # Ensure device arrays for coords and coeff/exp
-    coords_dev = cp.asarray(basis_layout.coords, dtype=dtype)
-    ce_dev = cp.asarray(basis_layout.ce, dtype=dtype)
+    # Initialize result matrix in internal cartesian basis
+    mat1 = cp.zeros((nao_cart, nao_cart), dtype=dtype)
 
     # Compute ECP integrals for each basis group combination and ECP type
     # Following gpu4pyscf's triple loop pattern
@@ -1432,14 +1469,12 @@ def get_ecp(mol_or_basis_layout, precision: str = "fp64") -> cp.ndarray:
                 if lk < 0:
                     _compile_ecp_type1_kernel(li, lj, precision)(
                         mat1,
-                        ao_loc,
-                        nao,
+                        nao_cart,
                         tasks,
                         ntasks,
                         ecpbas,
                         ecploc,
-                        coords_dev,
-                        ce_dev,
+                        basis_data,
                         atm,
                         env,
                         npi,
@@ -1449,23 +1484,21 @@ def get_ecp(mol_or_basis_layout, precision: str = "fp64") -> cp.ndarray:
                     # Type2 kernel for semi-local channels
                     _compile_ecp_type2_kernel(li, lj, lk, precision)(
                         mat1,
-                        ao_loc,
-                        nao,
+                        nao_cart,
                         tasks,
                         ntasks,
                         ecpbas,
                         ecploc,
-                        coords_dev,
-                        ce_dev,
+                        basis_data,
                         atm,
                         env,
                         npi,
                         npj,
                     )
 
-    # Transform result from splitted_mol basis back to original mol basis
+    # Transform result from internal cartesian basis back to original mol basis
     # Kernels already write symmetric contributions; no host-side symmetrization needed
-    result = basis_layout.dm_to_mol(mat1.reshape(1, nao, nao))[0]
+    result = basis_layout.dm_to_mol(mat1.reshape(1, nao_cart, nao_cart))[0]
     return result
 
 

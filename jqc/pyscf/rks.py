@@ -290,10 +290,16 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
 
     # Extract and cache basis_layout data once to avoid repeated property access
     _, _, angs, nprims = basis_layout.bas_info
-    ce_fp32 = basis_layout.ce_fp32
-    coords_fp32 = basis_layout.coords_fp32
-    ce_fp64 = basis_layout.ce_fp64
-    coords_fp64 = basis_layout.coords_fp64
+
+    # Get packed basis data structures
+    basis_fp32 = basis_layout.basis_data_fp32
+    basis_fp64 = basis_layout.basis_data_fp64
+
+    basis_data_fp32 = basis_fp32['packed']
+    basis_data_fp64 = basis_fp64['packed']
+    coords_fp32 = basis_fp32['coords']  # For estimate_log_aovalue
+    ce_fp32 = basis_fp32['ce']  # For estimate_log_aovalue
+
     ao_loc = cp.asarray(basis_layout.ao_loc)
     nbas = basis_layout.nbasis
     group_key, group_offset = basis_layout.group_info
@@ -421,12 +427,10 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 _, _, fun = gen_rho_kernel(ang, nprim, np.float64, ndim)
                 fun(
                     grid_coords,
-                    coords_fp64,
-                    ce_fp64,
+                    basis_data_fp64,
                     nbas,
                     dm,
                     log_dm_shell,
-                    ao_loc,
                     nao,
                     rho,
                     nz_i,
@@ -443,12 +447,10 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                     _, _, fun = gen_rho_kernel(ang, nprim, np.float32, ndim)
                     fun(
                         grid_coords,
-                        coords_fp32,
-                        ce_fp32,
+                        basis_data_fp32,
                         nbas,
                         dm_fp32,
                         log_dm_shell,
-                        ao_loc,
                         nao,
                         rho,
                         nz_i,
@@ -521,11 +523,9 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 _, _, fun = gen_vxc_kernel(ang, nprim, np.float64, ndim)
                 fun(
                     grid_coords,
-                    coords_fp64,
-                    ce_fp64,
+                    basis_data_fp64,
                     nbas,
                     vxc,
-                    ao_loc,
                     nao,
                     wv,
                     nz_i,
@@ -542,11 +542,9 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                     _, _, fun = gen_vxc_kernel(ang, nprim, np.float32, ndim)
                     fun(
                         grid_coords,
-                        coords_fp32,
-                        ce_fp32,
+                        basis_data_fp32,
                         nbas,
                         vxc,
-                        ao_loc,
                         nao,
                         wv,
                         nz_i,

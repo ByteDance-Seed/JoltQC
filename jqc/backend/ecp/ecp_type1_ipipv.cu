@@ -31,12 +31,10 @@
 
 
 extern "C" __global__
-void type1_cart_ipipv(double* __restrict__ gctr,
-                const int* __restrict__ ao_loc, const int nao,
+void type1_cart_ipipv(double* __restrict__ gctr, const int nao,
                 const int* __restrict__ tasks, const int ntasks,
                 const int* __restrict__ ecpbas, const int* __restrict__ ecploc,
-                const DataType4* __restrict__ coords,
-                const DataType2* __restrict__ coeff_exp,
+                const DataType* __restrict__ basis_data,
                 const int* __restrict__ atm, const double* __restrict__ env,
                 const int npi, const int npj)
 {
@@ -49,8 +47,23 @@ void type1_cart_ipipv(double* __restrict__ gctr,
     const int jsh = tasks[task_id + ntasks];
     const int ksh = tasks[task_id + 2*ntasks];
 
-    const int ioff = ao_loc[ish];
-    const int joff = ao_loc[jsh];
+    // Extract coords and coeff_exp from packed basis_data
+    // basis_data layout: [coords (4), ce (BASIS_STRIDE-4)] per basis
+    constexpr int basis_stride = BASIS_STRIDE;
+
+    // Load coords for shells i and j (includes ao_loc in .w field)
+    const DataType* basis_i = basis_data + ish * basis_stride;
+    const DataType* basis_j = basis_data + jsh * basis_stride;
+    const DataType4 ri = *reinterpret_cast<const DataType4*>(basis_i);
+    const DataType4 rj = *reinterpret_cast<const DataType4*>(basis_j);
+
+    // Get ao_loc from coords .w field (stored as float/double, cast to int)
+    const int ioff = static_cast<int>(ri.w);
+    const int joff = static_cast<int>(rj.w);
+
+    // Set up pointers for accessing all coords and coeff_exp
+    
+    
     const int ecp_id = ecpbas[ECP_ATOM_ID+ecploc[ksh]*BAS_SLOTS];
     gctr += ioff*nao + joff + 9*ecp_id*nao*nao;
 
@@ -61,14 +74,14 @@ void type1_cart_ipipv(double* __restrict__ gctr,
 
     // Allocate buffers from dynamic shared memory
     double* buf1 = reinterpret_cast<double*>(shared_mem);
-    size_t buf1_offset = nfi2_max * nfj_max * sizeof(double);
+    constexpr size_t buf1_offset = nfi2_max * nfj_max * sizeof(double);
     double* buf = reinterpret_cast<double*>(shared_mem + buf1_offset);
-    size_t buf_offset = buf1_offset + 3 * nfi1_max * nfj_max * sizeof(double);
+    constexpr size_t buf_offset = buf1_offset + 3 * nfi1_max * nfj_max * sizeof(double);
     char* kernel_shared_mem = shared_mem + buf_offset;
 
     // Use LI+2 for orderi=2 stage
     type1_cart_kernel<LI+2, LJ, 2, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, 
-        coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+        basis_data, atm, env, npi, npj, kernel_shared_mem);
     __syncthreads();
     for (int i = threadIdx.x; i < 3*nfi1_max*nfj_max; i+=blockDim.x){
         buf[i] = 0.0;
@@ -79,7 +92,7 @@ void type1_cart_ipipv(double* __restrict__ gctr,
 
     // Then LI for orderi=1 stage
     type1_cart_kernel<LI, LJ, 1, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, 
-        coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+        basis_data, atm, env, npi, npj, kernel_shared_mem);
     __syncthreads();
     _li_up<LI+1, LJ>(buf, buf1);
     __syncthreads();
@@ -96,7 +109,7 @@ void type1_cart_ipipv(double* __restrict__ gctr,
         if constexpr (LI > 1){
             // Final companion LI-2 for orderi=0
             type1_cart_kernel<LI-2, LJ, 0, 0>(buf1, ish, jsh, ksh, ecpbas, ecploc, 
-                coords, coeff_exp, atm, env, npi, npj, kernel_shared_mem);
+                basis_data, atm, env, npi, npj, kernel_shared_mem);
             __syncthreads();
             _li_up<LI-1, LJ>(buf, buf1);
             __syncthreads();
