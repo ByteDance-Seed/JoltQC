@@ -16,18 +16,14 @@
 */
 
 constexpr int ng_per_thread = 256;
-constexpr int prim_stride = PRIM_STRIDE / 2;
 
-// Coordinate stride in floats
-static_assert(COORD_STRIDE >= 3, "COORD_STRIDE must be >= 3");
-struct __align__(COORD_STRIDE*sizeof(float)) DataType4 {
-    float x, y, z;
-#if COORD_STRIDE >= 4
-    float w;
-#endif
-#if COORD_STRIDE > 4
-    float pad[COORD_STRIDE - 4];
-#endif
+// BASIS_STRIDE is the total stride: [coords (4), ce (BASIS_STRIDE-4)]
+// prim_stride is for ce pairs: (BASIS_STRIDE-4)/2
+constexpr int prim_stride = (BASIS_STRIDE - 4) / 2;
+
+// Coords are always 4: [x, y, z, ao_loc/w]
+struct __align__(4*sizeof(float)) DataType4 {
+    float x, y, z, w;
 };
 constexpr float exp_cutoff = 36.8;
 

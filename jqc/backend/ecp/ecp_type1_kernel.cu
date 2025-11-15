@@ -33,17 +33,20 @@ template <int LIT, int LJT, int orderi, int orderj> __device__
 void type1_cart_kernel(double* __restrict__ gctr,
                 const int ish, const int jsh, const int ksh,
                 const int* __restrict__ ecpbas, const int* __restrict__ ecploc,
-                const DataType4* __restrict__ coords,
-                const DataType2* __restrict__ coeff_exp,
+                const DataType* __restrict__ basis_data,
                 const int* __restrict__ atm, const double* __restrict__ env,
                 const int npi, const int npj,
                 char* __restrict__ shared_mem_pool)
 {
-    // Coordinates from basis layout with explicit COORD_STRIDE handling.
-    // Treat coords as scalar array to avoid relying on struct alignment.
-    const DataType *coords_scalar = reinterpret_cast<const DataType*>(coords);
-    const DataType *ri = coords_scalar + ish * COORD_STRIDE;
-    const DataType *rj = coords_scalar + jsh * COORD_STRIDE;
+    // Extract coords from packed basis_data
+    constexpr int basis_stride = BASIS_STRIDE;
+    const DataType* basis_i = basis_data + ish * basis_stride;
+    const DataType* basis_j = basis_data + jsh * basis_stride;
+    const DataType4 ri_packed = *reinterpret_cast<const DataType4*>(basis_i);
+    const DataType4 rj_packed = *reinterpret_cast<const DataType4*>(basis_j);
+
+    const DataType ri[4] = {ri_packed.x, ri_packed.y, ri_packed.z, ri_packed.w};
+    const DataType rj[4] = {rj_packed.x, rj_packed.y, rj_packed.z, rj_packed.w};
 
     const int atm_id = ecpbas[ATOM_OF+ecploc[ksh]*BAS_SLOTS];
     const double *rc = env + atm[PTR_COORD+atm_id*ATM_SLOTS];
@@ -84,9 +87,9 @@ void type1_cart_kernel(double* __restrict__ gctr,
     __syncthreads();
     const double fac = 16.0 * M_PI * M_PI;
 
-    // Coefficient pointers for primitive (c,e) pairs of each shell
-    const DataType2* cei = coeff_exp + ish * prim_stride;
-    const DataType2* cej = coeff_exp + jsh * prim_stride;
+    // Extract coefficient-exponent pointers from packed basis_data
+    const DataType2* cei = reinterpret_cast<const DataType2*>(basis_data + ish * basis_stride + 4);
+    const DataType2* cej = reinterpret_cast<const DataType2*>(basis_data + jsh * basis_stride + 4);
 
     for (int ip = 0; ip < npi; ip++){
         for (int jp = 0; jp < npj; jp++){

@@ -16,7 +16,6 @@
 */
 
 constexpr DataType max_val = 1e16;
-constexpr int prim_stride = PRIM_STRIDE / 2;
 constexpr DataType exp_cutoff = 36.8; // exp(-36.8) ~ 1e-16
 constexpr DataType rho_cutoff = 1e-16;
 constexpr DataType rho_cutoff2 = rho_cutoff * rho_cutoff;
@@ -25,19 +24,15 @@ constexpr DataType one = 1.0;
 constexpr DataType two = 2.0;
 constexpr DataType half = 0.5;
 
-// Make coordinate stride configurable via COORD_STRIDE
-static_assert(COORD_STRIDE >= 3, "COORD_STRIDE must be >= 3");
-struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {
-    DataType x, y, z;
-#if COORD_STRIDE >= 4
-    DataType w;
-#endif
-#if COORD_STRIDE > 4
-    DataType pad[COORD_STRIDE - 4];
-#endif
+// BASIS_STRIDE is the total stride: [coords (4), ce (BASIS_STRIDE-4)]
+// prim_stride is for ce pairs: (BASIS_STRIDE-4)/2
+constexpr int prim_stride = (BASIS_STRIDE - 4) / 2;
+constexpr int basis_stride = BASIS_STRIDE;
+
+// Coords are always 4: [x, y, z, ao_loc]
+struct __align__(4*sizeof(DataType)) DataType4 {
+    DataType x, y, z, w;  // w stores ao_loc
 };
-static_assert(sizeof(DataType4) == COORD_STRIDE*sizeof(DataType),
-              "DataType4 size must equal COORD_STRIDE*sizeof(DataType)");
 
 struct __align__(2*sizeof(DataType)) DataType2 {
     DataType c, e;
@@ -49,15 +44,24 @@ struct __align__(8) LogIdx {
     int   idx;
 };
 
+// Helper to load coords from packed basis_data
+__device__ __forceinline__ DataType4 load_coords(const DataType* __restrict__ basis_data, int ish) {
+    const DataType* base = basis_data + ish * basis_stride;
+    return *reinterpret_cast<const DataType4*>(base);
+}
+
+// Helper to get pointer to ce data for a basis
+__device__ __forceinline__ const DataType2* load_ce_ptr(const DataType* __restrict__ basis_data, int ish) {
+    return reinterpret_cast<const DataType2*>(basis_data + ish * basis_stride + 4);
+}
+
 extern "C" __global__
 void eval_rho(
     const double* __restrict__ grid_coords,
-    const DataType4* __restrict__ shell_coords,
-    const DataType2* __restrict__ coeff_exp,
+    const DataType* __restrict__ basis_data,
     const int nbas,
     DataType* __restrict__ dm,
     float* __restrict__ log_dm_shell,
-    const int* __restrict__ ao_loc,
     const int nao,
     double* __restrict__ rho,
     const LogIdx* __restrict__ nz_i,
@@ -90,7 +94,8 @@ void eval_rho(
         const int offset = jsh_nz + block_id * nbas_j;
         const int jsh = nz_j[offset].idx;
         const float log_aoj = nz_j[offset].log;
-        const int j0 = ao_loc[jsh];
+        const DataType4 xj = load_coords(basis_data, jsh);
+        const int j0 = (int)xj.w;  // ao_loc stored in w field
         for (int ish_nz = 0; ish_nz < nnzi; ish_nz++){
             const int offset = ish_nz + block_id * nbas_i;
             const int ish = nz_i[offset].idx;
@@ -98,8 +103,6 @@ void eval_rho(
             const float log_rho_est = log_aoi + log_aoj + log_dm_shell[ish+jsh*nbas];
             if (ish > jsh) continue;
             if (log_rho_est < log_cutoff_a || log_rho_est >= log_cutoff_b) continue;
-
-        const DataType4 xj = shell_coords[jsh];
         const DataType gjx = gx[0] - xj.x;
         const DataType gjy = gx[1] - xj.y;
         const DataType gjz = gx[2] - xj.z;
@@ -119,11 +122,10 @@ void eval_rho(
         //     cej_2e += ce * e;
         // }
         // Optimized version - early continue to avoid exp() calls:
-        const int jprim_base = jsh * prim_stride;
+        const DataType2* cej_ptr = load_ce_ptr(basis_data, jsh);
         #pragma unroll
         for (int jp = 0; jp < npj; jp++){
-            const int jp_off = jprim_base + jp;
-            const DataType2 coeff_expj = coeff_exp[jp_off];
+            const DataType2 coeff_expj = cej_ptr[jp];
             const DataType e = coeff_expj.e;
             const DataType e_rr = e * rr_gj;
             //if (e_rr >= exp_cutoff) continue;
@@ -213,7 +215,7 @@ void eval_rho(
             }
         }
 
-            const DataType4 xi = shell_coords[ish];
+            const DataType4 xi = load_coords(basis_data, ish);
             const DataType gix = gx[0] - xi.x;
             const DataType giy = gx[1] - xi.y;
             const DataType giz = gx[2] - xi.z;
@@ -221,7 +223,7 @@ void eval_rho(
 
             DataType cei = zero;
             DataType cei_2e = zero;
-            
+
             // Original code:
             // for (int ip = 0; ip < npi; ip++){
             //     const int offset = ip + ish*prim_stride;
@@ -234,14 +236,13 @@ void eval_rho(
             //     cei_2e += ce * e;
             // }
             // Optimized version - early continue to avoid exp() calls:
-            const int iprim_base = ish * prim_stride;
-            //const DataType e_rr = coeff_exp[iprim_base + npi - 1].e * rr_gi;
+            const DataType2* cei_ptr = load_ce_ptr(basis_data, ish);
+            //const DataType e_rr = cei_ptr[npi - 1].e * rr_gi;
             //if (e_rr >= exp_cutoff) continue; // skip entire shell if last primitive is negligible
 
             #pragma unroll
             for (int ip = 0; ip < npi; ip++){
-                const int ip_off = iprim_base + ip;
-                const DataType2 coeff_expi = coeff_exp[ip_off];
+                const DataType2 coeff_expi = cei_ptr[ip];
                 const DataType e = coeff_expi.e;
                 const DataType e_rr = e * rr_gi;
                 //if (e_rr >= exp_cutoff) continue;
@@ -251,8 +252,8 @@ void eval_rho(
                 cei_2e += ce * e;
             }
             cei_2e *= -two;
-            
-            const int i0 = ao_loc[ish];
+
+            const int i0 = (int)xi.w;  // ao_loc stored in w field
 
             constexpr int i_pow = li + deriv;
             DataType xi_pows[i_pow+1], yi_pows[i_pow+1], zi_pows[i_pow+1];

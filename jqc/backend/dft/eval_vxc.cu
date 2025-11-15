@@ -16,7 +16,6 @@
 */
 
 constexpr DataType max_val = 1e16;
-constexpr int prim_stride = PRIM_STRIDE / 2;
 constexpr int warpsize = 32;
 constexpr DataType exp_cutoff = 36.8; // exp(-36.8) ~ 1e-16
 constexpr DataType vxc_cutoff = 1e-16;
@@ -26,19 +25,15 @@ constexpr DataType one = 1.0;
 constexpr DataType two = 2.0;
 constexpr DataType half = 0.5;
 
-// Make coordinate stride configurable via COORD_STRIDE
-static_assert(COORD_STRIDE >= 3, "COORD_STRIDE must be >= 3");
-struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {
-    DataType x, y, z;
-#if COORD_STRIDE >= 4
-    DataType w;
-#endif
-#if COORD_STRIDE > 4
-    DataType pad[COORD_STRIDE - 4];
-#endif
+// BASIS_STRIDE is the total stride: [coords (4), ce (BASIS_STRIDE-4)]
+// prim_stride is for ce pairs: (BASIS_STRIDE-4)/2
+constexpr int prim_stride = (BASIS_STRIDE - 4) / 2;
+constexpr int basis_stride = BASIS_STRIDE;
+
+// Coords are always 4: [x, y, z, ao_loc]
+struct __align__(4*sizeof(DataType)) DataType4 {
+    DataType x, y, z, w;  // w stores ao_loc
 };
-static_assert(sizeof(DataType4) == COORD_STRIDE*sizeof(DataType),
-              "DataType4 size must equal COORD_STRIDE*sizeof(DataType)");
 
 struct __align__(2*sizeof(DataType)) DataType2 {
     DataType c, e;
@@ -49,6 +44,17 @@ struct __align__(8) LogIdx {
     float log;
     int   idx;
 };
+
+// Helper to load coords from packed basis_data
+__device__ __forceinline__ DataType4 load_coords(const DataType* __restrict__ basis_data, int ish) {
+    const DataType* base = basis_data + ish * basis_stride;
+    return *reinterpret_cast<const DataType4*>(base);
+}
+
+// Helper to get pointer to ce data for a basis
+__device__ __forceinline__ const DataType2* load_ce_ptr(const DataType* __restrict__ basis_data, int ish) {
+    return reinterpret_cast<const DataType2*>(basis_data + ish * basis_stride + 4);
+}
  
 __forceinline__ __device__
 DataType warp_reduce(DataType val) {
@@ -81,11 +87,9 @@ void block_reduce_max(float val, float* maxval) {
 extern "C" __global__
 void eval_vxc(
     const double* __restrict__ grid_coords,
-    const DataType4* __restrict__ shell_coords,
-    const DataType2* __restrict__ coeff_exp,
+    const DataType* __restrict__ basis_data,
     const int nbas,
     double* __restrict__ vxc_mat,
-    const int* __restrict__ ao_loc,
     const int nao,
     double* __restrict__ wv_grid,
     const LogIdx* __restrict__ nz_i,
@@ -135,15 +139,17 @@ void eval_vxc(
     float log_max_wv0 = log_max_wv0_smem[0];
     log_cutoff_a -= log_max_wv0;
     log_cutoff_b -= log_max_wv0;
-    
+
+    // Add padding to avoid shared memory bank conflicts with doubles
+    // For double-precision (8 bytes = 2 banks), add 1 element per 16 to avoid 2-way conflicts
     constexpr int smem_size = num_warps * nfij;
-    __shared__ DataType vxc_smem[smem_size];
+    constexpr int smem_padded = smem_size + (smem_size + 15) / 16;
+    __shared__ DataType vxc_smem[smem_padded];
 
     for (int jsh_nz = 0; jsh_nz < nnzj; jsh_nz++){
         const int offset = jsh_nz + block_id * nbas_j;
         const float log_aoj = nz_j[offset].log;
         const int jsh = nz_j[offset].idx;
-        const int j0 = ao_loc[jsh];
         
         for (int ish_nz = 0; ish_nz < nnzi; ish_nz++){
             const int offset = ish_nz + block_id * nbas_i;
@@ -152,130 +158,118 @@ void eval_vxc(
             if (ish > jsh) continue;
             if (log_aoi + log_aoj < log_cutoff_a || log_aoi + log_aoj >= log_cutoff_b) continue;
 
-        const DataType4 xj = shell_coords[jsh];
-        const DataType gjx = gx[0] - xj.x;
-        const DataType gjy = gx[1] - xj.y;
-        const DataType gjz = gx[2] - xj.z;
-        const DataType rr_gj = gjx*gjx + gjy*gjy + gjz*gjz;
-        
-        DataType cej = zero;
-        DataType cej_2e = zero;
-        // Original code:
-        // for (int jp = 0; jp < npj; jp++){
-        //     const int offset = prim_stride * jsh + jp;
-        //     const DataType2 coeff_expj = coeff_exp[offset];
-        //     const DataType e = coeff_expj.e;
-        //     const DataType e_rr = e * rr_gj;
-        //     const DataType c = coeff_expj.c;
-        //     const DataType ce = e_rr < exp_cutoff ? c * exp(-e_rr) : zero;
-        //     cej += ce;
-        //     cej_2e += ce * e;
-        // }
-        // Optimized version - early continue to avoid exp() calls:
-        const int jprim_base = prim_stride * jsh;
-        #pragma unroll
-        for (int jp = 0; jp < npj; jp++){
-            const int jp_off = jprim_base + jp;
-            const DataType2 coeff_expj = coeff_exp[jp_off];
-            const DataType e = coeff_expj.e;
-            const DataType e_rr = e * rr_gj;
-            //if (e_rr >= exp_cutoff) continue;
-            const DataType c = coeff_expj.c;
-            const DataType ce = c * exp(-e_rr);
-            cej += ce;
-            cej_2e += ce * e;
-        }
-        cej_2e *= -two;
+            const DataType4 xj = load_coords(basis_data, jsh);
+            const DataType gjx = gx[0] - xj.x;
+            const DataType gjy = gx[1] - xj.y;
+            const DataType gjz = gx[2] - xj.z;
+            const DataType rr_gj = gjx*gjx + gjy*gjy + gjz*gjz;
 
-        constexpr int j_pow = lj + deriv;
-        DataType xj_pows[j_pow+1], yj_pows[j_pow+1], zj_pows[j_pow+1];
-        xj_pows[0] = one; yj_pows[0] = one; zj_pows[0] = one;
-        // Original code:
-        // for (int i = 0; i < j_pow; i++){
-        //     xj_pows[i+1] = xj_pows[i] * gjx;
-        //     yj_pows[i+1] = yj_pows[i] * gjy;
-        //     zj_pows[i+1] = zj_pows[i] * gjz;
-        // }
-        // Optimized version - reduces array access overhead:
-        DataType gjx_curr = gjx, gjy_curr = gjy, gjz_curr = gjz;
-        for (int i = 0; i < j_pow; i++){
-            xj_pows[i+1] = gjx_curr;
-            yj_pows[i+1] = gjy_curr;
-            zj_pows[i+1] = gjz_curr;
-            gjx_curr *= gjx;
-            gjy_curr *= gjy;
-            gjz_curr *= gjz;
-        }
-
-        DataType dxj[lj+1], dyj[lj+1], dzj[lj+1];
-        if constexpr(deriv > 0){
-            // Original code:
-            // for (int j = 0; j < lj+1; j++){
-            //     dxj[j] = cej_2e * xj_pows[j+1];
-            //     dyj[j] = cej_2e * yj_pows[j+1];
-            //     dzj[j] = cej_2e * zj_pows[j+1];
-            // }
-            // for (int j = 1; j < lj+1; j++){
-            //     const DataType fac = cej * j;
-            //     dxj[j] += fac * xj_pows[j-1];
-            //     dyj[j] += fac * yj_pows[j-1];
-            //     dzj[j] += fac * zj_pows[j-1];
-            // }
-            // Optimized version - fused loops to reduce operations:
-            dxj[0] = cej_2e * xj_pows[1];
-            dyj[0] = cej_2e * yj_pows[1];
-            dzj[0] = cej_2e * zj_pows[1];
-            for (int j = 1; j < lj+1; j++){
-                const DataType fac = cej * j;
-                dxj[j] = cej_2e * xj_pows[j+1] + fac * xj_pows[j-1];
-                dyj[j] = cej_2e * yj_pows[j+1] + fac * yj_pows[j-1];
-                dzj[j] = cej_2e * zj_pows[j+1] + fac * zj_pows[j-1];
+            DataType cej = zero;
+            DataType cej_2e = zero;
+            // Optimized version with exponential cutoff to avoid expensive exp() calls:
+            const DataType2* cej_ptr = load_ce_ptr(basis_data, jsh);
+            #pragma unroll
+            for (int jp = 0; jp < npj; jp++){
+                const DataType2 coeff_expj = cej_ptr[jp];
+                const DataType e = coeff_expj.e;
+                const DataType e_rr = e * rr_gj;
+                const DataType c = coeff_expj.c;
+                // Use conditional expression to avoid warp divergence while skipping expensive exp()
+                const DataType ce = (e_rr < exp_cutoff) ? c * exp(-e_rr) : zero;
+                cej += ce;
+                cej_2e += ce * e;
             }
-        }
+            cej_2e *= -two;
 
-        DataType ao_j[nfj], ao_jx[nfj], ao_jy[nfj], ao_jz[nfj], aow_j[nfj];
-        // Original code:
-        // for (int i = 0, lx = lj; lx >= 0; lx--){
-        //     const DataType cx = cej * xj_pows[lx];
-        //     for (int ly = lj - lx; ly >= 0; ly--, i++){
-        //         const int lz = lj - lx - ly;
-        //         ao_j[i] = cx * yj_pows[ly] * zj_pows[lz];
-        //         if constexpr(deriv > 0){
-        //             ao_jx[i] = dxj[lx] * yj_pows[ly] * zj_pows[lz];
-        //             ao_jy[i] = xj_pows[lx] * dyj[ly] * zj_pows[lz];
-        //             ao_jz[i] = xj_pows[lx] * yj_pows[ly] * dzj[lz];
-        //             aow_j[i] = ao_jx[i] * wv_x + ao_jy[i] * wv_y + ao_jz[i] * wv_z;
-        //             if constexpr (ndim > 4){
-        //                 ao_jx[i] *= wv_tau;
-        //                 ao_jy[i] *= wv_tau;
-        //                 ao_jz[i] *= wv_tau;
-        //             }
-        //         }
-        //     }
-        // }
-        // Optimized version - cached common subexpressions:
-#pragma unroll
-        for (int i = 0, lx = lj; lx >= 0; lx--){
-            const DataType cej_xj_lx = cej * xj_pows[lx];
-            const DataType dxj_lx = (deriv > 0) ? dxj[lx] : zero;
-            for (int ly = lj - lx; ly >= 0; ly--, i++){
-                const int lz = lj - lx - ly;
-                const DataType yj_ly_zj_lz = yj_pows[ly] * zj_pows[lz];
-                ao_j[i] = cej_xj_lx * yj_ly_zj_lz;
-                if constexpr(deriv > 0){                    
-                    ao_jx[i] = dxj_lx * yj_ly_zj_lz;
-                    ao_jy[i] = xj_pows[lx] * dyj[ly] * zj_pows[lz];
-                    ao_jz[i] = xj_pows[lx] * yj_pows[ly] * dzj[lz];
-                    aow_j[i] = ao_jx[i] * wv_x + ao_jy[i] * wv_y + ao_jz[i] * wv_z;
-                    if constexpr (ndim > 4){
-                        ao_jx[i] *= wv_tau;
-                        ao_jy[i] *= wv_tau;
-                        ao_jz[i] *= wv_tau;
+            constexpr int j_pow = lj + deriv;
+            DataType xj_pows[j_pow+1], yj_pows[j_pow+1], zj_pows[j_pow+1];
+            xj_pows[0] = one; yj_pows[0] = one; zj_pows[0] = one;
+            // Original code:
+            // for (int i = 0; i < j_pow; i++){
+            //     xj_pows[i+1] = xj_pows[i] * gjx;
+            //     yj_pows[i+1] = yj_pows[i] * gjy;
+            //     zj_pows[i+1] = zj_pows[i] * gjz;
+            // }
+            // Optimized version - reduces array access overhead:
+            DataType gjx_curr = gjx, gjy_curr = gjy, gjz_curr = gjz;
+            for (int i = 0; i < j_pow; i++){
+                xj_pows[i+1] = gjx_curr;
+                yj_pows[i+1] = gjy_curr;
+                zj_pows[i+1] = gjz_curr;
+                gjx_curr *= gjx;
+                gjy_curr *= gjy;
+                gjz_curr *= gjz;
+            }
+
+            DataType dxj[lj+1], dyj[lj+1], dzj[lj+1];
+            if constexpr(deriv > 0){
+                // Original code:
+                // for (int j = 0; j < lj+1; j++){
+                //     dxj[j] = cej_2e * xj_pows[j+1];
+                //     dyj[j] = cej_2e * yj_pows[j+1];
+                //     dzj[j] = cej_2e * zj_pows[j+1];
+                // }
+                // for (int j = 1; j < lj+1; j++){
+                //     const DataType fac = cej * j;
+                //     dxj[j] += fac * xj_pows[j-1];
+                //     dyj[j] += fac * yj_pows[j-1];
+                //     dzj[j] += fac * zj_pows[j-1];
+                // }
+                // Optimized version - fused loops to reduce operations:
+                dxj[0] = cej_2e * xj_pows[1];
+                dyj[0] = cej_2e * yj_pows[1];
+                dzj[0] = cej_2e * zj_pows[1];
+                for (int j = 1; j < lj+1; j++){
+                    const DataType fac = cej * j;
+                    dxj[j] = cej_2e * xj_pows[j+1] + fac * xj_pows[j-1];
+                    dyj[j] = cej_2e * yj_pows[j+1] + fac * yj_pows[j-1];
+                    dzj[j] = cej_2e * zj_pows[j+1] + fac * zj_pows[j-1];
+                }
+            }
+
+            DataType ao_j[nfj], ao_jx[nfj], ao_jy[nfj], ao_jz[nfj], aow_j[nfj];
+            // Original code:
+            // for (int i = 0, lx = lj; lx >= 0; lx--){
+            //     const DataType cx = cej * xj_pows[lx];
+            //     for (int ly = lj - lx; ly >= 0; ly--, i++){
+            //         const int lz = lj - lx - ly;
+            //         ao_j[i] = cx * yj_pows[ly] * zj_pows[lz];
+            //         if constexpr(deriv > 0){
+            //             ao_jx[i] = dxj[lx] * yj_pows[ly] * zj_pows[lz];
+            //             ao_jy[i] = xj_pows[lx] * dyj[ly] * zj_pows[lz];
+            //             ao_jz[i] = xj_pows[lx] * yj_pows[ly] * dzj[lz];
+            //             aow_j[i] = ao_jx[i] * wv_x + ao_jy[i] * wv_y + ao_jz[i] * wv_z;
+            //             if constexpr (ndim > 4){
+            //                 ao_jx[i] *= wv_tau;
+            //                 ao_jy[i] *= wv_tau;
+            //                 ao_jz[i] *= wv_tau;
+            //             }
+            //         }
+            //     }
+            // }
+            // Optimized version - cached common subexpressions:
+    #pragma unroll
+            for (int i = 0, lx = lj; lx >= 0; lx--){
+                const DataType cej_xj_lx = cej * xj_pows[lx];
+                const DataType dxj_lx = (deriv > 0) ? dxj[lx] : zero;
+                for (int ly = lj - lx; ly >= 0; ly--, i++){
+                    const int lz = lj - lx - ly;
+                    const DataType yj_ly_zj_lz = yj_pows[ly] * zj_pows[lz];
+                    ao_j[i] = cej_xj_lx * yj_ly_zj_lz;
+                    if constexpr(deriv > 0){                    
+                        ao_jx[i] = dxj_lx * yj_ly_zj_lz;
+                        ao_jy[i] = xj_pows[lx] * dyj[ly] * zj_pows[lz];
+                        ao_jz[i] = xj_pows[lx] * yj_pows[ly] * dzj[lz];
+                        aow_j[i] = ao_jx[i] * wv_x + ao_jy[i] * wv_y + ao_jz[i] * wv_z;
+                        if constexpr (ndim > 4){
+                            ao_jx[i] *= wv_tau;
+                            ao_jy[i] *= wv_tau;
+                            ao_jz[i] *= wv_tau;
+                        }
                     }
                 }
             }
-        }
-            const DataType4 xi = shell_coords[ish];
+            const DataType4 xi = load_coords(basis_data, ish);
             const DataType gix = gx[0] - xi.x;
             const DataType giy = gx[1] - xi.y;
             const DataType giz = gx[2] - xi.z;
@@ -283,34 +277,20 @@ void eval_vxc(
 
             DataType cei = zero;
             DataType cei_2e = zero;
-            // Original code:
-            // for (int ip = 0; ip < npi; ip++){
-            //     const int ip_offset = ip + ish*prim_stride;
-            //     const DataType2 coeff_expi = coeff_exp[ip_offset];
-            //     const DataType e = coeff_expi.e;
-            //     const DataType e_rr = e * rr_gi;
-            //     const DataType c = coeff_expi.c;
-            //     const DataType ce = e_rr < exp_cutoff ? c * exp(-e_rr) : zero;
-            //     cei += ce;
-            //     cei_2e += ce * e;
-            // }
-            // Optimized version - early continue to avoid exp() calls:
-            const int iprim_base = ish * prim_stride;
+            // Optimized version with exponential cutoff to avoid expensive exp() calls:
+            const DataType2* cei_ptr = load_ce_ptr(basis_data, ish);
             #pragma unroll
             for (int ip = 0; ip < npi; ip++){
-                const int ip_off = iprim_base + ip;
-                const DataType2 coeff_expi = coeff_exp[ip_off];
+                const DataType2 coeff_expi = cei_ptr[ip];
                 const DataType e = coeff_expi.e;
                 const DataType e_rr = e * rr_gi;
-                //if (e_rr >= exp_cutoff) continue;
                 const DataType c = coeff_expi.c;
-                const DataType ce = c * exp(-e_rr);
+                // Use conditional expression to avoid warp divergence while skipping expensive exp()
+                const DataType ce = (e_rr < exp_cutoff) ? c * exp(-e_rr) : zero;
                 cei += ce;
                 cei_2e += ce * e;
             }
             cei_2e *= -two;
-
-            const int i0 = ao_loc[ish];
 
             constexpr int i_pow = li + deriv;
             DataType xi_pows[i_pow+1], yi_pows[i_pow+1], zi_pows[i_pow+1];
@@ -404,19 +384,26 @@ void eval_vxc(
                         }
                         vxc_ij = warp_reduce(vxc_ij);
                         if (lane == 0){
-                            vxc_smem[(i + j * nfi) * num_warps + warp_id] = vxc_ij;
+                            const int idx = (i + j * nfi) * num_warps + warp_id;
+                            // Add padding every 16 elements to avoid bank conflicts
+                            const int padded_idx = idx + idx / 16;
+                            vxc_smem[padded_idx] = vxc_ij;
                         }
                     }
                 }
             }
             __syncthreads();
 
+            const int i0 = (int)xi.w;  // ao_loc stored in w field
+            const int j0 = (int)xj.w;  // ao_loc stored in w field
             const DataType fac = (ish == jsh) ? half : one;
             // Block reduction
             const int rank = threadIdx.x % num_warps;
             constexpr int ntasks = (smem_size + 31) / 32 * 32;
             for (int idx = threadIdx.x; idx < ntasks; idx += nthreads){
-                DataType vxc_ij = idx < smem_size ? vxc_smem[idx] : zero;
+                // Use padded index to avoid bank conflicts
+                const int padded_idx = idx + idx / 16;
+                DataType vxc_ij = idx < smem_size ? vxc_smem[padded_idx] : zero;
                 // Warp reduction
                 // Assume nthreads = 256
                 vxc_ij += __shfl_down_sync(0xffffffff, vxc_ij, 4);

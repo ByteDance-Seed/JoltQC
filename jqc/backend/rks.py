@@ -23,7 +23,7 @@ from pathlib import Path
 import cupy as cp
 import numpy as np
 
-from jqc.constants import COORD_STRIDE, NPRIM_MAX, PRIM_STRIDE
+from jqc.constants import BASIS_STRIDE, NPRIM_MAX
 
 code_path = Path(__file__).resolve().parent
 
@@ -64,9 +64,7 @@ constexpr int deriv = {1 if ndim > 1 else 0};
 constexpr int nthreads = {nthreads};
 // Inject constants to match host-side layout
 #define NPRIM_MAX {NPRIM_MAX}
-// PRIM_STRIDE here matches host scalar stride; device uses prim_stride = PRIM_STRIDE/2
-#define PRIM_STRIDE {PRIM_STRIDE}
-#define COORD_STRIDE {COORD_STRIDE}
+#define BASIS_STRIDE {BASIS_STRIDE}
 """
 
     script = const + eval_rho_cuda_code
@@ -130,9 +128,7 @@ constexpr int deriv = {1 if ndim > 1 else 0};
 constexpr int nthreads = {nthreads};
 // Inject constants to match host-side layout
 #define NPRIM_MAX {NPRIM_MAX}
-// PRIM_STRIDE here matches host scalar stride; device uses prim_stride = PRIM_STRIDE/2
-#define PRIM_STRIDE {PRIM_STRIDE}
-#define COORD_STRIDE {COORD_STRIDE}
+#define BASIS_STRIDE {BASIS_STRIDE}
 """
 
     script = const + eval_vxc_cuda_code
@@ -223,9 +219,7 @@ constexpr int ang = {ang};
 constexpr int nprim = {nprim};
 // Inject constants to match host-side layout
 #define NPRIM_MAX {NPRIM_MAX}
-// PRIM_STRIDE here matches host scalar stride; device uses prim_stride = PRIM_STRIDE/2
-#define PRIM_STRIDE {PRIM_STRIDE}
-#define COORD_STRIDE {COORD_STRIDE}
+#define BASIS_STRIDE {BASIS_STRIDE}
 """
     script = const + estimate_aovalue_script
     mod = cp.RawModule(code=script, options=compile_options)

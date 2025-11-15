@@ -24,33 +24,29 @@ constexpr DataType PI_FAC = 34.98683665524972497;
 constexpr DataType half = .5;
 constexpr DataType one = 1.0;
 constexpr DataType zero = 0.0;
-constexpr int prim_stride = PRIM_STRIDE / 2;
 
+// BASIS_STRIDE is the total stride: [coords (4), ce (BASIS_STRIDE-4)]
+// prim_stride is for ce pairs: (BASIS_STRIDE-4)/2
+constexpr int prim_stride = (BASIS_STRIDE - 4) / 2;
+constexpr int basis_stride = BASIS_STRIDE;
 
-// Make coordinate stride configurable via COORD_STRIDE
-static_assert(COORD_STRIDE >= 3, "COORD_STRIDE must be >= 3");
-struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {
-    DataType x, y, z;
-#if COORD_STRIDE >= 4
-    DataType w;
-#endif
-#if COORD_STRIDE > 4
-    DataType pad[COORD_STRIDE - 4];
-#endif
+// Coords are always 4: [x, y, z, ao_loc]
+struct __align__(4*sizeof(DataType)) DataType4 {
+    DataType x, y, z, w;  // w stores ao_loc
 };
-static_assert(sizeof(DataType4) == COORD_STRIDE*sizeof(DataType),
-              "DataType4 size must equal COORD_STRIDE*sizeof(DataType)");
 
 struct __align__(2*sizeof(DataType)) DataType2 {
     DataType c, e;
 };
 
+// Helper to get pointer to ce data for a basis
+__device__ __forceinline__ const DataType2* load_ce_ptr(const DataType* __restrict__ basis_data, int ish) {
+    return reinterpret_cast<const DataType2*>(basis_data + ish * basis_stride + 4);
+}
+
 extern "C" __global__
-void rys_jk(const int nbas,
-        const int nao,
-        const int * __restrict__ ao_loc,
-        const DataType4* __restrict__ coords,
-        const DataType2* __restrict__ coeff_exp,
+void rys_jk(const int nao,
+        const DataType* __restrict__ basis_data,
         DataType* __restrict__ dm,
         double* __restrict__ vj,
         double* __restrict__ vk,
@@ -92,12 +88,24 @@ void rys_jk(const int nbas,
     DataType fac_sym = active ? PI_FAC : zero;
     fac_sym *= (ish == jsh) ? half : one;
     fac_sym *= (ksh == lsh) ? half : one;
-    fac_sym *= (ish*nbas+jsh == ksh*nbas+lsh) ? half : one;
+    //fac_sym *= (ish*nbas+jsh == ksh*nbas+lsh) ? half : one;
+    fac_sym *= (ish == ksh && jsh == lsh) ? half : one;
+    
+    fac_sym = (ksh > ish) ? zero : fac_sym;
+    fac_sym = (ish < jsh) ? zero : fac_sym;
+    fac_sym = (lsh > ksh) ? zero : fac_sym;
 
-    DataType4 ri = coords[ish];
-    DataType4 rj = coords[jsh];
-    DataType4 rk = coords[ksh];
-    DataType4 rl = coords[lsh];
+    // Compute base addresses for all shells (allows better instruction-level parallelism)
+    const DataType* base_i = basis_data + ish * basis_stride;
+    const DataType* base_j = basis_data + jsh * basis_stride;
+    const DataType* base_k = basis_data + ksh * basis_stride;
+    const DataType* base_l = basis_data + lsh * basis_stride;
+
+    // Load coords from base addresses
+    DataType4 ri = *reinterpret_cast<const DataType4*>(base_i);
+    DataType4 rj = *reinterpret_cast<const DataType4*>(base_j);
+    DataType4 rk = *reinterpret_cast<const DataType4*>(base_k);
+    DataType4 rl = *reinterpret_cast<const DataType4*>(base_l);
 
     const DataType rij0 = rj.x - ri.x;
     const DataType rij1 = rj.y - ri.y;
@@ -124,21 +132,23 @@ void rys_jk(const int nbas,
     constexpr bool use_cache = (estimated_registers <= 256);
 
     DataType2 reg_cei[npi], reg_cej[npj];
+    // Load ce data from packed basis_data
+    const DataType2* cei_ptr = load_ce_ptr(basis_data, ish);
+    const DataType2* cej_ptr = load_ce_ptr(basis_data, jsh);
+    const DataType2* cek_ptr = load_ce_ptr(basis_data, ksh);
+    const DataType2* cel_ptr = load_ce_ptr(basis_data, lsh);
+
     for (int ip = 0; ip < npi; ip++){
-        const int ish_ip = ip + ish*prim_stride;
-        reg_cei[ip].c = __ldg(&coeff_exp[ish_ip].c);
-        reg_cei[ip].e = __ldg(&coeff_exp[ish_ip].e);
+        reg_cei[ip] = cei_ptr[ip];
     }
     for (int jp = 0; jp < npj; jp++){
-        const int jsh_jp = jp + jsh*prim_stride;
-        reg_cej[jp].c = __ldg(&coeff_exp[jsh_jp].c);
-        reg_cej[jp].e = __ldg(&coeff_exp[jsh_jp].e);
+        reg_cej[jp] = cej_ptr[jp];
     }
-    
+
     // Cache per-(ip,jp) terms to avoid repeated expensive exp/div computations if register usage is reasonable
     DataType reg_cicj[use_cache ? npi*npj : 1];
     DataType reg_inv_aij[use_cache ? npi*npj : 1];
-    
+
     if constexpr (use_cache) {
 #pragma unroll
         for (int ip = 0; ip < npi; ip++){
@@ -165,10 +175,8 @@ void rys_jk(const int nbas,
 #pragma unroll
     for (int kp = 0; kp < npk; kp++)
     for (int lp = 0; lp < npl; lp++){
-        const int ksh_kp = kp + ksh*prim_stride;
-        const int lsh_lp = lp + lsh*prim_stride;
-        DataType2 cek = coeff_exp[ksh_kp]; 
-        DataType2 cel = coeff_exp[lsh_lp];
+        DataType2 cek = cek_ptr[kp];
+        DataType2 cel = cel_ptr[lp];
         const DataType ak = cek.e;
         const DataType al = cel.e;
         const DataType akl = ak + al;
@@ -188,10 +196,8 @@ void rys_jk(const int nbas,
                 ci = reg_cei[ip].c;
                 cj = reg_cej[jp].c;
             } else {
-                const int ish_ip = ip + ish*prim_stride;
-                const int jsh_jp = jp + jsh*prim_stride;
-                DataType2 cei = coeff_exp[ish_ip]; 
-                DataType2 cej = coeff_exp[jsh_jp];
+                DataType2 cei = cei_ptr[ip];
+                DataType2 cej = cej_ptr[jp];
                 ai = cei.e;
                 aj = cej.e;
                 ci = cei.c;
@@ -403,10 +409,11 @@ void rys_jk(const int nbas,
         }
     }
 
-    const int i0 = ao_loc[ish];
-    const int j0 = ao_loc[jsh];
-    const int k0 = ao_loc[ksh];
-    const int l0 = ao_loc[lsh];
+    // ao_loc is stored in the w field of coords
+    const int i0 = (int)ri.w;
+    const int j0 = (int)rj.w;
+    const int k0 = (int)rk.w;
+    const int l0 = (int)rl.w;
 
     constexpr int nfij = nfi*nfj;
     constexpr int nfkl = nfk*nfl;

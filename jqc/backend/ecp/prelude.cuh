@@ -23,12 +23,9 @@
 // DataType must be defined by the including translation unit
 // e.g., using DataType = double; or float
 
-// PRIM_STRIDE and COORD_STRIDE must be defined via NVRTC -D options
-#ifndef PRIM_STRIDE
-#error "PRIM_STRIDE must be defined (e.g., -DPRIM_STRIDE=...)"
-#endif
-#ifndef COORD_STRIDE
-#error "COORD_STRIDE must be defined (e.g., -DCOORD_STRIDE=...)"
+// BASIS_STRIDE must be defined via NVRTC -D options
+#ifndef BASIS_STRIDE
+#error "BASIS_STRIDE must be defined (e.g., -DBASIS_STRIDE=...)"
 #endif
 
 typedef unsigned int uint32_t;
@@ -38,22 +35,16 @@ typedef unsigned int uint32_t;
 #define M_PI 3.14159265358979323846
 #endif
 
-// Pair-stride over (c,e) tuples
-constexpr int prim_stride = PRIM_STRIDE / 2;
+// BASIS_STRIDE layout: [coords (4), ce (BASIS_STRIDE-4)]
 
-// Data structure definitions (after macros are defined)
+// Data structure definitions
 struct __align__(2*sizeof(DataType)) DataType2 {
     DataType c, e;
 };
 
-struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {
-    DataType x, y, z;
-#if COORD_STRIDE >= 4
-    DataType w;
-#endif
-#if COORD_STRIDE > 4
-    DataType _padding[COORD_STRIDE - 4];
-#endif
+// Coords are always 4: [x, y, z, w]
+struct __align__(4*sizeof(DataType)) DataType4 {
+    DataType x, y, z, w;
 };
 
 // Forward declarations for quadrature arrays
