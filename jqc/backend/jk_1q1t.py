@@ -22,7 +22,7 @@ import warnings
 import cupy as cp
 import numpy as np
 
-from jqc.backend.cuda_scripts import jk_1q1t_cuda_code, rys_roots_code, rys_roots_data
+from jqc.backend.cuda_scripts import jk_1q1t_code, rys_roots_code, rys_roots_data
 from jqc.backend.util import generate_lookup_table
 from jqc.constants import BASIS_STRIDE, NPRIM_MAX
 
@@ -73,7 +73,7 @@ constexpr int nroots = ((li+lj+lk+ll)/2+1);
 """
     idx_script = generate_lookup_table(li, lj, lk, ll)
     script = (
-        const + rys_roots_data[nroots] + rys_roots_code + idx_script + jk_1q1t_cuda_code
+        const + rys_roots_data[nroots] + rys_roots_code + idx_script + jk_1q1t_code
     )
 
     _script_cache[keys] = script
