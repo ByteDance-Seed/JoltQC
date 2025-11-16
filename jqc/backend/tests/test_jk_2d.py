@@ -190,16 +190,35 @@ class TestKernelSignature(unittest.TestCase):
     def tearDown(self):
         if hasattr(self, 'mol'):
             self.mol.stdout.close()
-        # Clear CUDA context to avoid address space issues
-        cp.get_default_memory_pool().free_all_blocks()
+        # NOTE: Don't call free_all_blocks() here as it causes CUDA module deallocation
+        # errors when compiled modules are still referenced. Let CuPy manage memory naturally.
 
     def _make_simple_pairs(self, nbasis):
-        """Create simple shell pairs for testing (all pairs)."""
+        """Create simple ij shell pairs (no padding) for VJ tests."""
         pairs = []
-        for i in range(min(nbasis, 2)):  # Limit to avoid memory issues
-            for j in range(min(nbasis, 2)):
+        limit = min(nbasis, 2)  # keep arrays tiny for unit tests
+        for i in range(limit):
+            for j in range(limit):
                 pairs.append([i, j])
-        return cp.array(pairs, dtype=cp.int32)
+        if not pairs:
+            return cp.empty((0, 2), dtype=cp.int32)
+        return cp.asarray(pairs, dtype=cp.int32)
+
+    def _make_tiled_pairs(self, nbasis, tile: int = 16):
+        """Create VK-style tiled shell pairs padded to the CUDA tile size."""
+        pairs = self._make_simple_pairs(nbasis)
+        if pairs.size == 0:
+            return pairs, 0
+
+        n_pairs = pairs.shape[0]
+        pad = (-n_pairs) % tile
+        if pad:
+            # Repeat the last valid pair to keep indices in range
+            padding = cp.repeat(pairs[-1:], pad, axis=0)
+            pairs = cp.concatenate([pairs, padding], axis=0)
+
+        n_tiles = pairs.shape[0] // tile
+        return cp.ascontiguousarray(pairs), n_tiles
 
     def test_vj_kernel_accepts_packed_basis_data(self):
         """Test that VJ kernel accepts packed basis_data parameter."""
@@ -274,13 +293,11 @@ class TestKernelSignature(unittest.TestCase):
 
         # Create minimal pairs
         nbasis = self.basis_layout.nbasis
-        ij_pairs = self._make_simple_pairs(nbasis)
-        kl_pairs = self._make_simple_pairs(nbasis)
+        ij_pairs, n_ij_tiles = self._make_tiled_pairs(nbasis)
+        kl_pairs, n_kl_tiles = self._make_tiled_pairs(nbasis)
 
-        n_ij = len(ij_pairs)
-        n_kl = len(kl_pairs)
-        q_cond_ij = cp.ones(n_ij, dtype=np.float32)
-        q_cond_kl = cp.ones(n_kl, dtype=np.float32)
+        q_cond_ij = cp.ones(len(ij_pairs), dtype=np.float32)
+        q_cond_kl = cp.ones(len(kl_pairs), dtype=np.float32)
         log_cutoff = np.float32(-30.0)
 
         # Get kernel
@@ -299,9 +316,9 @@ class TestKernelSignature(unittest.TestCase):
                 vk_gpu,
                 omega,
                 ij_pairs,
-                n_ij,
+                n_ij_tiles,
                 kl_pairs,
-                n_kl,
+                n_kl_tiles,
                 q_cond_ij,
                 q_cond_kl,
                 log_cutoff,

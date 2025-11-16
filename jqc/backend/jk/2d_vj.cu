@@ -102,6 +102,7 @@ void rys_vj_2d(const int nao,
     constexpr int nfk = (lk+1)*(lk+2)/2;
     constexpr int nfl = (ll+1)*(ll+2)/2;
 
+    // Bounds check BEFORE reading arrays
     if (kl_block_base >= n_kl_pairs) {
         return;
     }
