@@ -108,9 +108,8 @@ def generate_basis_for_angular_momentum(l, symbol="H"):
     shell_type = shell_types[l]
 
     # Generate appropriate exponents for the given angular momentum
-    # Use a sequence of exponents with reasonable spacing
     if l == 0:  # s shell
-        exponents = [0.27, 0.27]#[1.27, 0.27, 0.027]
+        exponents = [0.27]
     elif l == 1:  # p shell
         exponents = [2.5, 0.6, 0.15]
     elif l == 2:  # d shell
@@ -166,7 +165,7 @@ def benchmark(ang, dtype):
         unique_symbols = ['H']
         print(f"\nUsing simple H2 molecule with separation: {h2_distance} Angstrom")
     else:
-        xyz_atoms = load_xyz("molecules/0401-globular-nitrogenous.xyz")#'molecules/0084-elongated-halogenated.xyz')
+        xyz_atoms = load_xyz("molecules/0401-globular-nitrogenous.xyz")
         mol.atom = [(sym, coords) for sym, coords in xyz_atoms]
         mol.unit = "Angstrom"
         unique_symbols = sorted({sym for sym, _ in xyz_atoms})
@@ -184,15 +183,14 @@ def benchmark(ang, dtype):
     nao_mol = mol.nao  # Molecular (spherical) basis size
     group_offset = basis_layout.group_info[1]
     q_matrix = basis_layout.q_matrix(omega=omega)
-    ao_loc = cp.asarray(basis_layout.ao_loc)
 
-    # Select appropriate precision for coords and ce_data based on dtype
+    # Select appropriate precision for packed basis_data based on dtype
     if dtype == np.float32:
-        coords = cp.asarray(basis_layout.coords_fp32)
-        ce_data = cp.asarray(basis_layout.ce_fp32)
+        basis_data_dict = basis_layout.basis_data_fp32
+        basis_data = basis_data_dict['packed'].ravel()
     else:
-        coords = cp.asarray(basis_layout.coords_fp64)
-        ce_data = cp.asarray(basis_layout.ce_fp64)
+        basis_data_dict = basis_layout.basis_data_fp64
+        basis_data = basis_data_dict['packed'].ravel()
 
     # Generate JoltQC get_jk function for reference comparison
     if dtype == np.float32:
@@ -202,24 +200,20 @@ def benchmark(ang, dtype):
 
     # Cast omega to the correct precision for CUDA kernel
     omega_kernel = dtype(omega)
-    omega_fp32 = np.float32(omega) if omega is not None else None
-    omega_fp64 = np.float64(omega) if omega is not None else None
 
     # Build a deterministic symmetric density matrix in MOLECULAR basis
-    # Then convert it to Cartesian basis for the kernel
     rng = np.random.default_rng(42)
     n_dm = 1
     dm_cpu = rng.standard_normal((n_dm, nao_mol, nao_mol))
     dm_cpu = (dm_cpu + dm_cpu.transpose(0,2,1)) * 0.5
     dm_gpu = cp.asarray(dm_cpu, dtype=np.float64)
     dms = dm_gpu
+
     # Convert from molecular to Cartesian basis for the 2D kernel
     dms_jqc = basis_layout.dm_from_mol(dms)
-
-    # Ensure dms_jqc maintains the correct dtype
     dms_jqc = cp.asarray(dms_jqc, dtype=dtype)
 
-    hermi = 1 # Added hermi definition
+    hermi = 1
 
     # Determine primitives per angular momentum
     group_key = basis_layout.group_key
@@ -246,21 +240,16 @@ def benchmark(ang, dtype):
     print(f"\nBasis: {nbas} shells, {nao} AOs")
     print(f"Precision: {dtype.__name__}, omega={omega}")
 
-    # Use 2D algorithm (frags=[-2]) - generate separate VJ and VK kernels
-    print("\nUsing 2D algorithm (frags=[-2]) with separate VJ and VK kernels")
+    # Use 2D algorithm - but call VJ and VK separately since they use different pair formats
+    print("\nUsing 2D algorithm with separate VJ and VK invocations")
 
-    # Generate VJ kernel
+    # Generate separate VJ and VK kernels
     fun_vj = gen_jk_kernel(
         ang, nprim, dtype=dtype, frags=(-2,), n_dm=dms_jqc.shape[0], omega=omega, do_j=True, do_k=False
     )
-
-    # Generate VK kernel
     fun_vk = gen_jk_kernel(
         ang, nprim, dtype=dtype, frags=(-2,), n_dm=dms_jqc.shape[0], omega=omega, do_j=False, do_k=True
     )
-
-    pairs = make_pairs(group_offset, q_matrix, cutoff)
-    pairs_sym = make_pairs_symmetric(group_offset, q_matrix, cutoff)
 
     # Map angular momentum to group indices for pair selection
     group_key_arr = np.asarray(group_key)
@@ -269,6 +258,11 @@ def benchmark(ang, dtype):
             if gl == lam:
                 return idx
         return 0
+
+    gi, gj, gk, gl = map(find_group_idx, ang)
+
+    # ===== VJ Pairs: Symmetric flat pairs from make_pairs_symmetric =====
+    pairs_sym = make_pairs_symmetric(group_offset, q_matrix, cutoff)
 
     def get_symmetric_pairs(pairs_dict, gi, gj, nbas_val):
         """Fetch symmetric pairs for ordered (gi, gj)"""
@@ -283,36 +277,33 @@ def benchmark(ang, dtype):
             pairs_arr = jsh * nbas_val + ish
         return cp.ascontiguousarray(pairs_arr)
 
-    gi, gj, gk, gl = map(find_group_idx, ang)
-    ij_pairs = pairs.get((gi, gj), cp.array([], dtype=cp.int32))
-    kl_pairs = pairs.get((gk, gl), cp.array([], dtype=cp.int32))
-
-    ij_pairs_sym = get_symmetric_pairs(pairs_sym, gi, gj, nbas)
-    kl_pairs_sym = get_symmetric_pairs(pairs_sym, gk, gl, nbas)
-
-    ij_pairs_vj = cp.ascontiguousarray(ij_pairs_sym)
-    kl_pairs_vj = cp.ascontiguousarray(kl_pairs_sym)
+    ij_pairs_vj = get_symmetric_pairs(pairs_sym, gi, gj, nbas)
+    kl_pairs_vj = get_symmetric_pairs(pairs_sym, gk, gl, nbas)
     n_ij_pairs_vj = int(ij_pairs_vj.size)
     n_kl_pairs_vj = int(kl_pairs_vj.size)
 
-    n_ij_pairs = len(ij_pairs)
-    n_kl_pairs = len(kl_pairs)
+    # ===== VK Pairs: Tiled pairs from make_pairs =====
+    pairs_vk = make_pairs(group_offset, q_matrix, cutoff)
+
+    ij_pairs_vk = pairs_vk.get((gi, gj), cp.array([], dtype=cp.int32))
+    kl_pairs_vk = pairs_vk.get((gk, gl), cp.array([], dtype=cp.int32))
+    n_ij_pairs_vk = len(ij_pairs_vk)  # Number of tiles
+    n_kl_pairs_vk = len(kl_pairs_vk)  # Number of tiles
 
     if (
         n_ij_pairs_vj == 0
         or n_kl_pairs_vj == 0
-        or n_ij_pairs == 0
-        or n_kl_pairs == 0
+        or n_ij_pairs_vk == 0
+        or n_kl_pairs_vk == 0
     ):
         print("\nNo pairs found for the given angular momenta.")
         print(f"Angular momenta: {ang}")
         print(f"Group offset: {group_offset}")
         return
 
-    # Flatten - kernel expects contiguous 1D arrays
-    ij_pairs = cp.ascontiguousarray(ij_pairs.ravel())
-    kl_pairs = cp.ascontiguousarray(kl_pairs.ravel())
-    print(n_ij_pairs_vj, n_kl_pairs_vj, n_ij_pairs, n_kl_pairs)
+    print(f"VJ pairs: {n_ij_pairs_vj} ij, {n_kl_pairs_vj} kl (individual symmetric pairs)")
+    print(f"VK pairs: {n_ij_pairs_vk} ij, {n_kl_pairs_vk} kl (tiled pairs, 16-wide)")
+
     # Generate per-pair q_cond arrays for Schwarz screening
     def extract_q_cond(pairs_flat, nbas_val, q_mat):
         """Extract q screening values for each pair"""
@@ -324,27 +315,36 @@ def benchmark(ang, dtype):
         q_cond[pairs_flat >= nbas_val * nbas_val] = -1000.0
         return q_cond
 
+    # ===== VJ: Extract q_cond from symmetric pairs =====
     q_cond_ij_vj = extract_q_cond(ij_pairs_vj, nbas, q_matrix)
     q_cond_kl_vj = extract_q_cond(kl_pairs_vj, nbas, q_matrix)
-    q_cond_ij = extract_q_cond(ij_pairs, nbas, q_matrix)
-    q_cond_kl = extract_q_cond(kl_pairs, nbas, q_matrix)
+
+    # ===== VK: Flatten tiled pairs and extract q_cond =====
+    ij_pairs_vk_flat = cp.ascontiguousarray(ij_pairs_vk.ravel())
+    kl_pairs_vk_flat = cp.ascontiguousarray(kl_pairs_vk.ravel())
+    q_cond_ij_vk = extract_q_cond(ij_pairs_vk_flat, nbas, q_matrix)
+    q_cond_kl_vk = extract_q_cond(kl_pairs_vk_flat, nbas, q_matrix)
+
     log_cutoff = np.float32(cutoff)
 
-    i = ij_pairs_vj % nbas
-    j = ij_pairs_vj // nbas
-    ij = cp.empty([2*n_ij_pairs_vj], dtype=cp.int32)
-    ij[::2] = i
-    ij[1::2] = j
+    # ===== VJ: Convert symmetric pairs to int2 format =====
+    # Packed format: pair = i * nbas + j, so i = pair // nbas, j = pair % nbas
+    i_vj = ij_pairs_vj // nbas
+    j_vj = ij_pairs_vj % nbas
+    ij_vj = cp.empty([n_ij_pairs_vj, 2], dtype=cp.int32)
+    ij_vj[:, 0] = i_vj
+    ij_vj[:, 1] = j_vj
 
-    k = kl_pairs_vj % nbas
-    l = kl_pairs_vj // nbas
-    kl = cp.empty([2*n_kl_pairs_vj], dtype=cp.int32)
-    kl[::2] = k
-    kl[1::2] = l
+    k_vj = kl_pairs_vj // nbas
+    l_vj = kl_pairs_vj % nbas
+    kl_vj = cp.empty([n_ij_pairs_vj, 2], dtype=cp.int32)
+    kl_vj[:, 0] = k_vj
+    kl_vj[:, 1] = l_vj
 
-    # Execute VJ kernel with per-pair Schwarz screening
-    vj_args = (nbas, nao, ao_loc, coords, ce_data, dms_jqc, vj, None,
-               omega_kernel, ij, n_ij_pairs_vj, kl, n_kl_pairs_vj,
+    # ===== Execute VJ kernel =====
+    vk_dummy = cp.zeros_like(vj)  # Dummy vk for combined signature
+    vj_args = (nao, basis_data, dms_jqc, vj, vk_dummy,
+               omega_kernel, ij_vj, n_ij_pairs_vj, kl_vj, n_kl_pairs_vj,
                q_cond_ij_vj, q_cond_kl_vj, log_cutoff)
 
     start_vj = cp.cuda.Event()
@@ -355,22 +355,26 @@ def benchmark(ang, dtype):
     stop_vj.synchronize()
     elapsed_vj = cp.cuda.get_elapsed_time(start_vj, stop_vj) * 1e-3
 
-    i = ij_pairs // nbas
-    j = ij_pairs % nbas
-    ij = cp.empty([2*len(ij_pairs)], dtype=cp.int32)
-    ij[::2] = i
-    ij[1::2] = j
+    # ===== VK: Convert flattened tiled pairs to int2 format =====
+    # Packed format: pair = i * nbas + j, so i = pair // nbas, j = pair % nbas
+    i_vk = ij_pairs_vk_flat // nbas
+    j_vk = ij_pairs_vk_flat % nbas
+    ij_vk = cp.empty([len(ij_pairs_vk_flat), 2], dtype=cp.int32)
+    ij_vk[:, 0] = i_vk
+    ij_vk[:, 1] = j_vk
 
-    k = kl_pairs // nbas
-    l = kl_pairs % nbas
-    kl = cp.empty([2*len(kl_pairs)], dtype=cp.int32)
-    kl[::2] = k
-    kl[1::2] = l
+    k_vk = kl_pairs_vk_flat // nbas
+    l_vk = kl_pairs_vk_flat % nbas
+    kl_vk = cp.empty([len(kl_pairs_vk_flat), 2], dtype=cp.int32)
+    kl_vk[:, 0] = k_vk
+    kl_vk[:, 1] = l_vk
 
-    # Execute VK kernel with per-pair Schwarz screening
-    vk_args = (nbas, nao, ao_loc, coords, ce_data, dms_jqc, None, vk,
-               omega_kernel, ij, n_ij_pairs, kl, n_kl_pairs,
-               q_cond_ij, q_cond_kl, log_cutoff)
+    # ===== Execute VK kernel =====
+    # Note: n_ij_pairs_vk and n_kl_pairs_vk are tile counts, not individual pair counts
+    vj_dummy = cp.zeros_like(vk)  # Dummy vj for combined signature
+    vk_args = (nao, basis_data, dms_jqc, vj_dummy, vk,
+               omega_kernel, ij_vk, n_ij_pairs_vk, kl_vk, n_kl_pairs_vk,
+               q_cond_ij_vk, q_cond_kl_vk, log_cutoff)
 
     start_vk = cp.cuda.Event()
     stop_vk = cp.cuda.Event()
@@ -382,6 +386,7 @@ def benchmark(ang, dtype):
 
     elapsed_2d = elapsed_vj + elapsed_vk
 
+    # ===== Post-process results =====
     inplace_add_transpose(vj)
     inplace_add_transpose(vk)
     vj *= 2.0
@@ -390,7 +395,7 @@ def benchmark(ang, dtype):
     vj_mol = basis_layout.dm_to_mol(vj)
     vk_mol = basis_layout.dm_to_mol(vk)
 
-    # Verify results against JoltQC reference implementation
+    # ===== Verify against reference implementation =====
     ref_start = cp.cuda.Event()
     ref_stop = cp.cuda.Event()
     ref_start.record()
@@ -428,8 +433,6 @@ if __name__ == "__main__":
         print("\nError: Expected 5 arguments (li, lj, lk, ll, precision)")
         print("Example: python benchmark_algorithms.py 0 0 0 0 fp64")
         sys.exit(1)
-
-    
 
     ang = tuple(map(int, sys.argv[1:5]))
 

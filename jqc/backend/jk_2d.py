@@ -45,7 +45,7 @@ from jqc.backend.cuda_scripts import (
     rys_roots_data,
 )
 from jqc.backend.util import generate_lookup_table
-from jqc.constants import COORD_STRIDE, NPRIM_MAX, PRIM_STRIDE
+from jqc.constants import BASIS_STRIDE, NPRIM_MAX
 
 __all__ = ["gen_kernel", "gen_vj_kernel", "gen_vk_kernel"]
 
@@ -87,9 +87,7 @@ constexpr int n_dm = {n_dm};
 constexpr int rys_type = {rys_type};   // 0: omega = 0.0; -1: omega < 0.0; 1 omega > 0.0;
 // Inject constants to match host-side layout
 #define NPRIM_MAX {NPRIM_MAX}
-// PRIM_STRIDE here matches host scalar stride; device uses prim_stride = PRIM_STRIDE/2
-#define PRIM_STRIDE {PRIM_STRIDE}
-#define COORD_STRIDE {COORD_STRIDE}
+#define BASIS_STRIDE {BASIS_STRIDE}
 
 // for rys_roots
 constexpr int nroots = ((li+lj+lk+ll)/2+1);
@@ -132,9 +130,7 @@ constexpr int n_dm = {n_dm};
 constexpr int rys_type = {rys_type};   // 0: omega = 0.0; -1: omega < 0.0; 1 omega > 0.0;
 // Inject constants to match host-side layout
 #define NPRIM_MAX {NPRIM_MAX}
-// PRIM_STRIDE here matches host scalar stride; device uses prim_stride = PRIM_STRIDE/2
-#define PRIM_STRIDE {PRIM_STRIDE}
-#define COORD_STRIDE {COORD_STRIDE}
+#define BASIS_STRIDE {BASIS_STRIDE}
 
 // for rys_roots
 constexpr int nroots = ((li+lj+lk+ll)/2+1);
@@ -178,9 +174,7 @@ constexpr int do_j = {int(do_j)};
 constexpr int do_k = {int(do_k)};
 // Inject constants to match host-side layout
 #define NPRIM_MAX {NPRIM_MAX}
-// PRIM_STRIDE here matches host scalar stride; device uses prim_stride = PRIM_STRIDE/2
-#define PRIM_STRIDE {PRIM_STRIDE}
-#define COORD_STRIDE {COORD_STRIDE}
+#define BASIS_STRIDE {BASIS_STRIDE}
 
 // for rys_roots
 constexpr int nroots = ((li+lj+lk+ll)/2+1);
@@ -217,7 +211,7 @@ def gen_vj_kernel(
 
     Returns:
         Tuple of (script, module, function) where function expects args:
-            (nbas, nao, ao_loc, coords, ce_data, dm, vj, omega,
+            (nao, basis_data, dm, vj, omega,
              ij_pairs, n_ij_pairs, kl_pairs, n_kl_pairs,
              q_cond_ij, q_cond_kl, log_cutoff)
 
@@ -257,23 +251,22 @@ def gen_vj_kernel(
     kernel_vj = mod.get_function("rys_vj_2d")
 
     def fun(*args):
-        # Args: (nbas, nao, ao_loc, coords, ce_data, dm, vj, omega,
+        # Args: (nao, basis_data, dm, vj, omega,
         #        ij_pairs, n_ij_pairs, kl_pairs, n_kl_pairs,
         #        q_cond_ij, q_cond_kl, log_cutoff)
-        n_ij_pairs = args[9]
-        n_kl_pairs = args[11]
+        n_ij_pairs = args[6]
+        n_kl_pairs = args[8]
 
         if n_ij_pairs == 0 or n_kl_pairs == 0:
             return
 
         # VJ: full grid with per-pair screening
-        vj_args = args[:8] + args[8:]
         block_vj = THREADS_VJ * 1
         grid_vj = (
             n_ij_pairs,
             (n_kl_pairs + block_vj[1] - 1) // block_vj[1],
         )
-        kernel_vj(grid_vj, block_vj, vj_args)
+        kernel_vj(grid_vj, block_vj, args)
 
     return script, mod, fun
 
@@ -301,7 +294,7 @@ def gen_vk_kernel(
 
     Returns:
         Tuple of (script, module, function) where function expects args:
-            (nbas, nao, ao_loc, coords, ce_data, dm, vk, omega,
+            (nao, basis_data, dm, vk, omega,
              ij_pairs, n_ij_pairs, kl_pairs, n_kl_pairs,
              q_cond_ij, q_cond_kl, log_cutoff)
 
@@ -341,20 +334,19 @@ def gen_vk_kernel(
     kernel_vk = mod.get_function("rys_vk_2d")
 
     def fun(*args):
-        # Args: (nbas, nao, ao_loc, coords, ce_data, dm, vk, omega,
+        # Args: (nao, basis_data, dm, vk, omega,
         #        ij_pairs, n_ij_pairs, kl_pairs, n_kl_pairs,
         #        q_cond_ij, q_cond_kl, log_cutoff)
-        n_ij_pairs = args[9]
-        n_kl_pairs = args[11]
+        n_ij_pairs = args[6]
+        n_kl_pairs = args[8]
 
         if n_ij_pairs == 0 or n_kl_pairs == 0:
             return
 
         # VK: 2-fold symmetry with per-pair screening
-        vk_args = args[:8] + args[8:]
         block_vk = THREADS_VK
         grid_vk = (n_ij_pairs, n_kl_pairs)
-        kernel_vk(grid_vk, block_vk, vk_args)
+        kernel_vk(grid_vk, block_vk, args)
 
     return script, mod, fun
 
@@ -389,7 +381,7 @@ def gen_kernel(
 
     Returns:
         Tuple of (script, module, function) where function expects args:
-            (nbas, nao, ao_loc, coords, ce_data, dm, vj, vk, omega,
+            (nao, basis_data, dm, vj, vk, omega,
              ij_pairs, n_ij_pairs, kl_pairs, n_kl_pairs,
              q_cond_ij, q_cond_kl, log_cutoff)
 
@@ -421,12 +413,12 @@ def gen_kernel(
         script = f"// VJ Kernel:\n{script_vj}\n\n// VK Kernel:\n{script_vk}"
 
         def fun(*args):
-            # Args: (nbas, nao, ao_loc, coords, ce_data, dm, vj, vk, omega,
+            # Args: (nao, basis_data, dm, vj, vk, omega,
             #        ij_pairs, n_ij_pairs, kl_pairs, n_kl_pairs,
             #        q_cond_ij, q_cond_kl, log_cutoff)
             # Split args for VJ and VK
-            vj_args = args[:7] + (args[8],) + args[9:]
-            vk_args = args[:6] + (args[7], args[8]) + args[9:]
+            vj_args = args[:4] + (args[5],) + args[6:]
+            vk_args = args[:3] + (args[4], args[5]) + args[6:]
 
             fun_vj(*vj_args)
             fun_vk(*vk_args)
@@ -439,7 +431,7 @@ def gen_kernel(
 
         def fun(*args):
             # Extract VJ args from combined signature
-            vj_args = args[:7] + (args[8],) + args[9:]
+            vj_args = args[:4] + (args[5],) + args[6:]
             fun_vj(*vj_args)
 
         return script, mod, fun
@@ -450,7 +442,7 @@ def gen_kernel(
 
         def fun(*args):
             # Extract VK args from combined signature
-            vk_args = args[:6] + (args[7], args[8]) + args[9:]
+            vk_args = args[:3] + (args[4], args[5]) + args[6:]
             fun_vk(*vk_args)
 
         return script, mod, fun

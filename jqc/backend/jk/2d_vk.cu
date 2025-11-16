@@ -20,7 +20,11 @@ constexpr DataType PI_FAC = 34.98683665524972497;
 constexpr DataType half = 0.5;
 constexpr DataType one = 1.0;
 constexpr DataType zero = 0.0;
-constexpr int prim_stride = PRIM_STRIDE / 2;
+
+// BASIS_STRIDE is the total stride: [coords (4), ce (BASIS_STRIDE-4)]
+// prim_stride is for ce pairs: (BASIS_STRIDE-4)/2
+constexpr int prim_stride = (BASIS_STRIDE - 4) / 2;
+constexpr int basis_stride = BASIS_STRIDE;
 
 constexpr int threadx = 16;
 constexpr int thready = 16;
@@ -63,30 +67,23 @@ __inline__ __device__ T blockReduceSum2D(T v) {
 }
 
 
-// Make coordinate stride configurable via COORD_STRIDE
-static_assert(COORD_STRIDE >= 3, "COORD_STRIDE must be >= 3");
-struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {
-    DataType x, y, z;
-#if COORD_STRIDE >= 4
-    DataType w;
-#endif
-#if COORD_STRIDE > 4
-    DataType pad[COORD_STRIDE - 4];
-#endif
+// Coords are always 4: [x, y, z, ao_loc]
+struct __align__(4*sizeof(DataType)) DataType4 {
+    DataType x, y, z, w;  // w stores ao_loc
 };
-static_assert(sizeof(DataType4) == COORD_STRIDE*sizeof(DataType),
-              "DataType4 size must equal COORD_STRIDE*sizeof(DataType)");
 
 struct __align__(2*sizeof(DataType)) DataType2 {
     DataType c, e;
 };
 
+// Helper to get pointer to ce data for a basis
+__device__ __forceinline__ const DataType2* load_ce_ptr(const DataType* __restrict__ basis_data, int ish) {
+    return reinterpret_cast<const DataType2*>(basis_data + ish * basis_stride + 4);
+}
+
 extern "C" __global__
-void rys_vk_2d(const int nbas,
-        const int nao,
-        const int * __restrict__ ao_loc,
-        const DataType4* __restrict__ coords,
-        const DataType2* __restrict__ coeff_exp,
+void rys_vk_2d(const int nao,
+        const DataType* __restrict__ basis_data,
         DataType* __restrict__ dm,
         double* __restrict__ vk,
         const DataType omega,
@@ -132,7 +129,6 @@ void rys_vk_2d(const int nbas,
     // Extract pair indices with thread indexing
     // Pairs are stored in blocks of 16, with padding for incomplete blocks
     const int ij_offset = ij_idx * 16 + threadIdx.x;
-    //const int kl_offset = kl_idx * 16 + threadIdx.y;
     __shared__ int2 kl_smem[16];
     if (threadIdx.y == 0){
         const int kl_offset = kl_idx * 16 + threadIdx.x;
@@ -143,30 +139,28 @@ void rys_vk_2d(const int nbas,
 
     // Load pair with bounds checking
     const int2 ij = ij_pairs[ij_offset];
-    //const int2 kl = kl_pairs[kl_offset];
 
-    // Decode shell indices from flattened pair indices
-    int ish = ij.x;//ij / nbas;
-    int jsh = ij.y;//ij - ish * nbas;  // Equivalent to ij % nbas but potentially faster
-    int ksh = kl.x;//kl / nbas;
-    int lsh = kl.y;//kl - ksh * nbas;
+    // Decode shell indices from pairs
+    int ish = ij.x;
+    int jsh = ij.y;
+    int ksh = kl.x;
+    int lsh = kl.y;
+
+    // Extract ao_loc and coords from packed basis_data
+    const DataType* base_i = basis_data + ish * basis_stride;
+    const DataType* base_j = basis_data + jsh * basis_stride;
+    const DataType* base_k = basis_data + ksh * basis_stride;
+    const DataType* base_l = basis_data + lsh * basis_stride;
+
+    DataType4 ri = *reinterpret_cast<const DataType4*>(base_i);
+    DataType4 rj = *reinterpret_cast<const DataType4*>(base_j);
+    DataType4 rk = *reinterpret_cast<const DataType4*>(base_k);
+    DataType4 rl = *reinterpret_cast<const DataType4*>(base_l);
 
     DataType fac_sym_ij = PI_FAC;
-    fac_sym_ij = (ish >= nbas) ? zero : fac_sym_ij;
-    fac_sym_ij = (jsh >= nbas) ? zero : fac_sym_ij;
 
     DataType fac_sym_kl = one;
-    fac_sym_kl = (ksh >= nbas) ? zero : fac_sym_kl;
-    fac_sym_kl = (lsh >= nbas) ? zero : fac_sym_kl;
     fac_sym_kl *= (ij_idx == kl_idx) ? half : one;
-
-    ish = (ish >= nbas) ? 0 : ish;
-    jsh = (jsh >= nbas) ? 0 : jsh;
-    ksh = (ksh >= nbas) ? 0 : ksh;
-    lsh = (lsh >= nbas) ? 0 : lsh;
-
-    DataType4 ri = coords[ish];
-    DataType4 rj = coords[jsh];
 
     const DataType rij0 = rj.x - ri.x;
     const DataType rij1 = rj.y - ri.y;
@@ -174,9 +168,6 @@ void rys_vk_2d(const int nbas,
 
     const DataType rjri[3] = {rij0, rij1, rij2};
     const DataType rr_ij = rjri[0]*rjri[0] + rjri[1]*rjri[1] + rjri[2]*rjri[2];
-    
-    DataType4 rk = coords[ksh];
-    DataType4 rl = coords[lsh];
 
     const DataType rkl0 = rl.x - rk.x;
     const DataType rkl1 = rl.y - rk.y;
@@ -186,17 +177,19 @@ void rys_vk_2d(const int nbas,
     const DataType rr_kl = rlrk[0]*rlrk[0] + rlrk[1]*rlrk[1] + rlrk[2]*rlrk[2];
     DataType integral[integral_size] = {zero};
 
+    // Load ce data from packed basis_data
+    const DataType2* cei_ptr = load_ce_ptr(basis_data, ish);
+    const DataType2* cej_ptr = load_ce_ptr(basis_data, jsh);
+
     DataType2 reg_cei[npi], reg_cej[npj];
     for (int ip = 0; ip < npi; ip++){
-        const int ish_ip = ip + ish*prim_stride;
-        reg_cei[ip] = coeff_exp[ish_ip];
+        reg_cei[ip] = cei_ptr[ip];
     }
     for (int jp = 0; jp < npj; jp++){
-        const int jsh_jp = jp + jsh*prim_stride;
-        reg_cej[jp] = coeff_exp[jsh_jp];
+        reg_cej[jp] = cej_ptr[jp];
     }
 
-    // Cache per-(ip,jp) terms to avoid repeated expensive exp/div computations if register usage is reasonable
+    // Cache per-(ip,jp) terms to avoid repeated expensive exp/div computations
     __shared__ DataType reg_cicj[npi*npj*threadx];
     __shared__ DataType reg_inv_aij[npi*npj*threadx];
 
@@ -222,13 +215,15 @@ void rys_vk_2d(const int nbas,
     }
     __syncthreads();
 
+    // Load ce data for kl from packed basis_data
+    const DataType2* cek_ptr = load_ce_ptr(basis_data, ksh);
+    const DataType2* cel_ptr = load_ce_ptr(basis_data, lsh);
+
 #pragma unroll
     for (int kp = 0; kp < npk; kp++)
     for (int lp = 0; lp < npl; lp++){
-        const int ksh_kp = kp + ksh*prim_stride;
-        const int lsh_lp = lp + lsh*prim_stride;
-        DataType2 cek = coeff_exp[ksh_kp];
-        DataType2 cel = coeff_exp[lsh_lp];
+        DataType2 cek = cek_ptr[kp];
+        DataType2 cel = cel_ptr[lp];
         const DataType ak = cek.e;
         const DataType al = cel.e;
         const DataType akl = ak + al;
@@ -277,11 +272,6 @@ void rys_vk_2d(const int nbas,
                 g[2*gsize] = rw[(irys*2+1)];
 
                 // TRR
-                //for i in range(lij):
-                //    trr(i+1,0) = c0 * trr(i,0) + i*b10 * trr(i-1,0)
-                //for k in range(lkl):
-                //    for i in range(lij+1):
-                //        trr(i,k+1) = c0p * trr(i,k) + k*b01 * trr(i,k-1) + i*b00 * trr(i-1,k)
                 constexpr int lij = li + lj;
                 if constexpr (lij > 0) {
                     const DataType rt_aij = rt_aa * akl;
@@ -290,7 +280,6 @@ void rys_vk_2d(const int nbas,
 #pragma unroll
                     for (int _ix = 0; _ix < 3; _ix++){
                         DataType *_gix = g + _ix * gsize;
-                        // gx(0,n+1) = c0*gx(0,n) + n*b10*gx(0,n-1)
                         const DataType Rpa = rjri[_ix] * aj_aij;
                         const DataType c0x = Rpa - rt_aij * Rpq[_ix];
                         DataType s0x, s1x, s2x;
@@ -298,7 +287,7 @@ void rys_vk_2d(const int nbas,
                         s1x = c0x * s0x;
                         _gix[stride_i] = s1x;
                         for (int i = 1; i < lij; ++i) {
-                            const DataType i_b10 = i * b10;  // Pre-compute to reduce FLOPs
+                            const DataType i_b10 = i * b10;
                             s2x = c0x * s1x + i_b10 * s0x;
                             _gix[i*stride_i + stride_i] = s2x;
                             s0x = s1x;
@@ -318,16 +307,14 @@ void rys_vk_2d(const int nbas,
                         const DataType Rqc = rlrk[_ix] * al_akl;
                         const DataType cpx = Rqc + rt_akl * Rpq[_ix];
 
-                        //  trr(0,1) = c0p * trr(0,0)
                         DataType s0x, s1x, s2x;
                         s0x = _gix[0];
                         s1x = cpx * s0x;
                         _gix[stride_k] = s1x;
 
-                        // trr(0,k+1) = cp * trr(0,k) + k*b01 * trr(0,k-1)
 #pragma unroll
                         for (int k = 1; k < lkl; ++k) {
-                            const DataType k_b01 = k * b01;  // Pre-compute to reduce FLOPs
+                            const DataType k_b01 = k * b01;
                             s2x = cpx*s1x + k_b01*s0x;
                             _gix[k*stride_k + stride_k] = s2x;
                             s0x = s1x;
@@ -339,20 +326,15 @@ void rys_vk_2d(const int nbas,
                             const int i_off = i * stride_i;
                             int i_off_minus = i_off - stride_i;
                             int i_off_plus_k = i_off + stride_k;
-                            //for i in range(1, lij+1):
-                            //    trr(i,1) = c0p * trr(i,0) + i*b00 * trr(i-1,0)
                             s0x = _gix[i_off];
                             s1x = cpx * s0x;
                             s1x += ib00 * _gix[i_off_minus];
                             _gix[i_off_plus_k] = s1x;
 
-                            //for k in range(1, lkl):
-                            //    for i in range(lij+1):
-                            //        trr(i,k+1) = cp * trr(i,k) + k*b01 * trr(i,k-1) + i*b00 * trr(i-1,k)
                             for (int k = 1; k < lkl; ++k) {
                                 const int k_i_off_minus = i_off_minus + k * stride_k;
                                 const int k_i_off_plus_k = i_off_plus_k + k * stride_k;
-                                const DataType k_b01 = k * b01;  // Pre-compute to reduce FLOPs
+                                const DataType k_b01 = k * b01;
 
                                 s2x = cpx * s1x + k_b01 * s0x;
                                 s2x += ib00 * _gix[k_i_off_minus];
@@ -366,14 +348,12 @@ void rys_vk_2d(const int nbas,
 
 
                 // hrr
-                // g(i,j+1) = rirj * g(i,j) +  g(i+1,j)
-                // g(...,k,l+1) = rkrl * g(...,k,l) + g(...,k+1,l)
                 if constexpr (lj > 0) {
                     constexpr int stride_j_i = stride_j - stride_i;
 #pragma unroll
                     for (int _ix = 0; _ix < 3; _ix++){
                         DataType *_gix = g + _ix * gsize;
-                        const DataType rjri_ix = rjri[_ix];  // Pre-compute to reduce FLOPs in inner loop
+                        const DataType rjri_ix = rjri[_ix];
                         for (int kl = 0; kl < lkl+1; kl++){
                             const int kl_off = kl*stride_k;
                             const int ijkl0 = kl_off + lij*stride_i;
@@ -397,7 +377,7 @@ void rys_vk_2d(const int nbas,
 #pragma unroll
                     for (int _ix = 0; _ix < 3; _ix++){
                         DataType *_gix = g + _ix * gsize;
-                        const DataType rlrk_ix = rlrk[_ix];  // Pre-compute to reduce FLOPs in inner loop
+                        const DataType rlrk_ix = rlrk[_ix];
                         for (int ij = 0; ij < (li+1)*(lj+1); ij++){
                             const int ij_off = ij*stride_i;
                             const int ijl = lkl*stride_k + ij_off;
@@ -430,9 +410,9 @@ void rys_vk_2d(const int nbas,
                             int integral_off = ij_off + k*gstride_k;
                             for (int l = 0; l < nfl; l++){
                                 uint32_t addr = addr_ijk + l_idx[l];
-                                uint32_t addrx =  addr        & 0x3FF;      // 10 low-order bits
-                                uint32_t addry = (addr >> 10) & 0x3FF;      // next 10 bits
-                                uint32_t addrz = (addr >> 20) & 0x3FF;      // next 10 bits
+                                uint32_t addrx =  addr        & 0x3FF;
+                                uint32_t addry = (addr >> 10) & 0x3FF;
+                                uint32_t addrz = (addr >> 20) & 0x3FF;
                                 integral[integral_off + l*gstride_l] += gx[addrx] * gy[addry] * gz[addrz];
                             }
                         }
@@ -442,10 +422,10 @@ void rys_vk_2d(const int nbas,
         }
     }
 
-    const int i0 = ao_loc[ish];
-    const int j0 = ao_loc[jsh];
-    const int k0 = ao_loc[ksh];
-    const int l0 = ao_loc[lsh];
+    const int i0 = static_cast<int>(ri.w);
+    const int j0 = static_cast<int>(rj.w);
+    const int k0 = static_cast<int>(rk.w);
+    const int l0 = static_cast<int>(rl.w);
 
     constexpr int nfij = nfi*nfj;
     constexpr int nfkl = nfk*nfl;

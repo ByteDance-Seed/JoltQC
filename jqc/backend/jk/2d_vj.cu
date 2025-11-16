@@ -20,7 +20,11 @@ constexpr DataType PI_FAC = 34.98683665524972497;
 constexpr DataType half = 0.5;
 constexpr DataType one = 1.0;
 constexpr DataType zero = 0.0;
-constexpr int prim_stride = PRIM_STRIDE / 2;
+
+// BASIS_STRIDE is the total stride: [coords (4), ce (BASIS_STRIDE-4)]
+// prim_stride is for ce pairs: (BASIS_STRIDE-4)/2
+constexpr int prim_stride = (BASIS_STRIDE - 4) / 2;
+constexpr int basis_stride = BASIS_STRIDE;
 
 constexpr int threadx = 1;
 constexpr int thready = 256;
@@ -59,36 +63,26 @@ __device__ __forceinline__ T blockReduceSum2D(T val) {
         val += __shfl_down_sync(0xff, val, 1);
     }
 
-    // Final barrier to ensure all threads sync before function returns
-    //__syncthreads();
-
     return val;  // Thread 0 contains the final sum
 }
 
-// Make coordinate stride configurable via COORD_STRIDE
-static_assert(COORD_STRIDE >= 3, "COORD_STRIDE must be >= 3");
-struct __align__(COORD_STRIDE*sizeof(DataType)) DataType4 {
-    DataType x, y, z;
-#if COORD_STRIDE >= 4
-    DataType w;
-#endif
-#if COORD_STRIDE > 4
-    DataType pad[COORD_STRIDE - 4];
-#endif
+// Coords are always 4: [x, y, z, ao_loc]
+struct __align__(4*sizeof(DataType)) DataType4 {
+    DataType x, y, z, w;  // w stores ao_loc
 };
-static_assert(sizeof(DataType4) == COORD_STRIDE*sizeof(DataType),
-              "DataType4 size must equal COORD_STRIDE*sizeof(DataType)");
 
 struct __align__(2*sizeof(DataType)) DataType2 {
     DataType c, e;
 };
 
+// Helper to get pointer to ce data for a basis
+__device__ __forceinline__ const DataType2* load_ce_ptr(const DataType* __restrict__ basis_data, int ish) {
+    return reinterpret_cast<const DataType2*>(basis_data + ish * basis_stride + 4);
+}
+
 extern "C" __global__
-void rys_vj_2d(const int nbas,
-        const int nao,
-        const int * __restrict__ ao_loc,
-        const DataType4* __restrict__ coords,
-        const DataType2* __restrict__ coeff_exp,
+void rys_vj_2d(const int nao,
+        const DataType* __restrict__ basis_data,
         DataType* __restrict__ dm,
         double* __restrict__ vj,
         const DataType omega,
@@ -107,7 +101,7 @@ void rys_vj_2d(const int nbas,
     constexpr int nfj = (lj+1)*(lj+2)/2;
     constexpr int nfk = (lk+1)*(lk+2)/2;
     constexpr int nfl = (ll+1)*(ll+2)/2;
-    
+
     if (kl_block_base >= n_kl_pairs) {
         return;
     }
@@ -117,27 +111,26 @@ void rys_vj_2d(const int nbas,
 
     // Apply Schwarz screening, skip entire block if inactive
     if (q_ij + q_kl < log_cutoff) { return; }
-    
+
     // Load ij pair index
     const int2 ij = ij_pairs[ij_idx];
     int ish = ij.x;
     int jsh = ij.y;
-    // Decode shell indices from flattened pair indices
-    //int ish = ij / nbas;
-    //int jsh = ij - ish * nbas;
 
-    const int i0 = ao_loc[ish];
-    const int j0 = ao_loc[jsh];
-    
+    // Extract ao_loc from packed basis_data
+    const DataType* base_i = basis_data + ish * basis_stride;
+    const DataType* base_j = basis_data + jsh * basis_stride;
+
+    DataType4 ri = *reinterpret_cast<const DataType4*>(base_i);
+    DataType4 rj = *reinterpret_cast<const DataType4*>(base_j);
+
+    const int i0 = static_cast<int>(ri.w);
+    const int j0 = static_cast<int>(rj.w);
+
     // Apply ij symmetry screening
     DataType fac_sym_ij = PI_FAC;
-    fac_sym_ij = (ish >= nbas || jsh >= nbas) ? zero : fac_sym_ij;
     fac_sym_ij *= (ish == jsh) ? half : one;
 
-    // Clamped versions for array indexing
-    ish = (ish >= nbas) ? 0 : ish;
-    jsh = (jsh >= nbas) ? 0 : jsh;
-    
     constexpr int stride_i = 1;
     constexpr int stride_j = stride_i * (li+1);
     constexpr int stride_k = stride_j * (lj+1);
@@ -151,9 +144,6 @@ void rys_vj_2d(const int nbas,
     constexpr int gstride_i = gstride_j * nfj;
     constexpr int integral_size = nfi*nfj*nfk*nfl;
 
-    const DataType4 ri = coords[ish]; 
-    const DataType4 rj = coords[jsh];
-
     const DataType rij0 = rj.x - ri.x;
     const DataType rij1 = rj.y - ri.y;
     const DataType rij2 = rj.z - ri.z;
@@ -161,14 +151,16 @@ void rys_vj_2d(const int nbas,
     const DataType rjri[3] = {rij0, rij1, rij2};
     const DataType rr_ij = rjri[0]*rjri[0] + rjri[1]*rjri[1] + rjri[2]*rjri[2];
 
+    // Load ce data from packed basis_data
+    const DataType2* cei_ptr = load_ce_ptr(basis_data, ish);
+    const DataType2* cej_ptr = load_ce_ptr(basis_data, jsh);
+
     DataType2 reg_cei[npi], reg_cej[npj];
     for (int ip = 0; ip < npi; ip++){
-        const int ish_ip = ip + ish*prim_stride;
-        reg_cei[ip] = coeff_exp[ish_ip];
+        reg_cei[ip] = cei_ptr[ip];
     }
     for (int jp = 0; jp < npj; jp++){
-        const int jsh_jp = jp + jsh*prim_stride;
-        reg_cej[jp] = coeff_exp[jsh_jp];
+        reg_cej[jp] = cej_ptr[jp];
     }
 
     // Cache per-(ip,jp) terms in shared memory to avoid repeated expensive exp/div computations
@@ -209,18 +201,14 @@ void rys_vj_2d(const int nbas,
     int ksh = kl.x;
     int lsh = kl.y;
 
-    // Decode kl shell indices and preload coordinates
-    //int ksh = kl / nbas;
-    //int lsh = kl - ksh * nbas;
-
-    fac_sym_kl = (ksh >= nbas || lsh >= nbas) ? zero : fac_sym_kl;
     fac_sym_kl *= (ksh == lsh) ? half : one;
-    
-    ksh = (ksh >= nbas) ? 0 : ksh;
-    lsh = (lsh >= nbas) ? 0 : lsh;
 
-    const DataType4 rk = coords[ksh]; 
-    const DataType4 rl = coords[lsh];
+    // Load coords from packed basis_data
+    const DataType* base_k = basis_data + ksh * basis_stride;
+    const DataType* base_l = basis_data + lsh * basis_stride;
+
+    const DataType4 rk = *reinterpret_cast<const DataType4*>(base_k);
+    const DataType4 rl = *reinterpret_cast<const DataType4*>(base_l);
 
     const DataType rkl0 = rl.x - rk.x;
     const DataType rkl1 = rl.y - rk.y;
@@ -229,13 +217,15 @@ void rys_vj_2d(const int nbas,
     const DataType rlrk[3] = {rkl0, rkl1, rkl2};
     const DataType rr_kl = rlrk[0]*rlrk[0] + rlrk[1]*rlrk[1] + rlrk[2]*rlrk[2];
 
+    // Load ce data from packed basis_data
+    const DataType2* cek_ptr = load_ce_ptr(basis_data, ksh);
+    const DataType2* cel_ptr = load_ce_ptr(basis_data, lsh);
+
 #pragma unroll
     for (int kp = 0; kp < npk; kp++)
     for (int lp = 0; lp < npl; lp++){
-        const int ksh_kp = kp + ksh*prim_stride;
-        const int lsh_lp = lp + lsh*prim_stride;
-        const DataType2 cek = coeff_exp[ksh_kp]; 
-        const DataType2 cel = coeff_exp[lsh_lp];
+        const DataType2 cek = cek_ptr[kp];
+        const DataType2 cel = cel_ptr[lp];
         const DataType ak = cek.e;
         const DataType al = cel.e;
         const DataType akl = ak + al;
@@ -431,8 +421,8 @@ void rys_vj_2d(const int nbas,
         }
     }
 
-    const int k0 = ao_loc[ksh];
-    const int l0 = ao_loc[lsh];
+    const int k0 = static_cast<int>(rk.w);
+    const int l0 = static_cast<int>(rl.w);
     constexpr int nfkl = nfk*nfl;
 
     for (int i_dm = 0; i_dm < n_dm; ++i_dm) {
@@ -470,13 +460,12 @@ void rys_vj_2d(const int nbas,
     }
 }
 
-const int vj_offset = i0 + j0*nao;// + i_dm*nao*nao;
+const int vj_offset = i0 + j0*nao;
 double *vj_ptr = vj + vj_offset;
 for (int i = 0; i < nfi; i++){
     for (int j = 0; j < nfj; j++){
         const int offset = j*nao + i;
         DataType vj_ji = reg_vj[i*nfj + j];
-        //atomicAdd(vj_ptr + offset, (double)vj_ji);
         DataType vj_tmp = blockReduceSum2D(vj_ji);
         if (threadIdx.x == 0 && threadIdx.y == 0)
             atomicAdd(vj_ptr + offset, (double)vj_tmp);
@@ -484,4 +473,3 @@ for (int i = 0; i < nfi; i++){
 }
 
 }
-
