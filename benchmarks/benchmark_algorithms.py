@@ -286,7 +286,8 @@ def benchmark(ang, dtype):
     n_kl_pairs_vj = int(kl_pairs_vj.size)
 
     # ===== VK Pairs: Tiled pairs from make_pairs =====
-    pairs_vk = make_pairs(group_offset, q_matrix, cutoff, column_size=16)
+    pair_wide = 64
+    pairs_vk = make_pairs(group_offset, q_matrix, cutoff, column_size=pair_wide)
 
     ij_pairs_vk = pairs_vk.get((gi, gj), cp.array([], dtype=cp.int32))
     kl_pairs_vk = pairs_vk.get((gk, gl), cp.array([], dtype=cp.int32))
@@ -305,7 +306,7 @@ def benchmark(ang, dtype):
         return
 
     print(f"VJ pairs: {n_ij_pairs_vj} ij, {n_kl_pairs_vj} kl (individual symmetric pairs)")
-    print(f"VK pairs: {n_ij_pairs_vk} ij, {n_kl_pairs_vk} kl (tiled pairs, 16-wide)")
+    print(f"VK pairs: {n_ij_pairs_vk} ij, {n_kl_pairs_vk} kl (tiled pairs, {pair_wide}-wide)")
 
     # Generate per-pair q_cond arrays for Schwarz screening
     def extract_q_cond(pairs_flat, nbas_val, q_mat):
@@ -315,7 +316,7 @@ def benchmark(ang, dtype):
         ish = pairs_flat // nbas_val
         jsh = pairs_flat % nbas_val
         q_cond = q_mat[ish, jsh]
-        q_cond[pairs_flat >= nbas_val * nbas_val] = -1000.0
+        q_cond[pairs_flat < 0] = -1000.0
         return q_cond
 
     # ===== VJ: Extract q_cond from symmetric pairs =====
@@ -340,7 +341,7 @@ def benchmark(ang, dtype):
 
     k_vj = kl_pairs_vj // nbas
     l_vj = kl_pairs_vj % nbas
-    kl_vj = cp.empty([n_ij_pairs_vj, 2], dtype=cp.int32)
+    kl_vj = cp.empty([n_kl_pairs_vj, 2], dtype=cp.int32)
     kl_vj[:, 0] = k_vj
     kl_vj[:, 1] = l_vj
 
@@ -410,7 +411,7 @@ def benchmark(ang, dtype):
     tolerance = 1e-8 if dtype == np.float64 else 1e-4
     vj_diff = cp.abs(vj_mol - vj_ref).max()
     vk_diff = cp.abs(vk_mol - vk_ref).max()
-
+    print(cp.linalg.norm(vk_mol), cp.linalg.norm(vk_ref))
     print(f"\nVerification (tolerance={tolerance:.0e}):")
     print(f"  vj error: {vj_diff:.2e}")
     print(f"  vk error: {vk_diff:.2e}")
