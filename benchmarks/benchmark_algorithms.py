@@ -48,6 +48,9 @@ from jqc.pyscf.basis import BasisLayout
 from jqc.pyscf.jk import make_pairs, make_pairs_symmetric, generate_get_jk
 from jqc.backend.linalg_helper import inplace_add_transpose
 
+BENCH_DIR = Path(__file__).resolve().parent
+
+
 def load_xyz(xyz_path):
     """
     Load atomic symbols and coordinates from an XYZ file.
@@ -58,7 +61,7 @@ def load_xyz(xyz_path):
     Returns:
         List of tuples (symbol, (x, y, z))
     """
-    xyz_path = Path(xyz_path)
+    xyz_path = (BENCH_DIR / xyz_path).resolve()
     if not xyz_path.exists():
         raise FileNotFoundError(f"XYZ file not found: {xyz_path}")
 
@@ -150,7 +153,7 @@ def benchmark(ang, dtype):
         L = li
 
     # Setup test molecule with custom basis for the given angular momentum
-    # Use simple H2 molecule for screening tests (set to False to use complex molecule)
+    # Use simple H2 molecule for quick regression testing
     use_simple_molecule = False
     h2_distance = 100.0  # Angstroms - far apart for screening test
 
@@ -283,7 +286,7 @@ def benchmark(ang, dtype):
     n_kl_pairs_vj = int(kl_pairs_vj.size)
 
     # ===== VK Pairs: Tiled pairs from make_pairs =====
-    pairs_vk = make_pairs(group_offset, q_matrix, cutoff)
+    pairs_vk = make_pairs(group_offset, q_matrix, cutoff, column_size=16)
 
     ij_pairs_vk = pairs_vk.get((gi, gj), cp.array([], dtype=cp.int32))
     kl_pairs_vk = pairs_vk.get((gk, gl), cp.array([], dtype=cp.int32))
@@ -454,4 +457,3 @@ if __name__ == "__main__":
     print(f"{'='*60}")
 
     benchmark(ang, dtype)
-

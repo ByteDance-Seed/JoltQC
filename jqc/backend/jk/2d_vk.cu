@@ -118,20 +118,34 @@ void rys_vk_2d(const int nao,
     constexpr int gstride_i = gstride_j * nfj;
     constexpr int integral_size = nfi*nfj*nfk*nfl;
 
+    constexpr int nfrag = 1;
+
     // Load per-pair q_cond values for Schwarz screening
-    const int ij0 = ij_idx * 16;
-    const int kl0 = kl_idx * 16;
+    const int ij0 = ij_idx * 16 * nfrag;
+    const int kl0 = kl_idx * 16 * nfrag;
     const float q_ij = __ldg(&q_cond_ij[ij0]);
     const float q_kl = __ldg(&q_cond_kl[kl0]);
 
     if (q_ij + q_kl < log_cutoff) return;
 
+    DataType reg_vk[nfi*nfk] = {zero};
+    const int2 ij = ij_pairs[ij0];
+    const int2 kl = kl_pairs[kl0];
+    const int ish = ij.x;
+    const int ksh = kl.x;
+    const DataType* base_i = basis_data + ish * basis_stride;
+    const DataType* base_k = basis_data + ksh * basis_stride;
+    DataType4 ri = *reinterpret_cast<const DataType4*>(base_i);
+    DataType4 rk = *reinterpret_cast<const DataType4*>(base_k);
+    
+    for (int ij_frag = 0; ij_frag < nfrag; ij_frag++)
+    for (int kl_frag = 0; kl_frag < nfrag; kl_frag++){
     // Extract pair indices with thread indexing
     // Pairs are stored in blocks of 16, with padding for incomplete blocks
-    const int ij_offset = ij_idx * 16 + threadIdx.x;
+    const int ij_offset = ij0 + 16*ij_frag + threadIdx.x;
     __shared__ int2 kl_smem[16];
     if (threadIdx.y == 0){
-        const int kl_offset = kl_idx * 16 + threadIdx.x;
+        const int kl_offset = kl0 + 16*kl_frag + threadIdx.x;
         kl_smem[threadIdx.x] = kl_pairs[kl_offset];
     }
     __syncthreads();
@@ -141,20 +155,14 @@ void rys_vk_2d(const int nao,
     const int2 ij = ij_pairs[ij_offset];
 
     // Decode shell indices from pairs
-    int ish = ij.x;
     int jsh = ij.y;
-    int ksh = kl.x;
     int lsh = kl.y;
 
     // Extract ao_loc and coords from packed basis_data
-    const DataType* base_i = basis_data + ish * basis_stride;
     const DataType* base_j = basis_data + jsh * basis_stride;
-    const DataType* base_k = basis_data + ksh * basis_stride;
     const DataType* base_l = basis_data + lsh * basis_stride;
 
-    DataType4 ri = *reinterpret_cast<const DataType4*>(base_i);
     DataType4 rj = *reinterpret_cast<const DataType4*>(base_j);
-    DataType4 rk = *reinterpret_cast<const DataType4*>(base_k);
     DataType4 rl = *reinterpret_cast<const DataType4*>(base_l);
 
     DataType fac_sym_ij = PI_FAC;
@@ -422,9 +430,7 @@ void rys_vk_2d(const int nao,
         }
     }
 
-    const int i0 = static_cast<int>(ri.w);
     const int j0 = static_cast<int>(rj.w);
-    const int k0 = static_cast<int>(rk.w);
     const int l0 = static_cast<int>(rl.w);
 
     constexpr int nfij = nfi*nfj;
@@ -445,8 +451,6 @@ void rys_vk_2d(const int nao,
             }
             dm_ptr += nao;
         }
-        const int vk_offset = i0*nao + k0;
-        double *vk_ptr = vk + vk_offset;
 #pragma unroll
         for (int i = 0; i < nfi; i++){
             const int base_off_i = i*gstride_i;
@@ -462,15 +466,25 @@ void rys_vk_2d(const int nao,
                     }
                     off_k += gstride_j;
                 }
-
-                DataType vk_tmp = blockReduceSum2D(vk_ik);
-                if (threadIdx.x == 0 && threadIdx.y == 0)
-                    atomicAdd(vk_ptr + i*nao + k, vk_tmp);
+                reg_vk[i*nfk + k] += vk_ik;
             }
         }
 
-        const int nao2 = nao*nao;
-        dm += nao2;
-        vk += nao2;
+        //const int nao2 = nao*nao;
+        //dm += nao2;
+        //vk += nao2;
     }
+}
+
+const int i0 = static_cast<int>(ri.w);
+const int k0 = static_cast<int>(rk.w);
+const int vk_offset = i0*nao + k0;
+double *vk_ptr = vk + vk_offset;
+for (int i = 0; i < nfi; i++)
+    for (int k = 0; k < nfk; k++){
+        DataType vk_tmp = blockReduceSum2D(reg_vk[i*nfk + k]);
+        if (threadIdx.x == 0 && threadIdx.y == 0)
+            atomicAdd(vk_ptr + i*nao + k, vk_tmp);
+    }
+
 }
