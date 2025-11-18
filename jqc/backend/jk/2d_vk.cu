@@ -96,6 +96,8 @@ void rys_vk_2d(const int nao,
     const int kl_idx = blockIdx.y;
 
     if (ij_idx < kl_idx) return;  // 2-fold symmetry: only compute ij >= kl quartets
+    DataType fac_sym_kl = one;
+    fac_sym_kl *= (ij_idx == kl_idx) ? half : one;
 
     constexpr int stride_i = 1;
     constexpr int stride_j = stride_i * (li+1);
@@ -115,7 +117,7 @@ void rys_vk_2d(const int nao,
     constexpr int gstride_i = gstride_j * nfj;
     constexpr int integral_size = nfi*nfj*nfk*nfl;
 
-    const int nfrag = pair_wide / threadx;
+    constexpr int nfrag = pair_wide / threadx;
 
     // Load per-pair q_cond values for Schwarz screening
     const int ij0 = ij_idx * pair_wide;
@@ -134,25 +136,21 @@ void rys_vk_2d(const int nao,
     const DataType* base_k = basis_data + ksh * basis_stride;
     const DataType4 ri = *reinterpret_cast<const DataType4*>(base_i);
     const DataType4 rk = *reinterpret_cast<const DataType4*>(base_k);
-    
-    DataType2 reg_cei[npi], reg_cek[npk];
-    const DataType2* cei_ptr = load_ce_ptr(basis_data, ish);
-    const DataType2* cek_ptr = load_ce_ptr(basis_data, ksh);
-    for (int ip = 0; ip < npi; ip++){
-        reg_cei[ip] = cei_ptr[ip];
-    }
-    for (int kp = 0; kp < npk; kp++){
-        reg_cek[kp] = cek_ptr[kp];
-    }
 
     __shared__ DataType smem_cicj[npi*npj*pair_wide];
     __shared__ DataType smem_inv_aij[npi*npj*pair_wide];
     __shared__ DataType smem_ckcl[npk*npl*pair_wide];
     __shared__ DataType smem_inv_akl[npk*npl*pair_wide];
-    __shared__ DataType4 smem_rj[pair_wide];
-    __shared__ DataType4 smem_rl[pair_wide];
-    __shared__ DataType2 smem_cej[npj*pair_wide];
-    __shared__ DataType2 smem_cel[npl*pair_wide];
+    __shared__ DataType smem_rjx[pair_wide];
+    __shared__ DataType smem_rjy[pair_wide];
+    __shared__ DataType smem_rjz[pair_wide];
+    __shared__ int smem_j_loc[pair_wide];
+    __shared__ DataType smem_rlx[pair_wide];
+    __shared__ DataType smem_rly[pair_wide];
+    __shared__ DataType smem_rlz[pair_wide];
+    __shared__ int smem_l_loc[pair_wide];
+    __shared__ DataType smem_ej[npj*pair_wide];
+    __shared__ DataType smem_el[npl*pair_wide];
     
     // preload cicj, inv_aij, rj, and cej for all pairs in the block
     const int tid = threadIdx.y * blockDim.x + threadIdx.x;
@@ -164,7 +162,10 @@ void rys_vk_2d(const int nao,
         const DataType4 rj = *reinterpret_cast<const DataType4*>(base_j);
 
         // Store rj in shared memory
-        smem_rj[tid] = rj;
+        smem_rjx[tid] = rj.x;
+        smem_rjy[tid] = rj.y;
+        smem_rjz[tid] = rj.z;
+        smem_j_loc[tid] = static_cast<int>(rj.w);
 
         DataType fac_sym_ij = PI_FAC;
         fac_sym_ij = (ij.x < 0) ? zero : fac_sym_ij;
@@ -174,12 +175,15 @@ void rys_vk_2d(const int nao,
         const DataType rjri[3] = {rij0, rij1, rij2};
         const DataType rr_ij = rjri[0]*rjri[0] + rjri[1]*rjri[1] + rjri[2]*rjri[2];
 
+        const DataType2* cei_ptr = load_ce_ptr(basis_data, ish);
         const DataType2* cej_ptr = load_ce_ptr(basis_data, jsh);
-        DataType2 reg_cej[npj];
+        DataType2 reg_cei[npi], reg_cej[npj];
+        for (int ip = 0; ip < npi; ip++){
+            reg_cei[ip] = cei_ptr[ip];
+        }
         for (int jp = 0; jp < npj; jp++){
             reg_cej[jp] = cej_ptr[jp];
-            // Store cej in shared memory
-            smem_cej[jp * pair_wide + tid] = reg_cej[jp];
+            smem_ej[jp * pair_wide + tid] = reg_cej[jp].e;
         }
         for (int ip = 0; ip < npi; ip++)
         for (int jp = 0; jp < npj; jp++){
@@ -209,10 +213,11 @@ void rys_vk_2d(const int nao,
         const DataType4 rl = *reinterpret_cast<const DataType4*>(base_l);
 
         // Store rl in shared memory
-        smem_rl[tid] = rl;
+        smem_rlx[tid] = rl.x;
+        smem_rly[tid] = rl.y;
+        smem_rlz[tid] = rl.z;
+        smem_l_loc[tid] = static_cast<int>(rl.w);
 
-        DataType fac_sym_kl = one;
-        fac_sym_kl *= (ij_idx == kl_idx) ? half : one;
         fac_sym_kl = (kl.x < 0) ? zero : fac_sym_kl;
         const DataType rkl0 = rl.x - rk.x;
         const DataType rkl1 = rl.y - rk.y;
@@ -220,12 +225,16 @@ void rys_vk_2d(const int nao,
         const DataType rlrk[3] = {rkl0, rkl1, rkl2};
         const DataType rr_kl = rlrk[0]*rlrk[0] + rlrk[1]*rlrk[1] + rlrk[2]*rlrk[2];
 
+        const DataType2* cek_ptr = load_ce_ptr(basis_data, ksh);
         const DataType2* cel_ptr = load_ce_ptr(basis_data, lsh);
-        DataType2 reg_cel[npl];
+        DataType2 reg_cek[npk], reg_cel[npl];
+        for (int kp = 0; kp < npk; kp++){
+            reg_cek[kp] = cek_ptr[kp];
+        }
         for (int lp = 0; lp < npl; lp++){
             reg_cel[lp] = cel_ptr[lp];
             // Store cel in shared memory
-            smem_cel[lp * pair_wide + tid] = reg_cel[lp];
+            smem_el[lp * pair_wide + tid] = reg_cel[lp].e;
         }
         for (int kp = 0; kp < npk; kp++)
         for (int lp = 0; lp < npl; lp++){
@@ -250,31 +259,33 @@ void rys_vk_2d(const int nao,
     for (int ij_frag = 0; ij_frag < nfrag; ij_frag++){
         // Load rj and cej from shared memory
         const int smem_ij_idx = threadx*ij_frag + threadIdx.x;
-        const DataType4 rj = smem_rj[smem_ij_idx];
-        const DataType rjri[3] = {rj.x - ri.x, rj.y - ri.y, rj.z - ri.z};
+        //const DataType4 rj = smem_rj[smem_ij_idx];
+        const DataType rj[3] = {smem_rjx[smem_ij_idx], smem_rjy[smem_ij_idx], smem_rjz[smem_ij_idx]};
+        const DataType rjri[3] = {rj[0] - ri.x, rj[1] - ri.y, rj[2] - ri.z};
 
         for (int kl_frag = 0; kl_frag < nfrag; kl_frag++){
             // Load rl and cel from shared memory
             const int smem_kl_idx = threadx*kl_frag + threadIdx.y;
-            const DataType4 rl = smem_rl[smem_kl_idx];
-            const DataType rlrk[3] = {rl.x - rk.x, rl.y - rk.y, rl.z - rk.z};
+            //const DataType4 rl = smem_rl[smem_kl_idx];
+            const DataType rl[3] = {smem_rlx[smem_kl_idx], smem_rly[smem_kl_idx], smem_rlz[smem_kl_idx]};
+            const DataType rlrk[3] = {rl[0] - rk.x, rl[1] - rk.y, rl[2] - rk.z};
             DataType integral[integral_size] = {zero};
 
         #pragma unroll
             for (int kp = 0; kp < npk; kp++)
             for (int lp = 0; lp < npl; lp++){
-                const DataType al = smem_cel[lp * pair_wide + smem_kl_idx].e;
+                const DataType al = smem_el[lp * pair_wide + smem_kl_idx];
 
                 // Load precomputed ckcl and inv_akl from shared memory
-                const int kl_idx = (kp + lp*npk) * pair_wide + kl_frag * threadx + threadIdx.y;
+                const int kl_idx = (kp + lp*npk) * pair_wide + smem_kl_idx;
                 const DataType inv_akl = smem_inv_akl[kl_idx];
                 const DataType ckcl = smem_ckcl[kl_idx];
                 const DataType al_akl = al * inv_akl;
                 for (int ip = 0; ip < npi; ip++)
                 for (int jp = 0; jp < npj; jp++){
-                    const DataType aj = smem_cej[jp * pair_wide + smem_ij_idx].e;
+                    const DataType aj = smem_ej[jp * pair_wide + smem_ij_idx];
 
-                    const int idx = (ip + jp*npi) * pair_wide + ij_frag * threadx + threadIdx.x;
+                    const int idx = (ip + jp*npi) * pair_wide + smem_ij_idx;
                     const DataType inv_aij = smem_inv_aij[idx];
                     const DataType cicj = smem_cicj[idx];
 
@@ -461,8 +472,8 @@ void rys_vk_2d(const int nao,
                 }
             }
 
-            const int j0 = static_cast<int>(rj.w);
-            const int l0 = static_cast<int>(rl.w);
+            const int j0 = smem_j_loc[smem_ij_idx];//static_cast<int>(rj.w);
+            const int l0 = smem_l_loc[smem_kl_idx];//static_cast<int>(rl.w);
 
             constexpr int nfjl = nfj*nfl;
 
@@ -501,7 +512,6 @@ void rys_vk_2d(const int nao,
                 //vk += nao2;
             }
         }
-        __syncthreads();
     }
 
     const int i0 = static_cast<int>(ri.w);
