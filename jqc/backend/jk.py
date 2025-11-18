@@ -64,6 +64,7 @@ def gen_jk_kernel(
     do_k=True,
     omega=None,
     frags=None,
+    pair_wide=64,
     print_log=False,
     force_cache_mode=None,
 ):
@@ -109,6 +110,7 @@ def gen_jk_kernel(
             do_j=do_j,
             do_k=do_k,
             omega=omega,
+            pair_wide=pair_wide,
             print_log=print_log,
         )
     else:

@@ -95,7 +95,7 @@ def gen_code_vk(keys):
     """Generate code for VK kernel only."""
     if keys in _script_cache_vk:
         return _script_cache_vk[keys]
-    ang, nprim, dtype, rys_type, n_dm = keys
+    ang, nprim, dtype, rys_type, n_dm, pair_wide = keys
     if dtype == np.float64:
         dtype_cuda = "double"
     elif dtype == np.float32:
@@ -118,6 +118,7 @@ constexpr int npj = {npj};
 constexpr int npk = {npk};
 constexpr int npl = {npl};
 constexpr int n_dm = {n_dm};
+constexpr int pair_wide = {pair_wide};
 constexpr int rys_type = {rys_type};   // 0: omega = 0.0; -1: omega < 0.0; 1 omega > 0.0;
 // Inject constants to match host-side layout
 #define NPRIM_MAX {NPRIM_MAX}
@@ -223,6 +224,7 @@ def gen_vk_kernel(
     dtype=np.double,
     n_dm=1,
     omega=None,
+    pair_wide=64,
     print_log=False,
     use_cache=True,
 ):
@@ -236,6 +238,7 @@ def gen_vk_kernel(
         dtype: Data type (np.float32 or np.float64)
         n_dm: Number of density matrices to process
         omega: Range-separation parameter (None for standard integrals)
+        pair_wide: Width of tiled pairs (default: 64)
         print_log: Print kernel info if True
         use_cache: Use cached kernels if available
 
@@ -266,7 +269,7 @@ def gen_vk_kernel(
     else:
         rys_type = 0
 
-    keys = ang, nprim, dtype, rys_type, n_dm
+    keys = ang, nprim, dtype, rys_type, n_dm, pair_wide
     script = gen_code_vk(keys)
 
     if not use_cache:
@@ -284,6 +287,7 @@ def gen_vk_kernel(
         # Args: (nao, basis_data, dm, vk, omega,
         #        ij_pairs, n_ij_pairs, kl_pairs, n_kl_pairs,
         #        q_cond_ij, q_cond_kl, log_cutoff)
+        # Note: pair_wide is now a compile-time constant, not a runtime argument
         n_ij_pairs = args[6]
         n_kl_pairs = args[8]
 
@@ -305,6 +309,7 @@ def gen_kernel(
     do_j=True,
     do_k=True,
     omega=None,
+    pair_wide=64,
     print_log=False,
     use_cache=True,
 ):
@@ -323,6 +328,7 @@ def gen_kernel(
         do_j: Whether to compute J matrix
         do_k: Whether to compute K matrix
         omega: Range-separation parameter (None for standard integrals)
+        pair_wide: Width of tiled pairs for VK kernel (default: 64)
         print_log: Print kernel info if True
         use_cache: Use cached kernels if available
 
@@ -347,7 +353,7 @@ def gen_kernel(
 
     if do_k:
         vk_result = gen_vk_kernel(
-            ang, nprim, dtype, n_dm, omega, print_log, use_cache
+            ang, nprim, dtype, n_dm, omega, pair_wide, print_log, use_cache
         )
 
     # Combine results
@@ -360,12 +366,50 @@ def gen_kernel(
         script = f"// VJ Kernel:\n{script_vj}\n\n// VK Kernel:\n{script_vk}"
 
         def fun(*args):
-            # Args: (nao, basis_data, dm, vj, vk, omega,
-            #        ij_pairs, n_ij_pairs, kl_pairs, n_kl_pairs,
-            #        q_cond_ij, q_cond_kl, log_cutoff)
-            # Split args for VJ and VK
-            vj_args = args[:4] + (args[5],) + args[6:]
-            vk_args = args[:3] + (args[4], args[5]) + args[6:]
+            (
+                nao,
+                basis_data,
+                dm,
+                vj_arr,
+                vk_arr,
+                omega_val,
+                ij_pairs,
+                n_ij_pairs,
+                kl_pairs,
+                n_kl_pairs,
+                q_cond_ij,
+                q_cond_kl,
+                log_cutoff,
+            ) = args
+
+            vj_args = (
+                nao,
+                basis_data,
+                dm,
+                vj_arr,
+                omega_val,
+                ij_pairs,
+                n_ij_pairs,
+                kl_pairs,
+                n_kl_pairs,
+                q_cond_ij,
+                q_cond_kl,
+                log_cutoff,
+            )
+            vk_args = (
+                nao,
+                basis_data,
+                dm,
+                vk_arr,
+                omega_val,
+                ij_pairs,
+                n_ij_pairs,
+                kl_pairs,
+                n_kl_pairs,
+                q_cond_ij,
+                q_cond_kl,
+                log_cutoff,
+            )
 
             fun_vj(*vj_args)
             fun_vk(*vk_args)
@@ -377,8 +421,36 @@ def gen_kernel(
         script, mod, fun_vj = vj_result
 
         def fun(*args):
-            # Extract VJ args from combined signature
-            vj_args = args[:4] + (args[5],) + args[6:]
+            (
+                nao,
+                basis_data,
+                dm,
+                vj_arr,
+                _,
+                omega_val,
+                ij_pairs,
+                n_ij_pairs,
+                kl_pairs,
+                n_kl_pairs,
+                q_cond_ij,
+                q_cond_kl,
+                log_cutoff,
+            ) = args
+
+            vj_args = (
+                nao,
+                basis_data,
+                dm,
+                vj_arr,
+                omega_val,
+                ij_pairs,
+                n_ij_pairs,
+                kl_pairs,
+                n_kl_pairs,
+                q_cond_ij,
+                q_cond_kl,
+                log_cutoff,
+            )
             fun_vj(*vj_args)
 
         return script, mod, fun
@@ -388,8 +460,36 @@ def gen_kernel(
         script, mod, fun_vk = vk_result
 
         def fun(*args):
-            # Extract VK args from combined signature
-            vk_args = args[:3] + (args[4], args[5]) + args[6:]
+            (
+                nao,
+                basis_data,
+                dm,
+                _,
+                vk_arr,
+                omega_val,
+                ij_pairs,
+                n_ij_pairs,
+                kl_pairs,
+                n_kl_pairs,
+                q_cond_ij,
+                q_cond_kl,
+                log_cutoff,
+            ) = args
+
+            vk_args = (
+                nao,
+                basis_data,
+                dm,
+                vk_arr,
+                omega_val,
+                ij_pairs,
+                n_ij_pairs,
+                kl_pairs,
+                n_kl_pairs,
+                q_cond_ij,
+                q_cond_kl,
+                log_cutoff,
+            )
             fun_vk(*vk_args)
 
         return script, mod, fun

@@ -415,7 +415,8 @@ def make_pairs(l_ctr_bas_loc, q_matrix, cutoff, column_size: int = 16):
                 current_pairs = sh_i * nbas + valid_j_indices
 
                 q_values = sub_q_idx[idx, :][row_mask]
-                sort_indices = cp.argsort(q_values)
+                # Sort in descending order so the first entry carries the largest q value
+                sort_indices = cp.argsort(-q_values)
                 sorted_pairs = current_pairs[sort_indices]
 
                 num_pairs = sorted_pairs.size

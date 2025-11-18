@@ -293,8 +293,9 @@ class TestKernelSignature(unittest.TestCase):
 
         # Create minimal pairs
         nbasis = self.basis_layout.nbasis
-        ij_pairs, n_ij_tiles = self._make_tiled_pairs(nbasis)
-        kl_pairs, n_kl_tiles = self._make_tiled_pairs(nbasis)
+        pair_wide = 16
+        ij_pairs, n_ij_tiles = self._make_tiled_pairs(nbasis, tile=pair_wide)
+        kl_pairs, n_kl_tiles = self._make_tiled_pairs(nbasis, tile=pair_wide)
 
         q_cond_ij = cp.ones(len(ij_pairs), dtype=np.float32)
         q_cond_kl = cp.ones(len(kl_pairs), dtype=np.float32)
@@ -319,6 +320,7 @@ class TestKernelSignature(unittest.TestCase):
                 n_ij_tiles,
                 kl_pairs,
                 n_kl_tiles,
+                np.int32(pair_wide),
                 q_cond_ij,
                 q_cond_kl,
                 log_cutoff,

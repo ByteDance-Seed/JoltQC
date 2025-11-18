@@ -60,8 +60,10 @@ static void rys_roots(DataType x, DataType *rw, DataType theta, DataType omega)
     }
 
     if (x > large_x) {
-        const DataType inv_x = one / x; 
-        const DataType t = SQRTPIE4 * sqrt(inv_x);
+        // Optimize using rsqrt: rsqrt(x) = 1/sqrt(x)
+        const DataType inv_sqrt_x = rsqrt(x);
+        const DataType inv_x = inv_sqrt_x * inv_sqrt_x;  // (1/sqrt(x))^2 = 1/x
+        const DataType t = SQRTPIE4 * inv_sqrt_x;
 #pragma unroll
         for (int i = 0; i < nroots; i++)  {
             rw[2*i] = ROOT_LARGEX_R_DATA[i] * inv_x;
@@ -75,13 +77,15 @@ static void rys_roots(DataType x, DataType *rw, DataType theta, DataType omega)
     }
     
     if constexpr(nroots == 1) {
-        const DataType tt = sqrt(x);
+        // Optimize using rsqrt: rsqrt(x) = 1/sqrt(x)
+        const DataType inv_sqrt_x = rsqrt(x);
+        const DataType tt = x * inv_sqrt_x;  // x * (1/sqrt(x)) = sqrt(x)
         const DataType erf_tt = erf(tt);
         const DataType e = exp(-x);
 
-        // Combine inv_x and inv_tt calculations to reduce FLOPs
-        const DataType inv_x = one / x;
-        const DataType fmt0 = (SQRTPIE4 / tt) * erf_tt;  // Combined division and multiplication
+        // Derive inv_x from inv_sqrt_x to avoid division
+        const DataType inv_x = inv_sqrt_x * inv_sqrt_x;  // (1/sqrt(x))^2 = 1/x
+        const DataType fmt0 = SQRTPIE4 * inv_sqrt_x * erf_tt;
         rw[1] = fmt0;
 
         // Optimize the final division: fmt1/fmt0 = (half*inv_x*(fmt0-e))/fmt0 = half*inv_x*(1-e/fmt0)

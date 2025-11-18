@@ -246,12 +246,15 @@ def benchmark(ang, dtype):
     # Use 2D algorithm - but call VJ and VK separately since they use different pair formats
     print("\nUsing 2D algorithm with separate VJ and VK invocations")
 
+    # Define pair_wide before kernel generation
+    pair_wide = 64
+
     # Generate separate VJ and VK kernels
     fun_vj = gen_jk_kernel(
         ang, nprim, dtype=dtype, frags=(-2,), n_dm=dms_jqc.shape[0], omega=omega, do_j=True, do_k=False
     )
     fun_vk = gen_jk_kernel(
-        ang, nprim, dtype=dtype, frags=(-2,), n_dm=dms_jqc.shape[0], omega=omega, do_j=False, do_k=True
+        ang, nprim, dtype=dtype, frags=(-2,), n_dm=dms_jqc.shape[0], omega=omega, do_j=False, do_k=True, pair_wide=pair_wide
     )
 
     # Map angular momentum to group indices for pair selection
@@ -286,7 +289,6 @@ def benchmark(ang, dtype):
     n_kl_pairs_vj = int(kl_pairs_vj.size)
 
     # ===== VK Pairs: Tiled pairs from make_pairs =====
-    pair_wide = 64
     pairs_vk = make_pairs(group_offset, q_matrix, cutoff, column_size=pair_wide)
 
     ij_pairs_vk = pairs_vk.get((gi, gj), cp.array([], dtype=cp.int32))
@@ -328,7 +330,6 @@ def benchmark(ang, dtype):
     kl_pairs_vk_flat = cp.ascontiguousarray(kl_pairs_vk.ravel())
     q_cond_ij_vk = extract_q_cond(ij_pairs_vk_flat, nbas, q_matrix)
     q_cond_kl_vk = extract_q_cond(kl_pairs_vk_flat, nbas, q_matrix)
-
     log_cutoff = np.float32(cutoff)
 
     # ===== VJ: Convert symmetric pairs to int2 format =====
@@ -347,9 +348,21 @@ def benchmark(ang, dtype):
 
     # ===== Execute VJ kernel =====
     vk_dummy = cp.zeros_like(vj)  # Dummy vk for combined signature
-    vj_args = (nao, basis_data, dms_jqc, vj, vk_dummy,
-               omega_kernel, ij_vj, n_ij_pairs_vj, kl_vj, n_kl_pairs_vj,
-               q_cond_ij_vj, q_cond_kl_vj, log_cutoff)
+    vj_args = (
+        nao,
+        basis_data,
+        dms_jqc,
+        vj,
+        vk_dummy,
+        omega_kernel,
+        ij_vj,
+        n_ij_pairs_vj,
+        kl_vj,
+        n_kl_pairs_vj,
+        q_cond_ij_vj,
+        q_cond_kl_vj,
+        log_cutoff,
+    )
 
     start_vj = cp.cuda.Event()
     stop_vj = cp.cuda.Event()
@@ -376,9 +389,21 @@ def benchmark(ang, dtype):
     # ===== Execute VK kernel =====
     # Note: n_ij_pairs_vk and n_kl_pairs_vk are tile counts, not individual pair counts
     vj_dummy = cp.zeros_like(vk)  # Dummy vj for combined signature
-    vk_args = (nao, basis_data, dms_jqc, vj_dummy, vk,
-               omega_kernel, ij_vk, n_ij_pairs_vk, kl_vk, n_kl_pairs_vk,
-               q_cond_ij_vk, q_cond_kl_vk, log_cutoff)
+    vk_args = (
+        nao,
+        basis_data,
+        dms_jqc,
+        vj_dummy,
+        vk,
+        omega_kernel,
+        ij_vk,
+        n_ij_pairs_vk,
+        kl_vk,
+        n_kl_pairs_vk,
+        q_cond_ij_vk,
+        q_cond_kl_vk,
+        log_cutoff,
+    )
 
     start_vk = cp.cuda.Event()
     stop_vk = cp.cuda.Event()
