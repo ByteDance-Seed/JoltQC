@@ -27,7 +27,7 @@ import numpy as np
 
 from jqc.backend.jk_1q1t import gen_kernel as jk_1q1t_kernel
 from jqc.backend.jk_1qnt import gen_kernel as jk_1qnt_kernel
-from jqc.backend.jk_2d import gen_kernel as jk_2d_kernel
+from jqc.backend.jk_pair import gen_kernel as jk_pair_kernel
 
 device_id = cp.cuda.Device().id
 props = cp.cuda.runtime.getDeviceProperties(device_id)
@@ -102,7 +102,7 @@ def gen_jk_kernel(
             print_log=print_log,
         )
     elif opt_frags[0] == -2:
-        _, _, fun = jk_2d_kernel(
+        _, _, fun = jk_pair_kernel(
             angulars,
             nprimitives,
             dtype=dtype,

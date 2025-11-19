@@ -44,7 +44,7 @@ import numpy as np
 from pyscf import gto
 
 from jqc.backend.jk import gen_jk_kernel
-from jqc.backend.jk_2d import make_pairs, make_pairs_symmetric
+from jqc.backend.jk_pair import make_pairs, make_pairs_symmetric
 from jqc.backend.linalg_helper import inplace_add_transpose
 from jqc.pyscf.basis import BasisLayout
 from jqc.pyscf.jk import generate_get_jk

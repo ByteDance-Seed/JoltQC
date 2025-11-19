@@ -25,7 +25,7 @@ from gpu4pyscf import scf
 
 import jqc.pyscf
 import jqc.pyscf.basis
-import jqc.backend.jk_2d
+import jqc.backend.jk_pair
 
 
 def _to_numpy(x):
@@ -304,7 +304,7 @@ class KnownValues(unittest.TestCase):
         cutoff = 0.3
 
         column_size = 16
-        pairs = jqc.backend.jk_2d.make_pairs(
+        pairs = jqc.backend.jk_pair.make_pairs(
             l_ctr_bas_loc, q_matrix, cutoff, column_size=column_size
         )
 

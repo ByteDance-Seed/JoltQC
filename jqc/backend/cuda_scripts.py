@@ -52,5 +52,5 @@ rys_roots_parallel_code = _load_kernel("rys/rys_roots_parallel.cu")
 
 jk_1q1t_code = _load_kernel("jk/1q1t.cu")
 jk_1qnt_code = _load_kernel("jk/1qnt.cu")
-jk_2d_vj_code = _load_kernel("jk/2d_vj.cu")
-jk_2d_vk_code = _load_kernel("jk/2d_vk.cu")
+jk_pair_vj_code = _load_kernel("jk/pair_vj.cu")
+jk_pair_vk_code = _load_kernel("jk/pair_vk.cu")
