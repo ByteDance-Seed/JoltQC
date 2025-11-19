@@ -478,7 +478,7 @@ def make_pairs_symmetric(l_ctr_bas_loc, q_matrix, cutoff):
                 current_pairs = sh_i * nbas + valid_j_indices
 
                 q_values = sub_q_idx[idx, :][row_mask]
-                sort_indices = cp.argsort(q_values)
+                sort_indices = cp.argsort(-q_values)
                 sorted_pairs = current_pairs[sort_indices]
                 sorted_qvals = q_values[sort_indices]
 
@@ -492,7 +492,7 @@ def make_pairs_symmetric(l_ctr_bas_loc, q_matrix, cutoff):
             final_pairs_1d = cp.concatenate(pair_chunks)
             qvals_1d = cp.concatenate(q_chunks)
             if final_pairs_1d.size > 0:
-                order = cp.argsort(qvals_1d)
+                order = cp.argsort(-qvals_1d)
                 pairs[i, j] = final_pairs_1d[order]
 
     return pairs

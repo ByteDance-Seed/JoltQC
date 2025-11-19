@@ -114,7 +114,7 @@ def generate_basis_for_angular_momentum(l, symbol="H"):
     if l == 0:  # s shell
         exponents = [0.27]
     elif l == 1:  # p shell
-        exponents = [2.5, 0.6, 0.15]
+        exponents = [0.27]
     elif l == 2:  # d shell
         exponents = [3.5, 0.8, 0.2]
     elif l == 3:  # f shell
@@ -153,25 +153,11 @@ def benchmark(ang, dtype):
         L = li
 
     # Setup test molecule with custom basis for the given angular momentum
-    # Use simple H2 molecule for quick regression testing
-    use_simple_molecule = False
-    h2_distance = 100.0  # Angstroms - far apart for screening test
-
     mol = gto.Mole()
-    if use_simple_molecule:
-        # Simple two-hydrogen molecule far apart to test screening
-        mol.atom = [
-            ['H', (0.0, 0.0, 0.0)],
-            ['H', (h2_distance, 0.0, 0.0)]
-        ]
-        mol.unit = "Angstrom"
-        unique_symbols = ['H']
-        print(f"\nUsing simple H2 molecule with separation: {h2_distance} Angstrom")
-    else:
-        xyz_atoms = load_xyz("molecules/0401-globular-nitrogenous.xyz")
-        mol.atom = [(sym, coords) for sym, coords in xyz_atoms]
-        mol.unit = "Angstrom"
-        unique_symbols = sorted({sym for sym, _ in xyz_atoms})
+    xyz_atoms = load_xyz("molecules/0401-globular-nitrogenous.xyz")
+    mol.atom = [(sym, coords) for sym, coords in xyz_atoms]
+    mol.unit = "Angstrom"
+    unique_symbols = sorted({sym for sym, _ in xyz_atoms})
     basis_blocks = [
         generate_basis_for_angular_momentum(L, symbol=sym) for sym in unique_symbols
     ]
@@ -251,7 +237,14 @@ def benchmark(ang, dtype):
 
     # Generate separate VJ and VK kernels
     fun_vj = gen_jk_kernel(
-        ang, nprim, dtype=dtype, frags=(-2,), n_dm=dms_jqc.shape[0], omega=omega, do_j=True, do_k=False
+        ang,
+        nprim,
+        dtype=dtype,
+        frags=(-2,),
+        n_dm=dms_jqc.shape[0],
+        omega=omega,
+        do_j=True,
+        do_k=False,
     )
     fun_vk = gen_jk_kernel(
         ang, nprim, dtype=dtype, frags=(-2,), n_dm=dms_jqc.shape[0], omega=omega, do_j=False, do_k=True, pair_wide=pair_wide
@@ -267,27 +260,29 @@ def benchmark(ang, dtype):
 
     gi, gj, gk, gl = map(find_group_idx, ang)
 
-    # ===== VJ Pairs: Symmetric flat pairs from make_pairs_symmetric =====
-    pairs_sym = make_pairs_symmetric(group_offset, q_matrix, cutoff)
+    def pairs_to_int2(pairs_flat):
+        if pairs_flat.size == 0:
+            return cp.empty((0, 2), dtype=cp.int32)
+        # Create (N, 2) array and ensure C-contiguous for CUDA
+        result = cp.empty((pairs_flat.size, 2), dtype=cp.int32, order='C')
+        result[:, 0] = pairs_flat // nbas
+        result[:, 1] = pairs_flat % nbas
+        # View as int2-compatible format: flatten to treat as array of 2-int structs
+        return cp.ascontiguousarray(result)
 
-    def get_symmetric_pairs(pairs_dict, gi, gj, nbas_val):
-        """Fetch symmetric pairs for ordered (gi, gj)"""
-        key = (gi, gj) if gi >= gj else (gj, gi)
-        pairs_arr = pairs_dict.get(key, cp.array([], dtype=cp.int32))
-        pairs_arr = cp.asarray(pairs_arr, dtype=cp.int32)
-        if pairs_arr.size == 0:
-            return pairs_arr
-        if gi < gj:
-            ish = pairs_arr // nbas_val
-            jsh = pairs_arr % nbas_val
-            pairs_arr = jsh * nbas_val + ish
-        return cp.ascontiguousarray(pairs_arr)
+    def q_cond_from_pairs(pairs_flat):
+        if pairs_flat.size == 0:
+            return cp.empty(0, dtype=cp.float32)
+        i_idx = pairs_flat // nbas
+        j_idx = pairs_flat % nbas
+        return q_matrix[i_idx, j_idx].astype(cp.float32, copy=False)
 
-    ij_pairs_vj = get_symmetric_pairs(pairs_sym, gi, gj, nbas)
-    kl_pairs_vj = get_symmetric_pairs(pairs_sym, gk, gl, nbas)
-    n_ij_pairs_vj = int(ij_pairs_vj.size)
-    n_kl_pairs_vj = int(kl_pairs_vj.size)
-
+    # ===== VJ Pairs: Use tiled pairs like VK for efficiency =====
+    pairs_vj = make_pairs_symmetric(group_offset, q_matrix, cutoff)
+    ij_pairs_vj = pairs_vj.get((gi, gj), cp.array([], dtype=cp.int32))
+    kl_pairs_vj = pairs_vj.get((gk, gl), cp.array([], dtype=cp.int32))
+    n_ij_pairs_vj = len(ij_pairs_vj)
+    n_kl_pairs_vj = len(kl_pairs_vj)
     # ===== VK Pairs: Tiled pairs from make_pairs =====
     pairs_vk = make_pairs(group_offset, q_matrix, cutoff, column_size=pair_wide)
 
@@ -295,7 +290,7 @@ def benchmark(ang, dtype):
     kl_pairs_vk = pairs_vk.get((gk, gl), cp.array([], dtype=cp.int32))
     n_ij_pairs_vk = len(ij_pairs_vk)  # Number of tiles
     n_kl_pairs_vk = len(kl_pairs_vk)  # Number of tiles
-
+    
     if (
         n_ij_pairs_vj == 0
         or n_kl_pairs_vj == 0
@@ -307,47 +302,37 @@ def benchmark(ang, dtype):
         print(f"Group offset: {group_offset}")
         return
 
-    print(f"VJ pairs: {n_ij_pairs_vj} ij, {n_kl_pairs_vj} kl (individual symmetric pairs)")
+    print(f"VJ pairs: {n_ij_pairs_vj} ij, {n_kl_pairs_vj} kl (tiled pairs)")
     print(f"VK pairs: {n_ij_pairs_vk} ij, {n_kl_pairs_vk} kl (tiled pairs, {pair_wide}-wide)")
 
-    # Generate per-pair q_cond arrays for Schwarz screening
-    def extract_q_cond(pairs_flat, nbas_val, q_mat):
-        """Extract q screening values for each pair"""
-        n_pairs = len(pairs_flat)
-        q_cond = cp.zeros(n_pairs, dtype=cp.float32)
-        ish = pairs_flat // nbas_val
-        jsh = pairs_flat % nbas_val
-        q_cond = q_mat[ish, jsh]
-        q_cond[pairs_flat < 0] = -1000.0
-        return q_cond
-
-    # ===== VJ: Extract q_cond from symmetric pairs =====
-    q_cond_ij_vj = extract_q_cond(ij_pairs_vj, nbas, q_matrix)
-    q_cond_kl_vj = extract_q_cond(kl_pairs_vj, nbas, q_matrix)
+    # ===== VJ: Flatten tiled pairs and extract q_cond =====
+    ij_pairs_vj_flat = cp.ascontiguousarray(ij_pairs_vj.ravel())
+    kl_pairs_vj_flat = cp.ascontiguousarray(kl_pairs_vj.ravel())
+    n_ij_pairs_vj_flat = int(ij_pairs_vj_flat.size)  # Total flattened pairs for kernel
+    n_kl_pairs_vj_flat = int(kl_pairs_vj_flat.size)  # Total flattened pairs for kernel
+    q_cond_ij_vj = q_cond_from_pairs(ij_pairs_vj_flat)
+    q_cond_kl_vj = q_cond_from_pairs(kl_pairs_vj_flat)
 
     # ===== VK: Flatten tiled pairs and extract q_cond =====
     ij_pairs_vk_flat = cp.ascontiguousarray(ij_pairs_vk.ravel())
     kl_pairs_vk_flat = cp.ascontiguousarray(kl_pairs_vk.ravel())
-    q_cond_ij_vk = extract_q_cond(ij_pairs_vk_flat, nbas, q_matrix)
-    q_cond_kl_vk = extract_q_cond(kl_pairs_vk_flat, nbas, q_matrix)
+    q_cond_ij_vk = q_cond_from_pairs(ij_pairs_vk_flat)
+    q_cond_kl_vk = q_cond_from_pairs(kl_pairs_vk_flat)
     log_cutoff = np.float32(cutoff)
 
-    # ===== VJ: Convert symmetric pairs to int2 format =====
+    # ===== VJ: Convert flattened tiled pairs to int2 format =====
     # Packed format: pair = i * nbas + j, so i = pair // nbas, j = pair % nbas
-    i_vj = ij_pairs_vj // nbas
-    j_vj = ij_pairs_vj % nbas
-    ij_vj = cp.empty([n_ij_pairs_vj, 2], dtype=cp.int32)
-    ij_vj[:, 0] = i_vj
-    ij_vj[:, 1] = j_vj
+    ij_vj = pairs_to_int2(ij_pairs_vj_flat)
+    kl_vj = pairs_to_int2(kl_pairs_vj_flat)
 
-    k_vj = kl_pairs_vj // nbas
-    l_vj = kl_pairs_vj % nbas
-    kl_vj = cp.empty([n_kl_pairs_vj, 2], dtype=cp.int32)
-    kl_vj[:, 0] = k_vj
-    kl_vj[:, 1] = l_vj
+    # ===== VK: Convert flattened tiled pairs to int2 format =====
+    # Packed format: pair = i * nbas + j, so i = pair // nbas, j = pair % nbas
+    ij_vk = pairs_to_int2(ij_pairs_vk_flat)
+    kl_vk = pairs_to_int2(kl_pairs_vk_flat)
 
     # ===== Execute VJ kernel =====
     vk_dummy = cp.zeros_like(vj)  # Dummy vk for combined signature
+    # VJ uses its own tiled pairs
     vj_args = (
         nao,
         basis_data,
@@ -355,15 +340,15 @@ def benchmark(ang, dtype):
         vj,
         vk_dummy,
         omega_kernel,
-        ij_vj,
-        n_ij_pairs_vj,
-        kl_vj,
-        n_kl_pairs_vj,
-        q_cond_ij_vj,
-        q_cond_kl_vj,
+        ij_vj,  # Use VJ tiled pairs
+        n_ij_pairs_vj_flat,  # Total flattened pairs
+        kl_vj,  # Use VJ tiled pairs
+        n_kl_pairs_vj_flat,  # Total flattened pairs
+        q_cond_ij_vj,  # Use VJ q_cond
+        q_cond_kl_vj,  # Use VJ q_cond
         log_cutoff,
     )
-
+    
     start_vj = cp.cuda.Event()
     stop_vj = cp.cuda.Event()
     start_vj.record()
@@ -371,20 +356,6 @@ def benchmark(ang, dtype):
     stop_vj.record()
     stop_vj.synchronize()
     elapsed_vj = cp.cuda.get_elapsed_time(start_vj, stop_vj) * 1e-3
-
-    # ===== VK: Convert flattened tiled pairs to int2 format =====
-    # Packed format: pair = i * nbas + j, so i = pair // nbas, j = pair % nbas
-    i_vk = ij_pairs_vk_flat // nbas
-    j_vk = ij_pairs_vk_flat % nbas
-    ij_vk = cp.empty([len(ij_pairs_vk_flat), 2], dtype=cp.int32)
-    ij_vk[:, 0] = i_vk
-    ij_vk[:, 1] = j_vk
-
-    k_vk = kl_pairs_vk_flat // nbas
-    l_vk = kl_pairs_vk_flat % nbas
-    kl_vk = cp.empty([len(kl_pairs_vk_flat), 2], dtype=cp.int32)
-    kl_vk[:, 0] = k_vk
-    kl_vk[:, 1] = l_vk
 
     # ===== Execute VK kernel =====
     # Note: n_ij_pairs_vk and n_kl_pairs_vk are tile counts, not individual pair counts
@@ -436,7 +407,7 @@ def benchmark(ang, dtype):
     tolerance = 1e-8 if dtype == np.float64 else 1e-4
     vj_diff = cp.abs(vj_mol - vj_ref).max()
     vk_diff = cp.abs(vk_mol - vk_ref).max()
-    print(cp.linalg.norm(vk_mol), cp.linalg.norm(vk_ref))
+
     print(f"\nVerification (tolerance={tolerance:.0e}):")
     print(f"  vj error: {vj_diff:.2e}")
     print(f"  vk error: {vk_diff:.2e}")

@@ -41,7 +41,7 @@ from jqc.constants import BASIS_STRIDE, NPRIM_MAX
 
 __all__ = ["gen_kernel", "gen_vj_kernel", "gen_vk_kernel"]
 
-THREADS_VJ = (1, 256)
+THREADS_VJ = (256, 1)
 THREADS_VK = (16, 16)
 compile_options = ("-std=c++17", "--use_fast_math", "--minimal")
 
@@ -52,7 +52,7 @@ def gen_code_vj(keys):
     """Generate code for VJ kernel only."""
     if keys in _script_cache_vj:
         return _script_cache_vj[keys]
-    ang, nprim, dtype, rys_type, n_dm = keys
+    ang, nprim, dtype, rys_type, n_dm, pair_wide = keys
     if dtype == np.float64:
         dtype_cuda = "double"
     elif dtype == np.float32:
@@ -75,6 +75,7 @@ constexpr int npj = {npj};
 constexpr int npk = {npk};
 constexpr int npl = {npl};
 constexpr int n_dm = {n_dm};
+constexpr int pair_wide = {pair_wide};
 constexpr int rys_type = {rys_type};   // 0: omega = 0.0; -1: omega < 0.0; 1 omega > 0.0;
 // Inject constants to match host-side layout
 #define NPRIM_MAX {NPRIM_MAX}
@@ -141,6 +142,7 @@ def gen_vj_kernel(
     dtype=np.double,
     n_dm=1,
     omega=None,
+    pair_wide=256,
     print_log=False,
     use_cache=True,
 ):
@@ -184,7 +186,7 @@ def gen_vj_kernel(
     else:
         rys_type = 0
 
-    keys = ang, nprim, dtype, rys_type, n_dm
+    keys = ang, nprim, dtype, rys_type, n_dm, pair_wide
     script = gen_code_vj(keys)
 
     if not use_cache:
@@ -208,12 +210,11 @@ def gen_vj_kernel(
         if n_ij_pairs == 0 or n_kl_pairs == 0:
             return
 
-        # VJ: full grid with per-pair screening
-        block_vj = THREADS_VJ * 1
-        grid_vj = (
-            n_ij_pairs,
-            (n_kl_pairs + block_vj[1] - 1) // block_vj[1],
-        )
+        # VJ: Each block processes 256 ij pairs and loops over all kl blocks
+        vj_blocksize = 256
+        block_vj = (vj_blocksize, 1)
+        n_ij_blocks = (n_ij_pairs + vj_blocksize - 1) // vj_blocksize
+        grid_vj = (n_ij_blocks, 1)
         kernel_vj(grid_vj, block_vj, args)
 
     return script, mod, fun
@@ -348,7 +349,7 @@ def gen_kernel(
 
     if do_j:
         vj_result = gen_vj_kernel(
-            ang, nprim, dtype, n_dm, omega, print_log, use_cache
+            ang, nprim, dtype, n_dm, omega, pair_wide, print_log, use_cache
         )
 
     if do_k:
