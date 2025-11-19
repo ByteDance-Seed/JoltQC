@@ -39,7 +39,13 @@ from jqc.backend.cuda_scripts import (
 from jqc.backend.util import generate_lookup_table
 from jqc.constants import BASIS_STRIDE, NPRIM_MAX
 
-__all__ = ["gen_kernel", "gen_vj_kernel", "gen_vk_kernel"]
+__all__ = [
+    "gen_kernel",
+    "gen_vj_kernel",
+    "gen_vk_kernel",
+    "make_pairs",
+    "make_pairs_symmetric",
+]
 
 THREADS_VJ = (256, 1)
 THREADS_VK = (16, 16)
@@ -47,6 +53,156 @@ compile_options = ("-std=c++17", "--use_fast_math", "--minimal")
 
 _script_cache_vj = {}
 _script_cache_vk = {}
+
+
+def make_pairs(l_ctr_bas_loc, q_matrix, cutoff, column_size: int = 16):
+    """
+    Make shell pairs with GTO pairing screening.
+
+    Returns pairs in (i, j) format ready for CUDA int2 consumption.
+    Pairs are arranged in blocks of column_size with (-1, -1) padding.
+    The total number of pairs is always a multiple of column_size.
+
+    Args:
+        l_ctr_bas_loc: Group boundaries for basis functions
+        q_matrix: Schwarz screening matrix
+        cutoff: Screening cutoff threshold
+        column_size: Size of each tile (default: 16)
+
+    Returns:
+        dict: Maps (group_i, group_j) to flat (N, 2) array where N % column_size == 0
+    """
+    pairs = {}
+    n_groups = len(l_ctr_bas_loc) - 1
+    nbas = q_matrix.shape[0]
+    bas_loc = l_ctr_bas_loc
+
+    # Pre-compute indices to avoid repeated allocations
+    i_indices = cp.arange(nbas, dtype=np.int32)
+    j_indices = cp.arange(nbas, dtype=np.int32)
+
+    for i in range(n_groups):
+        i0, i1 = bas_loc[i], bas_loc[i + 1]
+        i_range = i_indices[i0:i1]
+
+        for j in range(n_groups):
+            j0, j1 = bas_loc[j], bas_loc[j + 1]
+            j_range = j_indices[j0:j1]
+
+            sub_q_idx = q_matrix[i0:i1, j0:j1]
+            mask = sub_q_idx > cutoff
+
+            if not mask.any():
+                continue
+
+            all_valid_pairs = []
+            for idx, sh_i in enumerate(i_range):
+                row_mask = mask[idx, :]
+                if not row_mask.any():
+                    continue
+
+                valid_j_indices = j_range[row_mask]
+                q_values = sub_q_idx[idx, :][row_mask]
+
+                # Sort in descending order so the first entry carries the largest q value
+                sort_indices = cp.argsort(-q_values)
+                sorted_j = valid_j_indices[sort_indices]
+
+                # Create (i, j) pairs
+                num_pairs = sorted_j.size
+                padded_size = ((num_pairs + column_size - 1) // column_size) * column_size
+                if padded_size > 0:
+                    # Create padded array with (-1, -1) for invalid pairs
+                    padded_row = cp.full((padded_size, 2), -1, dtype=np.int32)
+                    padded_row[:num_pairs, 0] = sh_i  # i index
+                    padded_row[:num_pairs, 1] = sorted_j  # j index
+                    all_valid_pairs.append(padded_row)
+
+            if not all_valid_pairs:
+                continue
+
+            # Concatenate all rows to create flat (N, 2) array
+            final_pairs = cp.concatenate(all_valid_pairs, axis=0)
+            if final_pairs.shape[0] > 0:
+                # Return as flat (N, 2) array where N is a multiple of column_size
+                pairs[i, j] = cp.ascontiguousarray(final_pairs)
+
+    return pairs
+
+
+def make_pairs_symmetric(l_ctr_bas_loc, q_matrix, cutoff):
+    """
+    Make shell pairs with symmetry (i >= j) enforced.
+
+    Returns pairs in (i, j) format ready for CUDA int2 consumption.
+    No padding is applied for symmetric pairs.
+    """
+    pairs = {}
+    n_groups = len(l_ctr_bas_loc) - 1
+    nbas = q_matrix.shape[0]
+    bas_loc = l_ctr_bas_loc
+
+    i_indices = cp.arange(nbas, dtype=np.int32)
+    j_indices = cp.arange(nbas, dtype=np.int32)
+
+    for i in range(n_groups):
+        i0, i1 = bas_loc[i], bas_loc[i + 1]
+        i_range = i_indices[i0:i1]
+
+        for j in range(i + 1):
+            j0, j1 = bas_loc[j], bas_loc[j + 1]
+            j_range = j_indices[j0:j1]
+
+            sub_q_idx = q_matrix[i0:i1, j0:j1]
+            mask = sub_q_idx > cutoff
+
+            if i == j:
+                # Keep only the lower-triangular shell pairs for symmetry
+                tri_mask = j_range[None, :] <= i_range[:, None]
+                mask = cp.logical_and(mask, tri_mask)
+
+            if not mask.any():
+                continue
+
+            i_list = []
+            j_list = []
+            q_list = []
+
+            for idx, sh_i in enumerate(i_range):
+                row_mask = mask[idx, :]
+                if not row_mask.any():
+                    continue
+
+                valid_j_indices = j_range[row_mask]
+                q_values = sub_q_idx[idx, :][row_mask]
+
+                # Store i and j separately
+                i_list.append(cp.full(valid_j_indices.size, sh_i, dtype=np.int32))
+                j_list.append(valid_j_indices)
+                q_list.append(q_values)
+
+            if not i_list:
+                continue
+
+            # Concatenate and sort by q values
+            all_i = cp.concatenate(i_list)
+            all_j = cp.concatenate(j_list)
+            all_q = cp.concatenate(q_list)
+
+            if all_i.size > 0:
+                # Sort by q values in descending order
+                order = cp.argsort(-all_q)
+                sorted_i = all_i[order]
+                sorted_j = all_j[order]
+
+                # Create (N, 2) array for (i, j) pairs
+                pair_array = cp.empty((sorted_i.size, 2), dtype=np.int32, order='C')
+                pair_array[:, 0] = sorted_i
+                pair_array[:, 1] = sorted_j
+                pairs[i, j] = cp.ascontiguousarray(pair_array)
+
+    return pairs
+
 
 def gen_code_vj(keys):
     """Generate code for VJ kernel only."""
@@ -198,7 +354,7 @@ def gen_vj_kernel(
         script += f" \n#define RANDOM_NUMBER {x}"
 
     mod = cp.RawModule(code=script, options=compile_options)
-    kernel_vj = mod.get_function("rys_vj_2d")
+    kernel_vj = mod.get_function("rys_pair_vj")
 
     def fun(*args):
         # Args: (nao, basis_data, dm, vj, omega,
@@ -282,7 +438,7 @@ def gen_vk_kernel(
         script += f" \n#define RANDOM_NUMBER {x}"
 
     mod = cp.RawModule(code=script, options=compile_options)
-    kernel_vk = mod.get_function("rys_vk_2d")
+    kernel_vk = mod.get_function("rys_pair_vk")
 
     def fun(*args):
         # Args: (nao, basis_data, dm, vk, omega,

@@ -44,9 +44,10 @@ import numpy as np
 from pyscf import gto
 
 from jqc.backend.jk import gen_jk_kernel
-from jqc.pyscf.basis import BasisLayout
-from jqc.pyscf.jk import make_pairs, make_pairs_symmetric, generate_get_jk
+from jqc.backend.jk_2d import make_pairs, make_pairs_symmetric
 from jqc.backend.linalg_helper import inplace_add_transpose
+from jqc.pyscf.basis import BasisLayout
+from jqc.pyscf.jk import generate_get_jk
 
 BENCH_DIR = Path(__file__).resolve().parent
 
@@ -260,36 +261,61 @@ def benchmark(ang, dtype):
 
     gi, gj, gk, gl = map(find_group_idx, ang)
 
-    def pairs_to_int2(pairs_flat):
-        if pairs_flat.size == 0:
-            return cp.empty((0, 2), dtype=cp.int32)
-        # Create (N, 2) array and ensure C-contiguous for CUDA
-        result = cp.empty((pairs_flat.size, 2), dtype=cp.int32, order='C')
-        result[:, 0] = pairs_flat // nbas
-        result[:, 1] = pairs_flat % nbas
-        # View as int2-compatible format: flatten to treat as array of 2-int structs
-        return cp.ascontiguousarray(result)
-
-    def q_cond_from_pairs(pairs_flat):
-        if pairs_flat.size == 0:
+    def q_cond_from_pairs_vj(pairs_int2):
+        """Extract q_cond values from VJ pairs (symmetric, no padding)"""
+        if pairs_int2.size == 0:
             return cp.empty(0, dtype=cp.float32)
-        i_idx = pairs_flat // nbas
-        j_idx = pairs_flat % nbas
+        # pairs_int2 shape: (N, 2)
+        i_idx = pairs_int2[:, 0]
+        j_idx = pairs_int2[:, 1]
         return q_matrix[i_idx, j_idx].astype(cp.float32, copy=False)
 
-    # ===== VJ Pairs: Use tiled pairs like VK for efficiency =====
+    def q_cond_from_pairs_vk(pairs_int2, tile_size):
+        """Extract q_cond values from VK pairs (tiled with padding)
+
+        The VK kernel expects q_cond to be indexed by pair offset (ij0 = blockIdx * tile_size),
+        so we need to create an array with the same size as pairs_int2, where each tile
+        has the same q_cond value (taken from the first valid pair in that tile).
+        """
+        if pairs_int2.size == 0:
+            return cp.empty(0, dtype=cp.float32)
+
+        # pairs_int2 shape: (N, 2) where N is a multiple of tile_size
+        n_total = pairs_int2.shape[0]
+        n_tiles = n_total // tile_size
+
+        # Reshape to (n_tiles, tile_size, 2) to extract first pair of each tile
+        pairs_tiled = pairs_int2.reshape(n_tiles, tile_size, 2)
+
+        # Extract first pair from each tile
+        first_pairs = pairs_tiled[:, 0, :]  # Shape: (n_tiles, 2)
+        i_idx = first_pairs[:, 0]
+        j_idx = first_pairs[:, 1]
+
+        # Compute q_cond value for each tile
+        valid_mask = (i_idx >= 0) & (j_idx >= 0)
+        tile_q_cond = cp.zeros(n_tiles, dtype=cp.float32)
+        tile_q_cond[valid_mask] = q_matrix[i_idx[valid_mask], j_idx[valid_mask]].astype(cp.float32, copy=False)
+
+        # Replicate each tile's q_cond value across all pairs in that tile
+        q_cond_tiled = cp.repeat(tile_q_cond, tile_size)
+
+        return q_cond_tiled
+
+    # ===== VJ Pairs: Use symmetric pairs =====
     pairs_vj = make_pairs_symmetric(group_offset, q_matrix, cutoff)
-    ij_pairs_vj = pairs_vj.get((gi, gj), cp.array([], dtype=cp.int32))
-    kl_pairs_vj = pairs_vj.get((gk, gl), cp.array([], dtype=cp.int32))
-    n_ij_pairs_vj = len(ij_pairs_vj)
-    n_kl_pairs_vj = len(kl_pairs_vj)
+    ij_pairs_vj = pairs_vj.get((gi, gj), cp.empty((0, 2), dtype=cp.int32))
+    kl_pairs_vj = pairs_vj.get((gk, gl), cp.empty((0, 2), dtype=cp.int32))
+    n_ij_pairs_vj = ij_pairs_vj.shape[0]
+    n_kl_pairs_vj = kl_pairs_vj.shape[0]
+
     # ===== VK Pairs: Tiled pairs from make_pairs =====
     pairs_vk = make_pairs(group_offset, q_matrix, cutoff, column_size=pair_wide)
-
-    ij_pairs_vk = pairs_vk.get((gi, gj), cp.array([], dtype=cp.int32))
-    kl_pairs_vk = pairs_vk.get((gk, gl), cp.array([], dtype=cp.int32))
-    n_ij_pairs_vk = len(ij_pairs_vk)  # Number of tiles
-    n_kl_pairs_vk = len(kl_pairs_vk)  # Number of tiles
+    ij_pairs_vk = pairs_vk.get((gi, gj), cp.empty((0, 2), dtype=cp.int32))
+    kl_pairs_vk = pairs_vk.get((gk, gl), cp.empty((0, 2), dtype=cp.int32))
+    # For VK: n_pairs is the number of TILES (total_pairs // pair_wide)
+    n_ij_pairs_vk = ij_pairs_vk.shape[0] // pair_wide
+    n_kl_pairs_vk = kl_pairs_vk.shape[0] // pair_wide
     
     if (
         n_ij_pairs_vj == 0
@@ -302,37 +328,28 @@ def benchmark(ang, dtype):
         print(f"Group offset: {group_offset}")
         return
 
-    print(f"VJ pairs: {n_ij_pairs_vj} ij, {n_kl_pairs_vj} kl (tiled pairs)")
-    print(f"VK pairs: {n_ij_pairs_vk} ij, {n_kl_pairs_vk} kl (tiled pairs, {pair_wide}-wide)")
+    print(f"VJ pairs: {n_ij_pairs_vj} ij, {n_kl_pairs_vj} kl (symmetric pairs)")
+    print(f"VK pairs: {n_ij_pairs_vk} ij tiles, {n_kl_pairs_vk} kl tiles ({pair_wide}-wide)")
+    print(f"         ({ij_pairs_vk.shape[0]} total ij pairs, {kl_pairs_vk.shape[0]} total kl pairs)")
 
-    # ===== VJ: Flatten tiled pairs and extract q_cond =====
-    ij_pairs_vj_flat = cp.ascontiguousarray(ij_pairs_vj.ravel())
-    kl_pairs_vj_flat = cp.ascontiguousarray(kl_pairs_vj.ravel())
-    n_ij_pairs_vj_flat = int(ij_pairs_vj_flat.size)  # Total flattened pairs for kernel
-    n_kl_pairs_vj_flat = int(kl_pairs_vj_flat.size)  # Total flattened pairs for kernel
-    q_cond_ij_vj = q_cond_from_pairs(ij_pairs_vj_flat)
-    q_cond_kl_vj = q_cond_from_pairs(kl_pairs_vj_flat)
+    # ===== VJ: Pairs are already in (i, j) format =====
+    ij_vj = cp.ascontiguousarray(ij_pairs_vj)
+    kl_vj = cp.ascontiguousarray(kl_pairs_vj)
+    q_cond_ij_vj = q_cond_from_pairs_vj(ij_vj)
+    q_cond_kl_vj = q_cond_from_pairs_vj(kl_vj)
 
-    # ===== VK: Flatten tiled pairs and extract q_cond =====
-    ij_pairs_vk_flat = cp.ascontiguousarray(ij_pairs_vk.ravel())
-    kl_pairs_vk_flat = cp.ascontiguousarray(kl_pairs_vk.ravel())
-    q_cond_ij_vk = q_cond_from_pairs(ij_pairs_vk_flat)
-    q_cond_kl_vk = q_cond_from_pairs(kl_pairs_vk_flat)
+    # ===== VK: Pairs are already in flat (N, 2) format =====
+    # No need to reshape - they're already flat with N % pair_wide == 0
+    ij_vk = cp.ascontiguousarray(ij_pairs_vk)
+    kl_vk = cp.ascontiguousarray(kl_pairs_vk)
+    # For VK, q_cond is per-tile (use first pair of each tile)
+    q_cond_ij_vk = q_cond_from_pairs_vk(ij_pairs_vk, pair_wide)
+    q_cond_kl_vk = q_cond_from_pairs_vk(kl_pairs_vk, pair_wide)
     log_cutoff = np.float32(cutoff)
-
-    # ===== VJ: Convert flattened tiled pairs to int2 format =====
-    # Packed format: pair = i * nbas + j, so i = pair // nbas, j = pair % nbas
-    ij_vj = pairs_to_int2(ij_pairs_vj_flat)
-    kl_vj = pairs_to_int2(kl_pairs_vj_flat)
-
-    # ===== VK: Convert flattened tiled pairs to int2 format =====
-    # Packed format: pair = i * nbas + j, so i = pair // nbas, j = pair % nbas
-    ij_vk = pairs_to_int2(ij_pairs_vk_flat)
-    kl_vk = pairs_to_int2(kl_pairs_vk_flat)
 
     # ===== Execute VJ kernel =====
     vk_dummy = cp.zeros_like(vj)  # Dummy vk for combined signature
-    # VJ uses its own tiled pairs
+    # VJ uses symmetric pairs
     vj_args = (
         nao,
         basis_data,
@@ -340,12 +357,12 @@ def benchmark(ang, dtype):
         vj,
         vk_dummy,
         omega_kernel,
-        ij_vj,  # Use VJ tiled pairs
-        n_ij_pairs_vj_flat,  # Total flattened pairs
-        kl_vj,  # Use VJ tiled pairs
-        n_kl_pairs_vj_flat,  # Total flattened pairs
-        q_cond_ij_vj,  # Use VJ q_cond
-        q_cond_kl_vj,  # Use VJ q_cond
+        ij_vj,  # Pairs in (i, j) format
+        n_ij_pairs_vj,
+        kl_vj,  # Pairs in (i, j) format
+        n_kl_pairs_vj,
+        q_cond_ij_vj,
+        q_cond_kl_vj,
         log_cutoff,
     )
     
