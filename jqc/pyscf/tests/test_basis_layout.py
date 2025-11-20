@@ -135,8 +135,8 @@ class TestBasisLayout(unittest.TestCase):
         # Transform back to decontracted molecule
         output_matrix = layout.dm_to_mol(input_matrix)
 
-        # Should get decontracted molecule dimensions (original molecule)
-        expected_nao = int(layout.ao_loc[-1])
+        # Should get decontracted molecule dimensions (original molecule in molecular basis)
+        expected_nao = self.mol_h2.nao  # Molecular basis (spherical/cartesian as specified)
 
         print(f"Input matrix shape: {input_matrix.shape}")
         print(f"Output matrix shape: {output_matrix.shape}")
@@ -149,8 +149,8 @@ class TestBasisLayout(unittest.TestCase):
         """Test that matrix transformations are numerically stable"""
         layout = BasisLayout.from_mol(self.mol_h2, alignment=TILE)
 
-        # Test with various types of matrices
-        input_nao = int(layout.ao_loc[-1])
+        # Test with various types of matrices in MOLECULAR basis
+        input_nao = self.mol_h2.nao  # Use molecular basis dimension
 
         test_matrices = {
             "identity": np.eye(input_nao),
@@ -307,7 +307,8 @@ class TestBasisLayout(unittest.TestCase):
                 layout = BasisLayout.from_mol(self.mol_h2, alignment=alignment)
 
                 # Basic functionality should work regardless of alignment
-                input_nao = int(layout.ao_loc[-1])
+                # Start with molecular basis dimension
+                input_nao = self.mol_h2.nao
                 input_matrix = np.eye(input_nao)
                 cart_matrix = layout.dm_from_mol(input_matrix)
 
@@ -326,9 +327,9 @@ class TestBasisLayout(unittest.TestCase):
         """Test that transformations work with 3D arrays (multiple matrices)"""
         layout = BasisLayout.from_mol(self.mol_h2, alignment=TILE)
 
-        # Test with batch of 3 matrices
+        # Test with batch of 3 matrices in MOLECULAR basis
         n_batch = 3
-        input_nao = int(layout.ao_loc[-1])
+        input_nao = self.mol_h2.nao  # Use molecular basis dimension
         decontracted_nao = layout.ao_loc[-1].item()
         input_batch = np.random.rand(n_batch, input_nao, input_nao)
 
