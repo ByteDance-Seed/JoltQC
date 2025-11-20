@@ -24,6 +24,8 @@ from pyscf.scf.hf import get_jk
 from gpu4pyscf import scf
 
 import jqc.pyscf
+import jqc.pyscf.basis
+import jqc.backend.jk_pair
 
 
 def _to_numpy(x):
@@ -272,6 +274,65 @@ class KnownValues(unittest.TestCase):
         mol_apart.stdout.close()
         assert abs(vj1 - ref[0]).max() < 1e-7
         assert abs(vk1 - ref[1]).max() < 1e-7
+
+
+    def test_make_pairs(self):
+        mol_test = pyscf.gto.M(
+            atom="""
+            H 0 0 0
+            H 0 0 1
+            """,
+            basis="sto-3g",
+            unit="B",
+            cart=1,
+            output="/dev/null",
+        )
+        basis_layout = jqc.pyscf.basis.BasisLayout.from_mol(mol_test)
+        l_ctr_bas_loc = basis_layout.group_info[1]
+        nbas = basis_layout.nbasis
+
+        # Create a dummy q_matrix (4x4 for nbas=4)
+        q_matrix = cp.array(
+            [
+                [0.1, 0.5, 0.0, 0.0],
+                [0.6, 0.2, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0],
+            ],
+            dtype=np.float32,
+        )
+        cutoff = 0.3
+
+        column_size = 16
+        pairs, _ = jqc.backend.jk_pair.make_pairs(
+            l_ctr_bas_loc, q_matrix, cutoff, column_size=column_size
+        )
+
+        # Expected output in (i, j) format with (-1, -1) padding
+        # Valid pairs: (0, 1) with q=0.5, (1, 0) with q=0.6
+        # Pairs are processed in shell order: shell 0, then shell 1
+        padding = cp.array([[-1, -1]] * (column_size - 1), dtype=np.int32)
+        expected_pairs = {
+            (0, 0): cp.array(
+                [[0, 1]] + [[-1, -1]] * (column_size - 1) +  # Shell 0: pair with shell 1
+                [[1, 0]] + [[-1, -1]] * (column_size - 1),   # Shell 1: pair with shell 0
+                dtype=np.int32
+            )
+        }
+
+        self.assertEqual(len(pairs), len(expected_pairs))
+
+        for key, expected_val in expected_pairs.items():
+            self.assertIn(key, pairs)
+            actual_val = pairs[key]
+            self.assertTrue(cp.array_equal(actual_val, expected_val),
+                          f"Expected:\n{expected_val}\nGot:\n{actual_val}")
+            # Check that result is flat (N, 2) array where N is multiple of column_size
+            self.assertEqual(actual_val.ndim, 2)
+            self.assertEqual(actual_val.shape[1], 2)
+            self.assertEqual(actual_val.shape[0] % column_size, 0)
+
+        mol_test.stdout.close()
 
 
 if __name__ == "__main__":

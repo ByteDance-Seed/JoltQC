@@ -45,7 +45,7 @@ __device__ __forceinline__ const DataType2* load_ce_ptr(const DataType* __restri
 }
 
 extern "C" __global__
-void rys_jk(const int nao,
+void rys_1qnt_vjk(const int nao,
         const DataType* __restrict__ basis_data,
         DataType* __restrict__ dm,
         double* __restrict__ vj,

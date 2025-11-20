@@ -23,7 +23,8 @@ import cupy as cp
 import numpy as np
 
 from jqc.backend.cuda_scripts import (
-    jk_1qnt_cuda_code,
+    jk_1qnt_code,
+    rys_roots_code,
     rys_roots_data,
     rys_roots_parallel_code,
 )
@@ -271,7 +272,7 @@ constexpr int nroots = ((li+lj+lk+ll)/2+1);
         + rys_roots_data[nroots]
         + rys_roots_parallel_code
         + idx_script
-        + jk_1qnt_cuda_code
+        + jk_1qnt_code
     )
 
     if not use_cache:
@@ -283,7 +284,7 @@ constexpr int nroots = ((li+lj+lk+ll)/2+1);
         script += f" \n#define RANDOM_NUMBER {x}"
 
     mod = cp.RawModule(code=script, options=compile_options)
-    kernel = mod.get_function("rys_jk")
+    kernel = mod.get_function("rys_1qnt_vjk")
     if kernel.local_size_bytes > 8192:
         msg = f"Local memory usage is high in 1qnt: {kernel.local_size_bytes} Bytes,"
         msg += f"    ang = {ang}, nprim = {nprim}, frags = {frags}, dtype = {dtype}, n_dm = {n_dm}"

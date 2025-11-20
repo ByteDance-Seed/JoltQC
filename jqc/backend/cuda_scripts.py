@@ -15,24 +15,42 @@
 
 from pathlib import Path
 
-code_path = Path(__file__).resolve().parent
+cuda_path = Path(__file__).resolve().parent
+
+cuda_int_wrapper = """
+#ifndef CUDA_INT_WRAPPER_H
+#define CUDA_INT_WRAPPER_H
+
+#include <cuda_runtime.h>
+
+struct int2 {
+    int x, y;
+};
+
+struct int3 {
+    int x, y, z;
+};
+
+struct int4 {
+    int x, y, z, w;
+};
+
+#endif // CUDA_INT_WRAPPER_H
+"""
+
+def _load_kernel(filename):
+    with open(cuda_path / filename) as f:
+        return f.read()
 
 rys_roots_data = {}
 for i in range(1, 10):
-    with open(f"{code_path}/rys/rys_root{i}.cu") as f:
-        rys_roots_data[i] = f.read()
+    rys_roots_data[i] = _load_kernel(f"rys/rys_root{i}.cu")
 
-with open(f"{code_path}/rys/rys_roots.cu") as f:
-    rys_roots_code = f.read()
+rys_roots_code = _load_kernel("rys/rys_roots.cu")
+screen_jk_tasks_code = _load_kernel("jk/screen_jk_tasks.cu")
+rys_roots_parallel_code = _load_kernel("rys/rys_roots_parallel.cu")
 
-with open(f"{code_path}/jk/screen_jk_tasks.cu") as f:
-    screen_jk_tasks_code = f.read()
-
-with open(f"{code_path}/rys/rys_roots_parallel.cu") as f:
-    rys_roots_parallel_code = f.read()
-
-with open(f"{code_path}/jk/1q1t.cu") as f:
-    jk_1q1t_cuda_code = f.read()
-
-with open(f"{code_path}/jk/1qnt.cu") as f:
-    jk_1qnt_cuda_code = f.read()
+jk_1q1t_code = _load_kernel("jk/1q1t.cu")
+jk_1qnt_code = _load_kernel("jk/1qnt.cu")
+jk_pair_vj_code = _load_kernel("jk/pair_vj.cu")
+jk_pair_vk_code = _load_kernel("jk/pair_vk.cu")

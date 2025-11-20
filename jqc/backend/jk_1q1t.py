@@ -22,7 +22,7 @@ import warnings
 import cupy as cp
 import numpy as np
 
-from jqc.backend.cuda_scripts import jk_1q1t_cuda_code, rys_roots_code, rys_roots_data
+from jqc.backend.cuda_scripts import jk_1q1t_code, rys_roots_code, rys_roots_data
 from jqc.backend.util import generate_lookup_table
 from jqc.constants import BASIS_STRIDE, NPRIM_MAX
 
@@ -73,7 +73,7 @@ constexpr int nroots = ((li+lj+lk+ll)/2+1);
 """
     idx_script = generate_lookup_table(li, lj, lk, ll)
     script = (
-        const + rys_roots_data[nroots] + rys_roots_code + idx_script + jk_1q1t_cuda_code
+        const + rys_roots_data[nroots] + rys_roots_code + idx_script + jk_1q1t_code
     )
 
     _script_cache[keys] = script
@@ -117,7 +117,7 @@ def gen_kernel(
     shared_memory = THREADS * 4
 
     mod = cp.RawModule(code=script, options=compile_options)
-    kernel = mod.get_function("rys_jk")
+    kernel = mod.get_function("rys_1q1t_vjk")
     if kernel.local_size_bytes > 8192:
         msg = f"Local memory usage is high in 1q1t: {kernel.local_size_bytes} Bytes,"
         msg += f"    ang = {ang}, nprim = {nprim}, dtype = {dtype}, n_dm = {n_dm}"
