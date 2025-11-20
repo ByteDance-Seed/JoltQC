@@ -258,14 +258,12 @@ void rys_pair_vk(const int nao,
     for (int ij_frag = 0; ij_frag < nfrag; ij_frag++){
         // Load rj and cej from shared memory
         const int smem_ij_idx = threadx*ij_frag + threadIdx.x;
-        //const DataType4 rj = smem_rj[smem_ij_idx];
         const DataType rj[3] = {smem_rjx[smem_ij_idx], smem_rjy[smem_ij_idx], smem_rjz[smem_ij_idx]};
         const DataType rjri[3] = {rj[0] - ri.x, rj[1] - ri.y, rj[2] - ri.z};
 
         for (int kl_frag = 0; kl_frag < nfrag; kl_frag++){
             // Load rl and cel from shared memory
             const int smem_kl_idx = threadx*kl_frag + threadIdx.y;
-            //const DataType4 rl = smem_rl[smem_kl_idx];
             const DataType rl[3] = {smem_rlx[smem_kl_idx], smem_rly[smem_kl_idx], smem_rlz[smem_kl_idx]};
             const DataType rlrk[3] = {rl[0] - rk.x, rl[1] - rk.y, rl[2] - rk.z};
             DataType integral[integral_size] = {zero};

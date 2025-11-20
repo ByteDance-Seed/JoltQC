@@ -43,7 +43,7 @@ __all__ = [
 
 PAIR_CUTOFF = 1e-13
 PAIR_WIDE_VJ = 256
-PAIR_WIDE_VK = 64
+PAIR_WIDE_VK = 128
 
 
 def generate_get_j(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_wide_vk=PAIR_WIDE_VK):
@@ -105,7 +105,6 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
 
     # Cache basis_layout data
     group_info = basis_layout.group_info
-    nbas = basis_layout.nbasis
     mol = basis_layout._mol
 
     # Get packed basis data arrays
@@ -113,6 +112,31 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
     basis_data_fp64 = basis_layout.basis_data_fp64['packed']
 
     ao_loc = cp.asarray(basis_layout.ao_loc)
+
+    # Pre-compute cutoff for pair screening
+    cutoff = np.log(PAIR_CUTOFF)
+
+    # Cache for pairs based on omega value
+    # Key: omega value (or None), Value: (pairs_vj, q_cond_vj, pairs_vk, q_cond_vk)
+    pairs_cache = {}
+
+    def get_or_create_pairs(omega=None):
+        """Get cached pairs or create new ones if not cached."""
+        # Use omega as cache key (convert to float for hashing if not None)
+        cache_key = float(omega) if omega is not None else None
+
+        if cache_key not in pairs_cache:
+            # Generate pairs for screening
+            q_matrix = basis_layout.q_matrix(omega=omega)
+            group_offset = group_info[1]
+
+            # Generate pairs for VJ (symmetric) and VK (tiled)
+            pairs_vj, q_cond_vj = make_pairs_symmetric(group_offset, q_matrix, cutoff)
+            pairs_vk, q_cond_vk = make_pairs(group_offset, q_matrix, cutoff, column_size=pair_wide_vk)
+
+            pairs_cache[cache_key] = (pairs_vj, q_cond_vj, pairs_vk, q_cond_vk)
+
+        return pairs_cache[cache_key]
 
     def get_jk(
         mol_ref,
@@ -143,10 +167,9 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
 
         nao = int(ao_loc[-1])
 
-        group_key, group_offset = group_info
+        group_key = group_info[0]
         uniq_l = group_key[:, 0]
         l_symb = [lib.param.ANGULAR[i] for i in uniq_l]
-        n_groups = basis_layout.ngroups
 
         group_key = [key.tolist() for key in group_key]
 
@@ -180,16 +203,11 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
 
         n_dm = dms.shape[0]
 
-        # Generate pairs for screening
-        cutoff = np.log(PAIR_CUTOFF)
-        q_matrix = basis_layout.q_matrix(omega=omega)
+        # Get or create cached pairs for this omega value
+        pairs_vj, q_cond_vj, pairs_vk, q_cond_vk = get_or_create_pairs(omega=omega)
 
-        # Generate pairs for VJ (symmetric) and VK (tiled)
-        pairs_vj, q_cond_vj = make_pairs_symmetric(group_offset, q_matrix, cutoff)
-        pairs_vk, q_cond_vk = make_pairs(group_offset, q_matrix, cutoff, column_size=pair_wide_vk)
-
-        pair_keys_vj = sorted(pairs_vj.keys())
-        pair_keys_vk = sorted(pairs_vk.keys())
+        pair_keys_vj = pairs_vj.keys()
+        pair_keys_vk = pairs_vk.keys()
 
         tasks_vj = []
         for (i,j) in pair_keys_vj:
@@ -199,33 +217,20 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
         tasks_vk = []
         for i, j in pair_keys_vk:
             for k, l in pair_keys_vk:
-                tasks_vk.append((i, j, k, l))
+                if (i >= k):
+                    tasks_vk.append((i, j, k, l))
 
         use_fp32 = cutoff_fp32 <= PAIR_CUTOFF and cutoff_fp64 > PAIR_CUTOFF
         use_fp64 = cutoff_fp64 <= PAIR_CUTOFF
 
         vj = vk = 0
-        if with_k:
-            vk = cp.zeros(dms.shape, dtype=np.float64)
-        if with_j:
-            vj = cp.zeros(dms.shape, dtype=np.float64)
 
         logger.debug1("Generate shell pairs for pair-based algorithm")
         timing_counter = Counter()
         kern_counts = 0
-
-        def q_cond_for_vj(key):
-            return q_cond_vj.get(key, cp.empty(0, dtype=cp.float32))
-
-        def q_cond_for_vk(key):
-            return q_cond_vk.get(key, cp.empty(0, dtype=cp.float32))
-
-
-        def run_vj_tasks():
-            nonlocal kern_counts
-            if not with_j:
-                return
-
+ 
+        if with_j:
+            vj = cp.zeros(dms.shape, dtype=np.float64)
             for task in tasks_vj[::-1]:
                 i, j, k, l = task
                 li, ip = group_key[i]
@@ -235,12 +240,15 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
                 ang = (li, lj, lk, ll)
                 nprim = (ip, jp, kp, lp)
 
-                ij_pairs = pairs_vj.get((i, j), cp.empty((0, 2), dtype=cp.int32))
-                kl_pairs = pairs_vj.get((k, l), cp.empty((0, 2), dtype=cp.int32))
+                ij_pairs = pairs_vj[i, j]
+                kl_pairs = pairs_vj[k, l]
                 n_ij_pairs = ij_pairs.shape[0]
                 n_kl_pairs = kl_pairs.shape[0]
                 if n_ij_pairs == 0 or n_kl_pairs == 0:
                     continue
+                
+                q_cond_ij = q_cond_vj[i, j]
+                q_cond_kl = q_cond_vj[k, l]
 
                 time_fp32 = 0.0
                 time_fp64 = 0.0
@@ -262,12 +270,9 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
                         omega=omega_fp32,
                     )
 
-                    q_cond_ij = q_cond_for_vj((i, j))
-                    q_cond_kl = q_cond_for_vj((k, l))
-
                     fun_vj_fp32(
                         nao,
-                        basis_data_fp32.ravel(),
+                        basis_data_fp32,
                         dms_fp32,
                         vj,
                         omega_fp32,
@@ -298,12 +303,9 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
                         omega=omega_fp64,
                     )
 
-                    q_cond_ij = q_cond_for_vj((i, j))
-                    q_cond_kl = q_cond_for_vj((k, l))
-
                     fun_vj_fp64(
                         nao,
-                        basis_data_fp64.ravel(),
+                        basis_data_fp64,
                         dms_fp64,
                         vj,
                         omega_fp64,
@@ -333,12 +335,17 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
                     msg = msg_kernel + msg_time
                     logger.debug1(msg)
                     timing_counter[llll] += elapsed_time
+            if hermi == 1:
+                vj *= 2.0
+            else:
+                vj, vjT = vj[: n_dm // 2], vj[n_dm // 2 :]
+                vj += vjT.transpose(0, 2, 1)
+            vj = inplace_add_transpose(vj)
+            vj = basis_layout.dm_to_mol(vj)
+            vj = vj.reshape(dm.shape)
 
-        def run_vk_tasks():
-            nonlocal kern_counts
-            if not with_k:
-                return
-
+        if with_k:
+            vk = cp.zeros(dms.shape, dtype=np.float64)
             for task in tasks_vk[::-1]:
                 i, j, k, l = task
                 li, ip = group_key[i]
@@ -348,12 +355,16 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
                 ang = (li, lj, lk, ll)
                 nprim = (ip, jp, kp, lp)
 
-                ij_pairs = pairs_vk.get((i, j), cp.empty((0, 2), dtype=cp.int32))
-                kl_pairs = pairs_vk.get((k, l), cp.empty((0, 2), dtype=cp.int32))
+                ij_pairs = pairs_vk[i, j]
+                kl_pairs = pairs_vk[k, l]
+
                 n_ij_pairs = ij_pairs.shape[0] // pair_wide_vk
                 n_kl_pairs = kl_pairs.shape[0] // pair_wide_vk
                 if n_ij_pairs == 0 or n_kl_pairs == 0:
                     continue
+
+                q_cond_ij = q_cond_vk[i, j]
+                q_cond_kl = q_cond_vk[k, l]
 
                 time_fp32 = 0.0
                 time_fp64 = 0.0
@@ -376,12 +387,9 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
                         pair_wide=pair_wide_vk,
                     )
 
-                    q_cond_ij = q_cond_for_vk((i, j))
-                    q_cond_kl = q_cond_for_vk((k, l))
-
                     fun_vk_fp32(
                         nao,
-                        basis_data_fp32.ravel(),
+                        basis_data_fp32,
                         dms_fp32,
                         vk,
                         omega_fp32,
@@ -413,12 +421,9 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
                         pair_wide=pair_wide_vk,
                     )
 
-                    q_cond_ij = q_cond_for_vk((i, j))
-                    q_cond_kl = q_cond_for_vk((k, l))
-
                     fun_vk_fp64(
                         nao,
-                        basis_data_fp64.ravel(),
+                        basis_data_fp64,
                         dms_fp64,
                         vk,
                         omega_fp64,
@@ -448,22 +453,6 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
                     msg = msg_kernel + msg_time
                     logger.debug1(msg)
                     timing_counter[llll] += elapsed_time
-
-        run_vj_tasks()
-        run_vk_tasks()
-
-        # Post-process results
-        if with_j:
-            if hermi == 1:
-                vj *= 2.0
-            else:
-                vj, vjT = vj[: n_dm // 2], vj[n_dm // 2 :]
-                vj += vjT.transpose(0, 2, 1)
-            vj = inplace_add_transpose(vj)
-            vj = basis_layout.dm_to_mol(vj)
-            vj = vj.reshape(dm.shape)
-
-        if with_k:
             if hermi == 1:
                 vk = inplace_add_transpose(vk)
             else:
