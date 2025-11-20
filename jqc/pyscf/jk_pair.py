@@ -185,8 +185,8 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
         q_matrix = basis_layout.q_matrix(omega=omega)
 
         # Generate pairs for VJ (symmetric) and VK (tiled)
-        pairs_vj = make_pairs_symmetric(group_offset, q_matrix, cutoff)
-        pairs_vk = make_pairs(group_offset, q_matrix, cutoff, column_size=pair_wide_vk)
+        pairs_vj, q_cond_vj = make_pairs_symmetric(group_offset, q_matrix, cutoff)
+        pairs_vk, q_cond_vk = make_pairs(group_offset, q_matrix, cutoff, column_size=pair_wide_vk)
 
         pair_keys_vj = sorted(pairs_vj.keys())
         pair_keys_vk = sorted(pairs_vk.keys())
@@ -197,8 +197,8 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
                 tasks_vj.append((i, j, k, l))
 
         tasks_vk = []
-        for idx, (i, j) in enumerate(pair_keys_vk):
-            for k, l in pair_keys_vk:#[: idx + 1]:
+        for i, j in pair_keys_vk:
+            for k, l in pair_keys_vk:
                 tasks_vk.append((i, j, k, l))
 
         use_fp32 = cutoff_fp32 <= PAIR_CUTOFF and cutoff_fp64 > PAIR_CUTOFF
@@ -214,38 +214,11 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
         timing_counter = Counter()
         kern_counts = 0
 
-        def q_cond_from_pairs_vj(pairs_int2):
-            """Extract q_cond values from VJ pairs (symmetric, no padding)"""
-            if pairs_int2.size == 0:
-                return cp.empty(0, dtype=cp.float32)
-            i_idx = pairs_int2[:, 0]
-            j_idx = pairs_int2[:, 1]
-            return q_matrix[i_idx, j_idx].astype(cp.float32, copy=False)
+        def q_cond_for_vj(key):
+            return q_cond_vj.get(key, cp.empty(0, dtype=cp.float32))
 
-        def q_cond_from_pairs_vk(pairs_int2, tile_size):
-            """Extract q_cond values from VK pairs (tiled with padding)"""
-            if pairs_int2.size == 0:
-                return cp.empty(0, dtype=cp.float32)
-
-            n_total = pairs_int2.shape[0]
-            n_tiles = n_total // tile_size
-
-            # Reshape to extract first pair of each tile
-            pairs_tiled = pairs_int2.reshape(n_tiles, tile_size, 2)
-            first_pairs = pairs_tiled[:, 0, :]
-            i_idx = first_pairs[:, 0]
-            j_idx = first_pairs[:, 1]
-
-            # Compute q_cond value for each tile
-            valid_mask = (i_idx >= 0) & (j_idx >= 0)
-            tile_q_cond = cp.zeros(n_tiles, dtype=cp.float32)
-            tile_q_cond[valid_mask] = q_matrix[i_idx[valid_mask], j_idx[valid_mask]].astype(
-                cp.float32, copy=False
-            )
-
-            # Replicate each tile's q_cond value
-            q_cond_tiled = cp.repeat(tile_q_cond, tile_size)
-            return q_cond_tiled
+        def q_cond_for_vk(key):
+            return q_cond_vk.get(key, cp.empty(0, dtype=cp.float32))
 
 
         def run_vj_tasks():
@@ -289,8 +262,8 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
                         omega=omega_fp32,
                     )
 
-                    q_cond_ij = q_cond_from_pairs_vj(ij_pairs)
-                    q_cond_kl = q_cond_from_pairs_vj(kl_pairs)
+                    q_cond_ij = q_cond_for_vj((i, j))
+                    q_cond_kl = q_cond_for_vj((k, l))
 
                     fun_vj_fp32(
                         nao,
@@ -325,8 +298,8 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
                         omega=omega_fp64,
                     )
 
-                    q_cond_ij = q_cond_from_pairs_vj(ij_pairs)
-                    q_cond_kl = q_cond_from_pairs_vj(kl_pairs)
+                    q_cond_ij = q_cond_for_vj((i, j))
+                    q_cond_kl = q_cond_for_vj((k, l))
 
                     fun_vj_fp64(
                         nao,
@@ -403,8 +376,8 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
                         pair_wide=pair_wide_vk,
                     )
 
-                    q_cond_ij = q_cond_from_pairs_vk(ij_pairs, pair_wide_vk)
-                    q_cond_kl = q_cond_from_pairs_vk(kl_pairs, pair_wide_vk)
+                    q_cond_ij = q_cond_for_vk((i, j))
+                    q_cond_kl = q_cond_for_vk((k, l))
 
                     fun_vk_fp32(
                         nao,
@@ -440,8 +413,8 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
                         pair_wide=pair_wide_vk,
                     )
 
-                    q_cond_ij = q_cond_from_pairs_vk(ij_pairs, pair_wide_vk)
-                    q_cond_kl = q_cond_from_pairs_vk(kl_pairs, pair_wide_vk)
+                    q_cond_ij = q_cond_for_vk((i, j))
+                    q_cond_kl = q_cond_for_vk((k, l))
 
                     fun_vk_fp64(
                         nao,

@@ -304,7 +304,7 @@ class KnownValues(unittest.TestCase):
         cutoff = 0.3
 
         column_size = 16
-        pairs = jqc.backend.jk_pair.make_pairs(
+        pairs, _ = jqc.backend.jk_pair.make_pairs(
             l_ctr_bas_loc, q_matrix, cutoff, column_size=column_size
         )
 

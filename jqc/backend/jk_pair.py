@@ -58,30 +58,35 @@ _script_cache_vk = {}
 
 def make_pairs(l_ctr_bas_loc, q_matrix, cutoff, column_size: int = 16):
     """
-    Make shell pairs with GTO pairing screening.
+    Generate screened shell pairs for VK kernels.
 
-    Returns pairs in (i, j) format ready for CUDA int2 consumption.
-    Pairs are arranged in blocks of column_size with (-1, -1) padding.
-    The total number of pairs is always a multiple of column_size.
+    Returns both the (i, j) pair arrays and the corresponding Schwarz
+    bounds for each pair. Each (group_i, group_j) block is padded to a
+    multiple of column_size so it can be consumed directly by the CUDA
+    VK kernels (which operate on fixed-width tiles).
 
     Args:
         l_ctr_bas_loc: Group boundaries for basis functions
-        q_matrix: Schwarz screening matrix
-        cutoff: Screening cutoff threshold
-        column_size: Size of each tile (default: 16)
+        q_matrix: Schwarz screening matrix (CuPy array)
+        cutoff: Screening cutoff threshold (log value)
+        column_size: Tile width (default: 16)
 
     Returns:
-        dict: Maps (group_i, group_j) to flat (N, 2) array where N % column_size == 0
+        tuple(dict, dict):
+            - pairs[(i, j)] -> CuPy array of shape (N, 2)
+            - q_cond[(i, j)] -> CuPy array of shape (N,) with matching
+              Schwarz bounds (padded entries are set to < cutoff)
     """
     pairs = {}
+    q_cond = {}
     n_groups = len(l_ctr_bas_loc) - 1
     nbas = q_matrix.shape[0]
     bas_loc = l_ctr_bas_loc
 
     # Pre-compute indices to avoid repeated allocations
-    i_indices = cp.arange(nbas, dtype=np.int32)
-    j_indices = cp.arange(nbas, dtype=np.int32)
-
+    i_indices = np.arange(nbas, dtype=np.int32)
+    j_indices = np.arange(nbas, dtype=np.int32)
+    q_matrix = q_matrix.get()
     for i in range(n_groups):
         i0, i1 = bas_loc[i], bas_loc[i + 1]
         i_range = i_indices[i0:i1]
@@ -96,49 +101,54 @@ def make_pairs(l_ctr_bas_loc, q_matrix, cutoff, column_size: int = 16):
             if not mask.any():
                 continue
 
-            all_valid_pairs = []
-            for idx, sh_i in enumerate(i_range):
-                row_mask = mask[idx, :]
-                if not row_mask.any():
-                    continue
+            row_counts = mask.sum(axis=1, dtype=np.int64)
+            padded_counts = ((row_counts + column_size - 1) // column_size) * column_size
+            total_pairs = int(padded_counts.sum())
 
-                valid_j_indices = j_range[row_mask]
-                q_values = sub_q_idx[idx, :][row_mask]
-
-                # Sort in descending order so the first entry carries the largest q value
-                sort_indices = cp.argsort(-q_values)
-                sorted_j = valid_j_indices[sort_indices]
-
-                # Create (i, j) pairs
-                num_pairs = sorted_j.size
-                padded_size = ((num_pairs + column_size - 1) // column_size) * column_size
-                if padded_size > 0:
-                    # Create padded array with (-1, -1) for invalid pairs
-                    padded_row = cp.full((padded_size, 2), -1, dtype=np.int32)
-                    padded_row[:num_pairs, 0] = sh_i  # i index
-                    padded_row[:num_pairs, 1] = sorted_j  # j index
-                    all_valid_pairs.append(padded_row)
-
-            if not all_valid_pairs:
+            if total_pairs == 0:
                 continue
 
-            # Concatenate all rows to create flat (N, 2) array
-            final_pairs = cp.concatenate(all_valid_pairs, axis=0)
-            if final_pairs.shape[0] > 0:
-                # Return as flat (N, 2) array where N is a multiple of column_size
-                pairs[i, j] = cp.ascontiguousarray(final_pairs)
+            pair_array = np.full((total_pairs, 2), -1, dtype=np.int32)
+            q_array = np.full(total_pairs, cutoff - 1.0, dtype=np.float32)
+            offset = 0
 
-    return pairs
+            for idx, sh_i in enumerate(i_range):
+                count = row_counts[idx]
+                padded = padded_counts[idx]
+                if count == 0:
+                    offset += padded
+                    continue
+
+                row_mask = mask[idx]
+                valid_j_indices = j_range[row_mask]
+                q_values = sub_q_idx[idx][row_mask]
+
+                sort_indices = np.argsort(-q_values)
+                sorted_j = valid_j_indices[sort_indices]
+
+                start = offset
+                end = offset + count
+                pair_array[start:end, 0] = sh_i
+                pair_array[start:end, 1] = sorted_j
+                q_array[start:end] = q_values[sort_indices]
+                offset += padded
+
+            pairs[i, j] = cp.asarray(pair_array)
+            q_cond[i, j] = cp.asarray(q_array)
+
+    return pairs, q_cond
 
 
 def make_pairs_symmetric(l_ctr_bas_loc, q_matrix, cutoff):
     """
-    Make shell pairs with symmetry (i >= j) enforced.
+    Generate screened shell pairs for symmetric VJ kernels (i >= j).
 
-    Returns pairs in (i, j) format ready for CUDA int2 consumption.
-    No padding is applied for symmetric pairs.
+    Returns both the (i, j) pair arrays (unpadded) and their Schwarz
+    bounds so the host side no longer has to re-sample q_matrix for each
+    task.
     """
     pairs = {}
+    q_cond = {}
     n_groups = len(l_ctr_bas_loc) - 1
     nbas = q_matrix.shape[0]
     bas_loc = l_ctr_bas_loc
@@ -158,51 +168,29 @@ def make_pairs_symmetric(l_ctr_bas_loc, q_matrix, cutoff):
             mask = sub_q_idx > cutoff
 
             if i == j:
-                # Keep only the lower-triangular shell pairs for symmetry
                 tri_mask = j_range[None, :] <= i_range[:, None]
                 mask = cp.logical_and(mask, tri_mask)
 
             if not mask.any():
                 continue
 
-            i_list = []
-            j_list = []
-            q_list = []
-
-            for idx, sh_i in enumerate(i_range):
-                row_mask = mask[idx, :]
-                if not row_mask.any():
-                    continue
-
-                valid_j_indices = j_range[row_mask]
-                q_values = sub_q_idx[idx, :][row_mask]
-
-                # Store i and j separately
-                i_list.append(cp.full(valid_j_indices.size, sh_i, dtype=np.int32))
-                j_list.append(valid_j_indices)
-                q_list.append(q_values)
-
-            if not i_list:
+            row_idx, col_idx = cp.where(mask)
+            if row_idx.size == 0:
                 continue
 
-            # Concatenate and sort by q values
-            all_i = cp.concatenate(i_list)
-            all_j = cp.concatenate(j_list)
-            all_q = cp.concatenate(q_list)
+            q_values = sub_q_idx[row_idx, col_idx]
+            order = cp.argsort(-q_values)
+            row_idx = row_idx[order]
+            col_idx = col_idx[order]
 
-            if all_i.size > 0:
-                # Sort by q values in descending order
-                order = cp.argsort(-all_q)
-                sorted_i = all_i[order]
-                sorted_j = all_j[order]
+            pair_array = cp.empty((row_idx.size, 2), dtype=cp.int32)
+            pair_array[:, 0] = i_range[row_idx]
+            pair_array[:, 1] = j_range[col_idx]
+            q_array = cp.asarray(sub_q_idx[row_idx, col_idx], dtype=cp.float32)
+            pairs[i, j] = cp.ascontiguousarray(pair_array)
+            q_cond[i, j] = cp.ascontiguousarray(q_array)
 
-                # Create (N, 2) array for (i, j) pairs
-                pair_array = cp.empty((sorted_i.size, 2), dtype=np.int32, order='C')
-                pair_array[:, 0] = sorted_i
-                pair_array[:, 1] = sorted_j
-                pairs[i, j] = cp.ascontiguousarray(pair_array)
-
-    return pairs
+    return pairs, q_cond
 
 
 def gen_code_vj(keys):
