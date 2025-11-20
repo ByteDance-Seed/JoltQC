@@ -23,7 +23,7 @@ LMAX = 4
 MAX_L_ECP = LMAX
 
 # Maximum number of primitive Gaussians per contracted Gaussian
-NPRIM_MAX = 3
+NPRIM_MAX = 2
 
 # Memory stride constants for optimal memory layout
 # BASIS_STRIDE: Total stride per basis function in packed layout

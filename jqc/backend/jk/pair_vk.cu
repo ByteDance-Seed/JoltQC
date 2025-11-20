@@ -38,6 +38,7 @@ __inline__ __device__ T warpReduceSum(T v) {
 
 template <typename T>
 __inline__ __device__ T blockReduceSum2D(T v) {
+    __syncthreads();
     __shared__ T warpSum[8];  // 256 / 32 = 8 warps
     const int tid  = threadIdx.y * blockDim.x + threadIdx.x;
     const int warp = tid >> 5;   // warp index 0–7
@@ -95,10 +96,6 @@ void rys_pair_vk(const int nao,
     const int ij_idx = blockIdx.x;
     const int kl_idx = blockIdx.y;
 
-    if (ij_idx < kl_idx) return;  // 2-fold symmetry: only compute ij >= kl quartets
-    DataType fac_sym_kl = one;
-    fac_sym_kl *= (ij_idx == kl_idx) ? half : one;
-
     constexpr int stride_i = 1;
     constexpr int stride_j = stride_i * (li+1);
     constexpr int stride_k = stride_j * (lj+1);
@@ -124,14 +121,16 @@ void rys_pair_vk(const int nao,
     const int kl0 = kl_idx * pair_wide;
     const float q_ij = __ldg(&q_cond_ij[ij0]);
     const float q_kl = __ldg(&q_cond_kl[kl0]);
-
     if (q_ij + q_kl < log_cutoff) return;
 
-    DataType reg_vk[nfi*nfk] = {zero};
     const int2 ij = ij_pairs[ij0];
     const int2 kl = kl_pairs[kl0];
     const int ish = ij.x;
     const int ksh = kl.x;
+    if (ish < ksh) return;
+    DataType fac_sym_kl = one;
+    fac_sym_kl *= (ij.x == kl.x) ? half : one;
+    
     const DataType* base_i = basis_data + ish * basis_stride;
     const DataType* base_k = basis_data + ksh * basis_stride;
     const DataType4 ri = *reinterpret_cast<const DataType4*>(base_i);
@@ -151,13 +150,13 @@ void rys_pair_vk(const int nao,
     __shared__ DataType smem_rly[pair_wide];
     __shared__ DataType smem_rlz[pair_wide];
     __shared__ int smem_l_loc[pair_wide];
-    
+
     // preload cicj, inv_aij, rj, and cej for all pairs in the block
     const int tid = threadIdx.y * blockDim.x + threadIdx.x;
     if (tid < pair_wide){
         const int ij_offset = ij0 + tid;
         const int2 ij = ij_pairs[ij_offset];
-        const int jsh = ij.y;
+        const int jsh = (ij.y < 0) ? 0 : ij.y;
         const DataType* base_j = basis_data + jsh * basis_stride;
         const DataType4 rj = *reinterpret_cast<const DataType4*>(base_j);
 
@@ -208,7 +207,7 @@ void rys_pair_vk(const int nao,
     if (tid < pair_wide){
         const int kl_offset = kl0 + tid;
         const int2 kl = kl_pairs[kl_offset];
-        const int lsh = kl.y;
+        const int lsh = (kl.y < 0) ? 0 : kl.y;
         const DataType* base_l = basis_data + lsh * basis_stride;
         const DataType4 rl = *reinterpret_cast<const DataType4*>(base_l);
 
@@ -255,6 +254,7 @@ void rys_pair_vk(const int nao,
     }
     __syncthreads();
     
+    DataType reg_vk[nfi*nfk] = {zero};
     for (int ij_frag = 0; ij_frag < nfrag; ij_frag++){
         // Load rj and cej from shared memory
         const int smem_ij_idx = threadx*ij_frag + threadIdx.x;
