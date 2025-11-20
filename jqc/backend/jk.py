@@ -27,7 +27,6 @@ import numpy as np
 
 from jqc.backend.jk_1q1t import gen_kernel as jk_1q1t_kernel
 from jqc.backend.jk_1qnt import gen_kernel as jk_1qnt_kernel
-from jqc.backend.jk_pair import gen_kernel as jk_pair_kernel
 
 device_id = cp.cuda.Device().id
 props = cp.cuda.runtime.getDeviceProperties(device_id)
@@ -64,13 +63,11 @@ def gen_jk_kernel(
     do_k=True,
     omega=None,
     frags=None,
-    pair_wide=64,
     print_log=False,
     force_cache_mode=None,
 ):
     """Router function for generating JK kernels.
     If frags = [-1]:      use 1q1t algorithm
-    If frags = [-2]:      use 2d algorithm
     If frags = [x,x,x,x]: use 1qnt algorithm
     """
 
@@ -99,18 +96,6 @@ def gen_jk_kernel(
             do_j=do_j,
             do_k=do_k,
             omega=omega,
-            print_log=print_log,
-        )
-    elif opt_frags[0] == -2:
-        _, _, fun = jk_pair_kernel(
-            angulars,
-            nprimitives,
-            dtype=dtype,
-            n_dm=n_dm,
-            do_j=do_j,
-            do_k=do_k,
-            omega=omega,
-            pair_wide=pair_wide,
             print_log=print_log,
         )
     else:

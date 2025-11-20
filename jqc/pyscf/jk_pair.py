@@ -31,8 +31,7 @@ import cupy as cp
 import numpy as np
 from pyscf import lib
 
-from jqc.backend.jk import gen_jk_kernel
-from jqc.backend.jk_pair import make_pairs, make_pairs_symmetric
+from jqc.backend.jk_pair import gen_vj_kernel, gen_vk_kernel, make_pairs, make_pairs_symmetric
 from jqc.backend.linalg_helper import inplace_add_transpose
 from jqc.pyscf.basis import BasisLayout
 
@@ -282,28 +281,22 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
                     if logger.verbose > lib.logger.INFO:
                         start_fp32.record()
 
-                    fun_vj_fp32 = gen_jk_kernel(
+                    _, _, fun_vj_fp32 = gen_vj_kernel(
                         ang,
                         nprim,
                         dtype=np.float32,
-                        frags=(-2,),
                         n_dm=n_dm,
                         omega=omega_fp32,
-                        do_j=True,
-                        do_k=False,
-                        pair_wide=PAIR_WIDE_VJ,
                     )
 
                     q_cond_ij = q_cond_from_pairs_vj(ij_pairs)
                     q_cond_kl = q_cond_from_pairs_vj(kl_pairs)
 
-                    vk_dummy = cp.zeros_like(vj)
                     fun_vj_fp32(
                         nao,
                         basis_data_fp32.ravel(),
                         dms_fp32,
                         vj,
-                        vk_dummy,
                         omega_fp32,
                         ij_pairs,
                         n_ij_pairs,
@@ -324,28 +317,22 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
                     if logger.verbose > lib.logger.INFO:
                         start_fp64.record()
 
-                    fun_vj_fp64 = gen_jk_kernel(
+                    _, _, fun_vj_fp64 = gen_vj_kernel(
                         ang,
                         nprim,
                         dtype=np.float64,
-                        frags=(-2,),
                         n_dm=n_dm,
                         omega=omega_fp64,
-                        do_j=True,
-                        do_k=False,
-                        pair_wide=PAIR_WIDE_VJ,
                     )
 
                     q_cond_ij = q_cond_from_pairs_vj(ij_pairs)
                     q_cond_kl = q_cond_from_pairs_vj(kl_pairs)
 
-                    vk_dummy = cp.zeros_like(vj)
                     fun_vj_fp64(
                         nao,
                         basis_data_fp64.ravel(),
                         dms_fp64,
                         vj,
-                        vk_dummy,
                         omega_fp64,
                         ij_pairs,
                         n_ij_pairs,
@@ -407,27 +394,22 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
                     if logger.verbose > lib.logger.INFO:
                         start_fp32.record()
 
-                    fun_vk_fp32 = gen_jk_kernel(
+                    _, _, fun_vk_fp32 = gen_vk_kernel(
                         ang,
                         nprim,
                         dtype=np.float32,
-                        frags=(-2,),
                         n_dm=n_dm,
                         omega=omega_fp32,
-                        do_j=False,
-                        do_k=True,
                         pair_wide=pair_wide_vk,
                     )
 
                     q_cond_ij = q_cond_from_pairs_vk(ij_pairs, pair_wide_vk)
                     q_cond_kl = q_cond_from_pairs_vk(kl_pairs, pair_wide_vk)
 
-                    vj_dummy = cp.zeros_like(vk)
                     fun_vk_fp32(
                         nao,
                         basis_data_fp32.ravel(),
                         dms_fp32,
-                        vj_dummy,
                         vk,
                         omega_fp32,
                         ij_pairs,
@@ -449,27 +431,22 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13, pair_
                     if logger.verbose > lib.logger.INFO:
                         start_fp64.record()
 
-                    fun_vk_fp64 = gen_jk_kernel(
+                    _, _, fun_vk_fp64 = gen_vk_kernel(
                         ang,
                         nprim,
                         dtype=np.float64,
-                        frags=(-2,),
                         n_dm=n_dm,
                         omega=omega_fp64,
-                        do_j=False,
-                        do_k=True,
                         pair_wide=pair_wide_vk,
                     )
 
                     q_cond_ij = q_cond_from_pairs_vk(ij_pairs, pair_wide_vk)
                     q_cond_kl = q_cond_from_pairs_vk(kl_pairs, pair_wide_vk)
 
-                    vj_dummy = cp.zeros_like(vk)
                     fun_vk_fp64(
                         nao,
                         basis_data_fp64.ravel(),
                         dms_fp64,
-                        vj_dummy,
                         vk,
                         omega_fp64,
                         ij_pairs,

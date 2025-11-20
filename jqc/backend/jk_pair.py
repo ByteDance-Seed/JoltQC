@@ -48,7 +48,7 @@ __all__ = [
     "make_pairs_symmetric",
 ]
 
-THREADS_VJ = (256, 1)
+THREADS_VJ = (128, 1)
 THREADS_VK = (16, 16)
 compile_options = ("-std=c++17", "--use_fast_math", "--minimal")
 
@@ -209,7 +209,7 @@ def gen_code_vj(keys):
     """Generate code for VJ kernel only."""
     if keys in _script_cache_vj:
         return _script_cache_vj[keys]
-    ang, nprim, dtype, rys_type, n_dm, pair_wide = keys
+    ang, nprim, dtype, rys_type, n_dm = keys
     if dtype == np.float64:
         dtype_cuda = "double"
     elif dtype == np.float32:
@@ -220,6 +220,10 @@ def gen_code_vj(keys):
     li, lj, lk, ll = ang
     npi, npj, npk, npl = nprim
     nroots = (li + lj + lk + ll) // 2 + 1
+
+    # Calculate blocksize from THREADS_VJ
+    blocksize = THREADS_VJ[0] * THREADS_VJ[1]
+
     const = f"""
 typedef unsigned int uint32_t;
 using DataType = {dtype_cuda};
@@ -232,7 +236,7 @@ constexpr int npj = {npj};
 constexpr int npk = {npk};
 constexpr int npl = {npl};
 constexpr int n_dm = {n_dm};
-constexpr int pair_wide = {pair_wide};
+constexpr int blocksize = {blocksize};  // Passed from Python: THREADS_VJ[0] * THREADS_VJ[1]
 constexpr int rys_type = {rys_type};   // 0: omega = 0.0; -1: omega < 0.0; 1 omega > 0.0;
 // Inject constants to match host-side layout
 #define NPRIM_MAX {NPRIM_MAX}
@@ -299,12 +303,13 @@ def gen_vj_kernel(
     dtype=np.double,
     n_dm=1,
     omega=None,
-    pair_wide=256,
     print_log=False,
     use_cache=True,
 ):
     """
     Generate a 2D VJ kernel for given angular momentum and primitives.
+
+    VJ kernel uses a fixed blocksize of 256 threads per block.
 
     Args:
         ang: Tuple of 4 integers (li, lj, lk, ll) representing angular momenta.
@@ -343,7 +348,7 @@ def gen_vj_kernel(
     else:
         rys_type = 0
 
-    keys = ang, nprim, dtype, rys_type, n_dm, pair_wide
+    keys = ang, nprim, dtype, rys_type, n_dm
     script = gen_code_vj(keys)
 
     if not use_cache:
@@ -367,9 +372,9 @@ def gen_vj_kernel(
         if n_ij_pairs == 0 or n_kl_pairs == 0:
             return
 
-        # VJ: Each block processes 256 ij pairs and loops over all kl blocks
-        vj_blocksize = 256
-        block_vj = (vj_blocksize, 1)
+        # VJ: Each block processes blocksize ij pairs and loops over all kl blocks
+        vj_blocksize = THREADS_VJ[0] * THREADS_VJ[1]
+        block_vj = THREADS_VJ
         n_ij_blocks = (n_ij_pairs + vj_blocksize - 1) // vj_blocksize
         grid_vj = (n_ij_blocks, 1)
         kernel_vj(grid_vj, block_vj, args)
@@ -506,7 +511,7 @@ def gen_kernel(
 
     if do_j:
         vj_result = gen_vj_kernel(
-            ang, nprim, dtype, n_dm, omega, pair_wide, print_log, use_cache
+            ang, nprim, dtype, n_dm, omega, print_log, use_cache
         )
 
     if do_k:

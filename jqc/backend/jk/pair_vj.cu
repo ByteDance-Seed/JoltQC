@@ -24,7 +24,7 @@ constexpr DataType zero = 0.0;
 // BASIS_STRIDE is the total stride: [coords (4), ce (BASIS_STRIDE-4)]
 constexpr int basis_stride = BASIS_STRIDE;
 
-constexpr int blocksize = 256;  // Number of threads per block
+// blocksize is passed from Python via gen_code_vj
 
 // Coords are always 4: [x, y, z, ao_loc]
 struct __align__(4*sizeof(DataType)) DataType4 {
