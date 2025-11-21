@@ -20,6 +20,7 @@ import numpy as np
 from pyscf import gto
 
 from jqc.constants import MAX_SMEM, TILE
+from jqc.pyscf.basis import BasisLayout
 
 """
 Script for greedy search the optimal fragmentation for the kernel.
@@ -116,20 +117,22 @@ def update_frags(i, j, k, ell, dtype_str):
         raise FileNotFoundError(f"Required file {xyz} not found in current directory")
     mol = gto.M(atom=xyz, basis=basis, unit="Angstrom")
 
-    # Use JoltQC's own data structures instead of GPU4PySCF
-    bas_cache, bas_mapping, padding_mask, group_info = sort_group_basis(
-        mol, alignment=TILE
-    )
-    q_matrix = compute_q_matrix(mol)
-    q_matrix = q_matrix[bas_mapping[:, None], bas_mapping]
-    q_matrix[padding_mask, :] = -100
-    q_matrix[:, padding_mask] = -100
-    q_matrix = cp.asarray(q_matrix, dtype=np.float32)
+    # Use BasisLayout to get the properly formatted data structures
+    basis_layout = BasisLayout.from_mol(mol, alignment=TILE)
 
+    # Get basis data in the appropriate precision
+    if dtype == np.float32:
+        basis_data = basis_layout.basis_data_fp32['packed']
+    else:
+        basis_data = basis_layout.basis_data_fp64['packed']
+
+    group_info = basis_layout.group_info
     group_key, group_offset = group_info
-    nbas = bas_mapping.shape[0]
+    nbas = basis_layout.nbasis
+    nao = int(basis_layout.ao_loc[-1])
 
     # Create dummy density matrix conditioning arrays
+    q_matrix = basis_layout.q_matrix()
     dm_cond = cp.ones([nbas, nbas], dtype=np.float32)
     tile_q_cond = q_matrix
     log_cutoff = -12
@@ -139,27 +142,17 @@ def update_frags(i, j, k, ell, dtype_str):
     l_ctr_bas_loc = group_offset  # This contains the basis offsets
     tile_pairs = jk.make_tile_pairs(l_ctr_bas_loc, tile_q_cond, log_cutoff)
 
-    # Get nao from the sorted basis cache
-    ce, coords, angs, _nprims = bas_cache
-    ao_loc = np.concatenate(([0], np.cumsum((angs + 1) * (angs + 2) // 2)))
-    nao = ao_loc[-1]
-    ao_loc = cp.asarray(ao_loc, dtype=np.int32)
-
     # Initialize with a simple density matrix for meaningful J/K computation
     # Following jk.py: dms matches kernel precision, but vj/vk are always FP64
-    dms = cp.eye(nao, dtype=dtype) * 0.1  # Density matrix matches kernel precision
+    dms = cp.ones([nao, nao], dtype=dtype) * 0.1  # Density matrix matches kernel precision
     vj = cp.zeros((nao, nao), dtype=np.float64)  # Always FP64 to match jk.py behavior
     vk = cp.zeros((nao, nao), dtype=np.float64)  # Always FP64 to match jk.py behavior
 
-    # Use the ce array directly (combined coefficients and exponents) as in jk.py
-    coords = coords.astype(dtype)
-    ce_data = ce.astype(dtype)  # This contains interleaved coefficients and exponents
-
     tile_ij_mapping = (
-        tile_pairs[i, j][:256] if (i, j) in tile_pairs else cp.array([], dtype=np.int32)
+        tile_pairs[i, j][:2048] if (i, j) in tile_pairs else cp.array([], dtype=np.int32)
     )
     tile_kl_mapping = (
-        tile_pairs[k, ell][:256]
+        tile_pairs[k, ell][:2048]
         if (k, ell) in tile_pairs
         else cp.array([], dtype=np.int32)
     )
@@ -218,11 +211,8 @@ def update_frags(i, j, k, ell, dtype_str):
         n_quartets = int(info[1].get())  # Number of quartets to process
         omega = dtype(0.0)  # Use the same precision as the kernel
         args = (
-            nbas,
             nao,
-            ao_loc,
-            coords,
-            ce_data,
+            basis_data,
             dms,
             vj,
             vk,
@@ -264,11 +254,8 @@ def update_frags(i, j, k, ell, dtype_str):
         n_quartets = int(info[1].get())  # Number of quartets to process
         omega = dtype(0.0)  # Use the same precision as the kernel
         args = (
-            nbas,
             nao,
-            ao_loc,
-            coords,
-            ce_data,
+            basis_data,
             dms,
             vj,
             vk,
