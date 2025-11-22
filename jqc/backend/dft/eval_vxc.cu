@@ -155,8 +155,7 @@ void eval_vxc(
             const int offset = ish_nz + block_id * nbas_i;
             const float log_aoi = nz_i[offset].log;
             const int ish = nz_i[offset].idx;
-            if (ish > jsh) continue;
-            if (log_aoi + log_aoj < log_cutoff_a || log_aoi + log_aoj >= log_cutoff_b) continue;
+            if (ish > jsh || log_aoi + log_aoj < log_cutoff_a || log_aoi + log_aoj >= log_cutoff_b) continue;
 
             const DataType4 xj = load_coords(basis_data, jsh);
             const DataType gjx = gx[0] - xj.x;
@@ -369,12 +368,12 @@ void eval_vxc(
                         ao_iy = xi_pows[lx] * dyi[ly] * zi_pows[lz];
                         ao_iz = xi_pows[lx] * yi_pows[ly] * dzi[lz];
                         aow_i = ao_ix * wv_x + ao_iy * wv_y + ao_iz * wv_z;
+                        aow0_i += aow_i;
                     }
 #pragma unroll
                     for (int j = 0; j < nfj; j++){
                         DataType vxc_ij = aow0_i * ao_j[j];
                         if constexpr(ndim > 1){
-                            vxc_ij += aow_i * ao_j[j];
                             vxc_ij += aow_j[j] * ao_i;
                             if constexpr(ndim > 4){
                                 vxc_ij += ao_ix * ao_jx[j];

@@ -23,6 +23,7 @@ Generate DFT kernels for PySCF
 
 import math
 import time
+from collections import Counter
 
 import cupy as cp
 import numpy as np
@@ -366,6 +367,7 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         # Pre-compute constants
         nao = int(ao_loc[-1])
         log_ao_cutoff = math.log(ao_cutoff)
+        logger = lib.logger.new_logger(mol, mol.verbose)
 
         def compute_ao_sparsity(grid_coords, log_aodm_cutoff):
             """Helper function to compute AO sparsity pattern - avoids code duplication"""
@@ -413,6 +415,10 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         # Ensure contiguity for optimal performance
         dm = cp.ascontiguousarray(dm)
 
+        timing_counter = Counter()
+        uniq_l = group_key[:, 0]
+        l_symb = [lib.param.ANGULAR[i] for i in uniq_l]
+
         for i in range(n_groups):
             for j in range(i, n_groups):
                 li, ip = group_key[i]
@@ -424,6 +430,19 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 nz_j, nnz_j = ao_sparsity[j]
                 nbas_i = nz_i.shape[1]
                 nbas_j = nz_j.shape[1]
+
+                # Setup events for timing the critical kernels
+                time_fp32 = 0.0
+                time_fp64 = 0.0
+                if logger.verbose > lib.logger.INFO:
+                    start_fp32 = cp.cuda.Event()
+                    end_fp32 = cp.cuda.Event()
+                    start_fp64 = cp.cuda.Event()
+                    end_fp64 = cp.cuda.Event()
+
+                if logger.verbose > lib.logger.INFO:
+                    start_fp64.record()
+
                 _, _, fun = gen_rho_kernel(ang, nprim, np.float64, ndim)
                 fun(
                     grid_coords,
@@ -443,7 +462,16 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                     log_cutoff_max,
                     ngrids,
                 )
+
+                if logger.verbose > lib.logger.INFO:
+                    end_fp64.record()
+                    end_fp64.synchronize()
+                    time_fp64 += cp.cuda.get_elapsed_time(start_fp64, end_fp64)
+
                 if cutoff_fp64 > cutoff_fp32:
+                    if logger.verbose > lib.logger.INFO:
+                        start_fp32.record()
+
                     _, _, fun = gen_rho_kernel(ang, nprim, np.float32, ndim)
                     fun(
                         grid_coords,
@@ -463,12 +491,32 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         log_cutoff_fp64,
                         ngrids,
                     )
+
+                    if logger.verbose > lib.logger.INFO:
+                        end_fp32.record()
+                        end_fp32.synchronize()
+                        time_fp32 += cp.cuda.get_elapsed_time(start_fp32, end_fp32)
+
+                if logger.verbose > lib.logger.INFO:
+                    elasped_time = time_fp32 + time_fp64
+                    llll = f"({l_symb[i]}{l_symb[j]})"
+                    msg_kernel = f"rho kernel type {llll}/({ip}{jp}), "
+                    msg_time = f"FP32 = {time_fp32:5.2f} ms, FP64 = {time_fp64:5.2f} ms, total = {elasped_time:5.2f} ms"
+                    msg = msg_kernel + msg_time
+                    logger.debug1(msg)
+                    timing_counter[llll] += elasped_time
+
+        if logger.verbose >= lib.logger.DEBUG:
+            for llll, t in timing_counter.items():
+                logger.debug1(f"rho {llll} wall time {t:.2f} ms")
+
         return rho
 
     def vxc_fun(mol, grids, xctype, wv):
         # Pre-compute constants
         nao = int(ao_loc[-1])
         log_ao_cutoff = math.log(ao_cutoff)
+        logger = lib.logger.new_logger(mol, mol.verbose)
 
         def compute_ao_sparsity(grid_coords, log_aodm_cutoff):
             """Helper function to compute AO sparsity pattern - avoids code duplication"""
@@ -509,6 +557,10 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
         # Use helper function to compute AO sparsity
         ao_sparsity = compute_ao_sparsity(grid_coords, log_aodm_cutoff)
 
+        timing_counter = Counter()
+        uniq_l = group_key[:, 0]
+        l_symb = [lib.param.ANGULAR[i] for i in uniq_l]
+
         for i in range(n_groups):
             for j in range(i, n_groups):
                 li, ip = group_key[i]
@@ -520,6 +572,19 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                 nz_j, nnz_j = ao_sparsity[j]
                 nbas_i = nz_i.shape[1]
                 nbas_j = nz_j.shape[1]
+
+                # Setup events for timing the critical kernels
+                time_fp32 = 0.0
+                time_fp64 = 0.0
+                if logger.verbose > lib.logger.INFO:
+                    start_fp32 = cp.cuda.Event()
+                    end_fp32 = cp.cuda.Event()
+                    start_fp64 = cp.cuda.Event()
+                    end_fp64 = cp.cuda.Event()
+
+                if logger.verbose > lib.logger.INFO:
+                    start_fp64.record()
+
                 _, _, fun = gen_vxc_kernel(ang, nprim, np.float64, ndim)
                 fun(
                     grid_coords,
@@ -538,7 +603,16 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                     log_cutoff_max,
                     ngrids,
                 )
+
+                if logger.verbose > lib.logger.INFO:
+                    end_fp64.record()
+                    end_fp64.synchronize()
+                    time_fp64 += cp.cuda.get_elapsed_time(start_fp64, end_fp64)
+
                 if cutoff_fp64 > cutoff_fp32:
+                    if logger.verbose > lib.logger.INFO:
+                        start_fp32.record()
+
                     _, _, fun = gen_vxc_kernel(ang, nprim, np.float32, ndim)
                     fun(
                         grid_coords,
@@ -557,6 +631,24 @@ def generate_rks_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         log_cutoff_fp64,
                         ngrids,
                     )
+
+                    if logger.verbose > lib.logger.INFO:
+                        end_fp32.record()
+                        end_fp32.synchronize()
+                        time_fp32 += cp.cuda.get_elapsed_time(start_fp32, end_fp32)
+
+                if logger.verbose > lib.logger.INFO:
+                    elasped_time = time_fp32 + time_fp64
+                    llll = f"({l_symb[i]}{l_symb[j]})"
+                    msg_kernel = f"vxc kernel type {llll}/({ip}{jp}), "
+                    msg_time = f"FP32 = {time_fp32:5.2f} ms, FP64 = {time_fp64:5.2f} ms, total = {elasped_time:5.2f} ms"
+                    msg = msg_kernel + msg_time
+                    logger.debug1(msg)
+                    timing_counter[llll] += elasped_time
+
+        if logger.verbose >= lib.logger.DEBUG:
+            for llll, t in timing_counter.items():
+                logger.debug1(f"vxc {llll} wall time {t:.2f} ms")
 
         # Transform exchange-correlation matrix back to molecular basis
         vxc = basis_layout.dm_to_mol(vxc)
