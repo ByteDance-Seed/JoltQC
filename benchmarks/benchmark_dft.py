@@ -37,7 +37,7 @@ lib.num_threads(8)
 # GPU4PySCF
 ##################
 
-verbose = 6
+verbose = 0
 
 mol = pyscf.M(atom=atom, basis=basis, output=f"gpu4pyscf-{basis}.log", verbose=verbose)
 mf = dft.RKS(mol, xc=xc)

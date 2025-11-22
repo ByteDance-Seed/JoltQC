@@ -181,6 +181,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
             dm_cond = dm_cond + dm_cond.T
         log_dm_cond = cp.log(dm_cond + 1e-300, dtype=np.float32)
         log_max_dm = log_dm_cond.max().item()
+        log_max_dm = np.float32(log_max_dm)
         cutoff = np.log(PAIR_CUTOFF) - log_max_dm
         q_matrix = basis_layout.q_matrix(omega=omega)
         tile_pairs = make_tile_pairs(group_offset, q_matrix, cutoff)
@@ -273,6 +274,7 @@ def generate_jk_kernel(basis_layout, cutoff_fp64=1e-13, cutoff_fp32=1e-13):
                         log_dm_cond,
                         log_cutoff_fp32,
                         log_cutoff_fp64,
+                        log_max_dm,
                     )
                     kern_counts += 1
                     info_cpu = info.get()

@@ -75,6 +75,7 @@ constexpr int TILE = {tile};
         dm_cond,
         log_cutoff_a,
         log_cutoff_b,
+        log_max_dm,
     ):
         nt_ij = tile_ij_mapping.shape[0]
         nt_kl = tile_kl_mapping.shape[0]
@@ -100,6 +101,7 @@ constexpr int TILE = {tile};
                 dm_cond,
                 log_cutoff_a,
                 log_cutoff_b,
+                log_max_dm,
             ),
         )
         return
