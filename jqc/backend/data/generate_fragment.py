@@ -185,6 +185,7 @@ def update_frags(i, j, k, ell, dtype_str):
         dm_cond,
         np.float32(log_cutoff),
         np.float32(100),
+        np.float32(1.0),
     )
 
     max_shm = MAX_SMEM  # 48 KB for compatibility
