@@ -301,14 +301,14 @@ shared memory: {dynamic_shared_memory/1024:5.2f} KB, \
 registers: {kernel.num_regs:3d}, \
 local memory: {kernel.local_size_bytes:4d} Bytes"
         )
-
+    print(f"{li}{lj}{lk}{ll}/{npi}{npj}{npk}{npl}, {nthreads_per_sq}")
     def fun(*args):
         ntasks = args[-1]  # the last argument is ntasks
         blocks = (ntasks + nsq_per_block - 1) // nsq_per_block
 
         kernel(
             (blocks,),
-            (nsq_per_block, nthreads_per_sq),
+            (nthreads_per_sq, nsq_per_block),
             args,
             shared_mem=dynamic_shared_memory,
         )

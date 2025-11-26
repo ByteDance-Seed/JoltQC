@@ -54,7 +54,7 @@ void rys_1qnt_vjk(const int nao,
 {
     const int tx = threadIdx.x;
     const int ty = threadIdx.y;
-    const int task_id = blockIdx.x * blockDim.x + threadIdx.x;
+    const int task_id = blockIdx.x * blockDim.y + threadIdx.y;
 
     constexpr int nfi = (li+1)*(li+2)/2;
     constexpr int nfj = (lj+1)*(lj+2)/2;
@@ -80,10 +80,10 @@ void rys_1qnt_vjk(const int nao,
     constexpr int tstride_i = fragl * fragk * fragj;
     constexpr int frag_size = fragi*fragj*fragk*fragl;
 
-    const int t_i = (nti > 0 || ty < nt_active) ? (ty % nti) : 0;
-    const int t_j = (ntj > 0 || ty < nt_active) ? (ty / nti % ntj) : 0;
-    const int t_k = (ntk > 0 || ty < nt_active) ? (ty / (nti*ntj) % ntk) : 0;
-    const int t_l = (ntl > 0 || ty < nt_active) ? (ty / (nti*ntj*ntk)) : 0;
+    const int t_i = (nti > 0 || tx < nt_active) ? (tx % nti) : 0;
+    const int t_j = (ntj > 0 || tx < nt_active) ? (tx / nti % ntj) : 0;
+    const int t_k = (ntk > 0 || tx < nt_active) ? (tx / (nti*ntj) % ntk) : 0;
+    const int t_l = (ntl > 0 || tx < nt_active) ? (tx / (nti*ntj*ntk)) : 0;
 
     constexpr int gx_stride = smem_stride;
     constexpr int g_stride = 3 * gx_stride;
@@ -129,7 +129,7 @@ void rys_1qnt_vjk(const int nao,
     const int ksh = sq.z;
     const int lsh = sq.w;
      
-    DataType fac_sym = (active && ty < nt_active) ? PI_FAC : zero;
+    DataType fac_sym = (active && tx < nt_active) ? PI_FAC : zero;
     fac_sym *= (ish == jsh) ? half : one;
     fac_sym *= (ksh == lsh) ? half : one;
     //fac_sym *= (ish*nbas+jsh == ksh*nbas+lsh) ? half : one;
@@ -269,29 +269,29 @@ void rys_1qnt_vjk(const int nao,
             const DataType inv_aijkl = one / (aij + akl);
             const DataType theta = aij * akl * inv_aijkl;
             
-            DataType rjri_x = (ty == 0 ? rjri0 : (ty == 1 ? rjri1 : rjri2)); 
-            DataType Rpq_x =  (ty == 0 ? (xij-xkl) : (ty == 1 ? (yij-ykl) : (zij-zkl)));
-            DataType rlrk_x = (ty == 0 ? rlrk0 : (ty == 1 ? rlrk1 : rlrk2));
+            DataType rjri_x = (tx == 0 ? rjri0 : (tx == 1 ? rjri1 : rjri2)); 
+            DataType Rpq_x =  (tx == 0 ? (xij-xkl) : (tx == 1 ? (yij-ykl) : (zij-zkl)));
+            DataType rlrk_x = (tx == 0 ? rlrk0 : (tx == 1 ? rlrk1 : rlrk2));
 
-            DataType *rw = shared_memory + tx;
-            DataType *g = shared_memory + nroots * 2 * gx_stride + tx; 
+            DataType *rw = shared_memory + ty;
+            DataType *g = shared_memory + nroots * 2 * gx_stride + ty; 
 
-            rys_roots(rr, rw, ty, gx_stride, theta, omega);
+            rys_roots(rr, rw, tx, gx_stride, theta, omega);
             
             DataType g0xyz;
-            if (ty == 0) g0xyz = ckcl; 
-            if (ty == 1) g0xyz = cicj * inv_aij * inv_akl * sqrt(inv_aijkl);
+            if (tx == 0) g0xyz = ckcl; 
+            if (tx == 1) g0xyz = cicj * inv_aij * inv_akl * sqrt(inv_aijkl);
             
             __syncthreads();
             for (int irys = 0; irys < nroots; irys++){
                 DataType rt_aa;
-                g0xyz = (ty == 2) ? rw[(irys*2+1) * gx_stride] : g0xyz;
-                if (ty < 3){
+                g0xyz = (tx == 2) ? rw[(irys*2+1) * gx_stride] : g0xyz;
+                if (tx < 3){
                     const DataType rt = rw[(irys*2)*gx_stride];
                     rt_aa = rt * inv_aijkl;
                 }
                 __syncthreads();
-                if (ty < 3) g[ty*gx_stride] = g0xyz;
+                if (tx < 3) g[tx*gx_stride] = g0xyz;
 
                 // TRR
                 //for i in range(lij):
@@ -301,11 +301,11 @@ void rys_1qnt_vjk(const int nao,
                 //        trr(i,k+1) = c0p * trr(i,k) + k*b01 * trr(i,k-1) + i*b00 * trr(i-1,k)
                 constexpr int lij = li + lj;
                 if constexpr (lij > 0) {
-                    if (ty < 3){
+                    if (tx < 3){
                         const DataType rt_aij = rt_aa * akl;
                         const DataType b10 = half * inv_aij * (one - rt_aij);
 
-                        const int _ix = ty;
+                        const int _ix = tx;
                         DataType *gx = g + _ix * gx_stride;
 
                         // gx(0,n+1) = c0*gx(0,n) + n*b10*gx(0,n-1)
@@ -328,12 +328,12 @@ void rys_1qnt_vjk(const int nao,
                                 
                 constexpr int lkl = lk + ll;
                 if constexpr (lkl > 0) {
-                    if (ty < 3){
+                    if (tx < 3){
                         const DataType rt_akl = rt_aa * aij;
                         const DataType b00 = half * rt_aa;
                         const DataType b01 = half * inv_akl * (one - rt_akl);
 
-                        const int _ix = ty;
+                        const int _ix = tx;
                         DataType *gx = g + _ix * gx_stride;
                         
                         const DataType Rqc = al_akl * rlrk_x;
@@ -383,14 +383,14 @@ void rys_1qnt_vjk(const int nao,
                     }
                 }
                 
-                const int _ix = ty;
+                const int _ix = tx;
                 DataType *gx = g + _ix * gx_stride;
                 // hrr
                 // g(i,j+1) = rirj * g(i,j) +  g(i+1,j)
                 // g(...,k,l+1) = rkrl * g(...,k,l) + g(...,k+1,l)
                 if constexpr (lj > 0) {
                     constexpr int stride_j_i = stride_j - stride_i;
-                    if (ty < 3){
+                    if (tx < 3){
 #pragma unroll
                         for (int kl = 0; kl < lkl+1; kl++){
                             const int kl_off = kl*stride_k;
@@ -413,7 +413,7 @@ void rys_1qnt_vjk(const int nao,
                 if constexpr (ll > 0) {
                     constexpr int li1xlj1 = (li+1)*(lj+1);
                     constexpr int stride_l_k = stride_l - stride_k;
-                    if (ty < 3){
+                    if (tx < 3){
 #pragma unroll
                         for (int ij = 0; ij < li1xlj1; ij++){
                             const int ij_off = ij*stride_i;
@@ -476,13 +476,13 @@ void rys_1qnt_vjk(const int nao,
     const int k0 = (int)rk.w;
     const int l0 = (int)rl.w;
 
-    DataType *smem = shared_memory + tx;
+    DataType *smem = shared_memory + ty;
     //const bool ty_active = (ty < nt_active);
     for (int i_dm = 0; i_dm < n_dm; ++i_dm) {
         // ijkl, ij -> kl
         constexpr int ntij = nti*ntj;
         DataType vj_lk[fragk*fragl] = {zero};
-        if (do_j && ty < nt_active){
+        if (do_j && tx < nt_active){
             const int base_dm_i = i0 + t_i*fragi;
             const int base_dm_j = j0 + t_j*fragj;
             const int dm_offset = base_dm_i + base_dm_j*nao;
@@ -504,7 +504,7 @@ void rys_1qnt_vjk(const int nao,
             }
         }
         if constexpr(ntij > 1) __syncthreads();
-        if (do_j && ty < nt_active){
+        if (do_j && tx < nt_active){
             const int t_ij = t_i + nti * t_j;
             const int t_kl = t_k * fragk + t_l * fragl * nfk;
             constexpr int smem_kstride = smem_stride;
@@ -530,7 +530,7 @@ void rys_1qnt_vjk(const int nao,
             double *vj_ptr = vj + vj_offset;
             constexpr int stride = nfkl * smem_stride;
             __syncthreads();
-            for (int kl = ty; kl < nfkl; kl += nthreads_per_sq){
+            for (int kl = tx; kl < nfkl; kl += nthreads_per_sq){
                 DataType vj_tmp = zero;
                 const int off = kl * smem_stride;
                 for (int m = 0; m < ntij; m++){
@@ -548,7 +548,7 @@ void rys_1qnt_vjk(const int nao,
         // ijkl, kl -> ij
         constexpr int ntkl = ntk*ntl;
         DataType dm_kl_cache[fragk*fragl];
-        if (do_j && ty < nt_active){
+        if (do_j && tx < nt_active){
             const int dm_offset = (l0+t_l*fragl)*nao + (k0+t_k*fragk);
             DataType *dm_ptr = dm + dm_offset;
 #pragma unroll
@@ -560,7 +560,7 @@ void rys_1qnt_vjk(const int nao,
             }
         }
         if constexpr(ntkl > 1) __syncthreads();
-        if (do_j && ty < nt_active){
+        if (do_j && tx < nt_active){
             const int t_kl = t_k + ntk * t_l;
             const int t_ij = t_i * fragi + t_j * fragj * nfi;
             const int smem_off = (t_ij + t_kl * nfij) * smem_stride;
@@ -592,7 +592,7 @@ void rys_1qnt_vjk(const int nao,
             double *vj_ptr = vj + vj_offset;
             constexpr int stride = nfij * smem_stride;
             __syncthreads();
-            for (int ij = ty; ij < nfij; ij += nthreads_per_sq){
+            for (int ij = tx; ij < nfij; ij += nthreads_per_sq){
                 DataType vj_tmp = zero;
                 const int off = ij * smem_stride;
                 for (int m = 0; m < ntkl; m++){
@@ -608,7 +608,7 @@ void rys_1qnt_vjk(const int nao,
         // ijkl, jl -> ik
         constexpr int ntjl = ntj*ntl;
         DataType dm_jl_cache[fragj*fragl];
-        if (do_k && ty < nt_active){
+        if (do_k && tx < nt_active){
             const int dm_offset = (j0+t_j*fragj)*nao + (l0+t_l*fragl);
             DataType *dm_ptr = dm + dm_offset;
 #pragma unroll
@@ -620,7 +620,7 @@ void rys_1qnt_vjk(const int nao,
             }
         }
         if constexpr(ntjl > 1) __syncthreads();
-        if (do_k && ty < nt_active){
+        if (do_k && tx < nt_active){
             const int vk_offset = (i0+t_i*fragi)*nao + (k0+t_k*fragk);
             double *vk_ptr = vk + vk_offset;
             const int t_jl = t_j + ntj * t_l;
@@ -653,7 +653,7 @@ void rys_1qnt_vjk(const int nao,
             const int vk_offset = i0*nao + k0;
             double *vk_ptr = vk + vk_offset;
             __syncthreads();
-            for (int ik = ty; ik < nfik; ik+=nthreads_per_sq){
+            for (int ik = tx; ik < nfik; ik+=nthreads_per_sq){
                 DataType vk_tmp = zero;
                 const int off = ik * smem_stride;
                 for (int m = 0; m < ntjl; m++){
@@ -669,7 +669,7 @@ void rys_1qnt_vjk(const int nao,
         // ijkl, jk -> il
         constexpr int ntjk = ntj*ntk;
         DataType dm_jk_cache[fragj*fragk];
-        if (do_k && ty < nt_active){
+        if (do_k && tx < nt_active){
             const int dm_offset = (j0+t_j*fragj)*nao + (k0+t_k*fragk);
             DataType *dm_ptr = dm + dm_offset;
 #pragma unroll
@@ -681,7 +681,7 @@ void rys_1qnt_vjk(const int nao,
             }
         }
         if constexpr(ntjk > 1) __syncthreads();
-        if (do_k && ty < nt_active){
+        if (do_k && tx < nt_active){
             const int t_jk = t_j + ntj * t_k;
             const int t_il = t_i * fragi * nfl + t_l * fragl;
             const int smem_off = (t_jk * nfil + t_il) * smem_stride;
@@ -716,7 +716,7 @@ void rys_1qnt_vjk(const int nao,
             const int vk_offset = i0*nao + l0;
             double *vk_ptr = vk + vk_offset;
             __syncthreads();
-            for (int il = ty; il < nfil; il += nthreads_per_sq){
+            for (int il = tx; il < nfil; il += nthreads_per_sq){
                 DataType vk_tmp = zero;
                 constexpr int stride = nfil * smem_stride;
                 const int off = il * smem_stride;
@@ -733,7 +733,7 @@ void rys_1qnt_vjk(const int nao,
         // ijkl, il -> jk
         constexpr int ntil = nti*ntl;
         DataType dm_il_cache[fragi*fragl];
-        if (do_k && ty < nt_active){
+        if (do_k && tx < nt_active){
             const int dm_offset = (i0+t_i*fragi)*nao + (l0+t_l*fragl);
             DataType *dm_ptr = dm + dm_offset;
             for (int i = 0; i < fragi; i++){
@@ -745,7 +745,7 @@ void rys_1qnt_vjk(const int nao,
         }
         
         if constexpr(ntil > 1) __syncthreads();
-        if (do_k && ty < nt_active){
+        if (do_k && tx < nt_active){
             const int t_il = t_l + ntl * t_i;
             const int t_jk = t_j * fragj * nfk + t_k * fragk;
             const int smem_off = (t_jk + t_il * nfjk) * smem_stride;
@@ -780,7 +780,7 @@ void rys_1qnt_vjk(const int nao,
             double *vk_ptr = vk + vk_offset;
             constexpr int stride = nfjk * smem_stride;
             __syncthreads();
-            for (int jk = ty; jk < nfjk; jk += nthreads_per_sq){
+            for (int jk = tx; jk < nfjk; jk += nthreads_per_sq){
                 DataType vk_tmp = zero;
                 const int off = jk * smem_stride;
                 for (int m = 0; m < ntil; m++){
@@ -796,7 +796,7 @@ void rys_1qnt_vjk(const int nao,
         // ijkl, ik -> jl
         constexpr int ntik = nti*ntk;
         DataType vk_jl[fragj*fragl] = {zero};
-        if (do_k && ty < nt_active){
+        if (do_k && tx < nt_active){
             const int dm_offset = (i0+t_i*fragi)*nao + (k0+t_k*fragk);
             DataType *dm_ptr = dm + dm_offset;
 #pragma unroll
@@ -819,7 +819,7 @@ void rys_1qnt_vjk(const int nao,
         }
 
         if constexpr(ntik > 1) __syncthreads();
-        if (do_k && ty < nt_active){
+        if (do_k && tx < nt_active){
             const int t_ik = t_i + nti * t_k;
             const int t_jl = t_j * fragj * nfl + t_l * fragl;
             const int smem_off = (t_jl + t_ik * nfjl) * smem_stride;
@@ -843,7 +843,7 @@ void rys_1qnt_vjk(const int nao,
             double *vk_ptr = vk + vk_offset;
             constexpr int stride = nfjl * smem_stride;
             __syncthreads();
-            for (int jl = ty; jl < nfjl; jl+=nthreads_per_sq){
+            for (int jl = tx; jl < nfjl; jl+=nthreads_per_sq){
                 DataType vk_tmp = zero;
                 const int off = jl * smem_stride;
                 for (int m = 0; m < ntik; m++){
