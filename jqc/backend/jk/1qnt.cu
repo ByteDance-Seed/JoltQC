@@ -26,8 +26,6 @@ constexpr DataType one = 1.0;
 constexpr DataType zero = 0.0;
 
 // BASIS_STRIDE is the total stride: [coords (4), ce (BASIS_STRIDE-4)]
-// prim_stride is for ce pairs: (BASIS_STRIDE-4)/2
-constexpr int prim_stride = (BASIS_STRIDE - 4) / 2;
 constexpr int basis_stride = BASIS_STRIDE;
 
 // Coords are always 4: [x, y, z, ao_loc]
@@ -126,10 +124,10 @@ void rys_1qnt_vjk(const int nao,
         sq = shl_quartet_idx[task_id];
     }
     
-    const int ish = (int)sq.x;
-    const int jsh = (int)sq.y;
-    const int ksh = (int)sq.z;
-    const int lsh = (int)sq.w;
+    const int ish = sq.x;
+    const int jsh = sq.y;
+    const int ksh = sq.z;
+    const int lsh = sq.w;
      
     DataType fac_sym = (active && ty < nt_active) ? PI_FAC : zero;
     fac_sym *= (ish == jsh) ? half : one;

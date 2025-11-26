@@ -19,6 +19,17 @@
 // Copyright 2025 PySCF developer.
 // Licensed under the Apache License, Version 2.0.
 
+// Type traits for vectorized loads
+template<typename T> struct VecType2 { };
+template<> struct VecType2<float> { using type = float2; };
+template<> struct VecType2<double> { using type = double2; };
+using DataTypeVec2 = typename VecType2<DataType>::type;
+
+template<typename T> struct VecType4 { };
+template<> struct VecType4<float> { using type = float4; };
+template<> struct VecType4<double> { using type = double4; };
+using DataTypeVec4 = typename VecType4<DataType>::type;
+
 constexpr int DEGREE = 13;
 constexpr int DEGREE1 = (DEGREE+1);
 constexpr int INTERVALS = 40;
@@ -48,10 +59,13 @@ static void rys_roots(DataType x, DataType *rw, int rt_id, const int stride, Dat
     }
     
     if (x < small_x) {
+        // Use DataTypeVec4 to load [R0, R1, W0, W1] for each root
+        const DataTypeVec4 *smallx_data = reinterpret_cast<const DataTypeVec4*>(ROOT_SMALLX_DATA);
 #pragma unroll
         for (int i = rt_id; i < nroots; i += nthreads_per_sq)  {
-            DataType root = ROOT_SMALLX_R0[i] + ROOT_SMALLX_R1[i] * x;
-            DataType weight = ROOT_SMALLX_W0[i] + ROOT_SMALLX_W1[i] * x;
+            const DataTypeVec4 vec4 = smallx_data[i];
+            DataType root = vec4.x + vec4.y * x;   // R0 + R1 * x
+            DataType weight = vec4.z + vec4.w * x; // W0 + W1 * x
             if constexpr(rys_type > 0){
                 root *= theta_fac;
                 weight *= sqrt_theta_fac;
@@ -63,12 +77,15 @@ static void rys_roots(DataType x, DataType *rw, int rt_id, const int stride, Dat
     }
     
     if (x > large_x) {
-        const DataType inv_x = one / x; 
+        const DataType inv_x = one / x;
         const DataType t = SQRTPIE4 * sqrt(inv_x);
+        // Use DataTypeVec2 to load [R, W] for each root
+        const DataTypeVec2 *largex_data = reinterpret_cast<const DataTypeVec2*>(ROOT_LARGEX_DATA);
 #pragma unroll
         for (int i = rt_id; i < nroots; i += nthreads_per_sq)  {
-            DataType root = ROOT_LARGEX_R_DATA[i] * inv_x;
-            DataType weight = ROOT_LARGEX_W_DATA[i] * t;
+            const DataTypeVec2 vec2 = largex_data[i];
+            DataType root = vec2.x * inv_x;   // R * inv_x
+            DataType weight = vec2.y * t;     // W * t
             if constexpr(rys_type > 0){
                 root *= theta_fac;
                 weight *= sqrt_theta_fac;
@@ -78,7 +95,7 @@ static void rys_roots(DataType x, DataType *rw, int rt_id, const int stride, Dat
         }
         return;
     }
-
+    
     if constexpr(nroots == 1) {
         const DataType tt = sqrt(x);                       // 1 sqrt
         const DataType erf_tt = erf(tt);                   // 1 erf
@@ -104,58 +121,51 @@ static void rys_roots(DataType x, DataType *rw, int rt_id, const int stride, Dat
     const int it = (int)(x * .4f);
     const DataType u = (x - it * DataType(2.5)) * DataType(0.8) - DataType(1.);
     const DataType u2 = u * two;
-    const DataType *datax = ROOT_RW_DATA + it;
-    
-    // Pre-compute common values to reduce FLOPs
-    const int addr_stride = DEGREE1 * INTERVALS;
-    const int degree_intervals = DEGREE * INTERVALS;
-    const int degree_intervals_minus = degree_intervals - INTERVALS;
-    
+
+    // New layout: [NROOTS, INTERVALS, DEGREE1, 2 (interleaved root/weight)]
+    // Use DataTypeVec4 for vectorized loads of 4 consecutive values
+
 #pragma unroll
     for (int i = rt_id; i < nroots; i += nthreads_per_sq) {
-        // Pre-compute base addresses to avoid repeated multiplication
-        const int base_addr = (2*i) * addr_stride;
-        const DataType *c_root = datax + base_addr;
-        const DataType *c_weight = datax + base_addr + addr_stride;
-        
-        // Root and weight calculation - optimized polynomial evaluation
-        DataType c0_r = c_root[degree_intervals];
-        DataType c1_r = c_root[degree_intervals_minus];
-        DataType c0_w = c_weight[degree_intervals];
-        DataType c1_w = c_weight[degree_intervals_minus];
-        
+        // Base address for interleaved root/weight data
+        const int base = i * INTERVALS * DEGREE1 * 2 + it * DEGREE1 * 2;
+        const DataTypeVec4 *c_data = reinterpret_cast<const DataTypeVec4*>(ROOT_RW_DATA + base);
+
+        // Initial load of coefficients DEGREE and DEGREE-1
+        // vec4 loads [root_{DEGREE-1}, weight_{DEGREE-1}, root_DEGREE, weight_DEGREE]
+        DataTypeVec4 vec4 = c_data[DEGREE/2];
+        DataType c0_r = vec4.z;  // root_DEGREE
+        DataType c1_r = vec4.x;  // root_{DEGREE-1}
+        DataType c0_w = vec4.w;  // weight_DEGREE
+        DataType c1_w = vec4.y;  // weight_{DEGREE-1}
+
 #pragma unroll
         for (int n = DEGREE-2; n > 0; n-=2) {
-            // Process both root and weight polynomials in parallel
-            const int n_intervals = n*INTERVALS;
-            const int n_intervals_minus = n_intervals - INTERVALS;
-            
-            // Pre-compute shared multiplications
-            const DataType c1_r_u2 = c1_r * u2;
-            const DataType c1_w_u2 = c1_w * u2;
-            
-            // Root polynomial step
-            const DataType c2_r = c_root[n_intervals] - c1_r;
-            const DataType c3_r = c0_r + c1_r_u2;
+            // Load 4 consecutive values: [root_{n-1}, weight_{n-1}, root_n, weight_n]
+            const DataTypeVec4 vec4 = c_data[(n-1)/2];
+
+            // Process root polynomial
+            const DataType c2_r = vec4.z - c1_r;     // root_n - c1_r
+            const DataType c3_r = c0_r + c1_r * u2;
             c1_r = c2_r + c3_r * u2;
-            c0_r = c_root[n_intervals_minus] - c3_r;
-            
-            // Weight polynomial step  
-            const DataType c2_w = c_weight[n_intervals] - c1_w;
-            const DataType c3_w = c0_w + c1_w_u2;
+            c0_r = vec4.x - c3_r;                    // root_{n-1} - c3_r
+
+            // Process weight polynomial
+            const DataType c2_w = vec4.w - c1_w;     // weight_n - c1_w
+            const DataType c3_w = c0_w + c1_w * u2;
             c1_w = c2_w + c3_w * u2;
-            c0_w = c_weight[n_intervals_minus] - c3_w;
+            c0_w = vec4.y - c3_w;                    // weight_{n-1} - c3_w
         }
-        
+
         // Final polynomial evaluation and optional scaling
         DataType root_val = c0_r + c1_r*u;
         DataType weight_val = c0_w + c1_w*u;
-        
+
         if constexpr(rys_type > 0){
             root_val *= theta_fac;
             weight_val *= sqrt_theta_fac;
         }
-        
+
         rw[i*stride2] = root_val;
         rw[i*stride2 + stride] = weight_val;
     }
