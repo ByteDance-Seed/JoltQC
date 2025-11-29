@@ -33,7 +33,7 @@ NPRIM_MAX = 3
 BASIS_STRIDE = 12
 
 # Tile size for block-based algorithms
-TILE = 2
+TILE = 4
 
 MAX_SMEM = 48 * 1024  # Maximum shared memory per block in bytes
 

@@ -94,9 +94,16 @@ void eval_rho(
         const int offset = jsh_nz + block_id * nbas_j;
         const int jsh = nz_j[offset].idx;
         const float log_aoj = nz_j[offset].log;
+
         const DataType4 xj = load_coords(basis_data, jsh);
         const int j0 = (int)xj.w;  // ao_loc stored in w field
 
+        for (int ish_nz = 0; ish_nz < nnzi; ish_nz++){
+            const int offset = ish_nz + block_id * nbas_i;
+            const int ish = nz_i[offset].idx;
+            const float log_aoi = nz_i[offset].log;
+            const float log_rho_est = log_aoi + log_aoj + log_dm_shell[ish+jsh*nbas];
+            if (ish > jsh || log_rho_est < log_cutoff_a || log_rho_est >= log_cutoff_b) continue;
 
         const DataType gjx = gx[0] - xj.x;
         const DataType gjy = gx[1] - xj.y;
@@ -209,13 +216,6 @@ void eval_rho(
                 }
             }
         }
-
-        for (int ish_nz = 0; ish_nz < nnzi; ish_nz++){
-            const int offset = ish_nz + block_id * nbas_i;
-            const int ish = nz_i[offset].idx;
-            const float log_aoi = nz_i[offset].log;
-            const float log_rho_est = log_aoi + log_aoj + log_dm_shell[ish+jsh*nbas];
-            if (ish > jsh || log_rho_est < log_cutoff_a || log_rho_est >= log_cutoff_b) continue;
 
             const DataType4 xi = load_coords(basis_data, ish);
             const DataType gix = gx[0] - xi.x;

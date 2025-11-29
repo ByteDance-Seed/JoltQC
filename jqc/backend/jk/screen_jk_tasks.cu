@@ -118,38 +118,31 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
     uint64_t mask_bits_fp32[mask_size] = {0};
     uint64_t mask_bits_fp64[mask_size] = {0};
 
-    // Cache only frequently accessed read-only data to reduce register pressure
-    float q_kl[TILE*TILE];
-
-    int count_fp32 = 0;
-    int count_fp64 = 0;
-
-    // Prefetch KL tile and compute max q_kl for early exit
-    float q_kl_max = minval;
-#pragma unroll
-    for (int k = 0; k < TILE; k++){
-        const int ksh = ksh0 + k;
-#pragma unroll
-        for (int l = 0; l < TILE; l++){
-            const int lsh = lsh0 + l;
-            const int bas_kl = ksh * nbas + lsh;
-            const int kl_idx = k * TILE + l;
-            q_kl[kl_idx] = active ? __ldg(&q_cond[bas_kl]) : minval;
-            q_kl_max = max(q_kl_max, q_kl[kl_idx]);
-        }
-    }
-
-    // Compute max q_ij for early exit (without loading density matrix yet)
+    // Compute max q-values for ij and kl tiles
     float q_ij_max = minval;
+    float q_kl_max = minval;
+
+    if (active) {
 #pragma unroll
-    for (int i = 0; i < TILE; ++i){
-        const int ish = ish0 + i;
+        for (int i = 0; i < TILE; i++){
+            const int ish = ish0 + i;
 #pragma unroll
-        for (int j = 0; j < TILE; ++j){
-            const int jsh = jsh0 + j;
-            const int bas_ij = ish * nbas + jsh;
-            const float q_ij = active ? __ldg(&q_cond[bas_ij]) : minval;
-            q_ij_max = max(q_ij_max, q_ij);
+            for (int j = 0; j < TILE; j++){
+                const int jsh = jsh0 + j;
+                const int bas_ij = ish * nbas + jsh;
+                q_ij_max = max(q_ij_max, __ldg(&q_cond[bas_ij]));
+            }
+        }
+
+#pragma unroll
+        for (int k = 0; k < TILE; k++){
+            const int ksh = ksh0 + k;
+#pragma unroll
+            for (int l = 0; l < TILE; l++){
+                const int lsh = lsh0 + l;
+                const int bas_kl = ksh * nbas + lsh;
+                q_kl_max = max(q_kl_max, __ldg(&q_cond[bas_kl]));
+            }
         }
     }
 
@@ -163,7 +156,23 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
     if (!__syncthreads_or(could_pass)) {
         return;
     }
-    
+
+    // Cache only frequently accessed read-only data to reduce register pressure
+    float q_kl[TILE*TILE];
+
+    // Prefetch KL tile q-values
+#pragma unroll
+    for (int k = 0; k < TILE; k++){
+        const int ksh = ksh0 + k;
+#pragma unroll
+        for (int l = 0; l < TILE; l++){
+            const int lsh = lsh0 + l;
+            const int bas_kl = ksh * nbas + lsh;
+            const int kl_idx = k * TILE + l;
+            q_kl[kl_idx] = active ? __ldg(&q_cond[bas_kl]) : minval;
+        }
+    }
+
     float dm_kl[TILE*TILE];  // Only used if do_j is true
     if constexpr(do_j){
 #pragma unroll
@@ -179,8 +188,10 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
         }
     }
 
+    int count_fp32 = 0;
+    int count_fp64 = 0;
+
     // Load other dm values on-demand in inner loops to reduce register pressure
-    
 #pragma unroll
     for (int i = 0; i < TILE; ++i){
         const int ish = ish0 + i;
@@ -225,8 +236,7 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
                 for (int l = 0; l < TILE; ++l){
                     const int lsh = lsh0 + l;
                     const int bas_kl = ksh * nbas + lsh;
-                    if (bas_ij < bas_kl) continue;
-                    if (lsh > ksh) continue;
+                    if (bas_ij < bas_kl || lsh > ksh) continue;
 
                     const float q_ijkl = q_ij + q_kl[k * TILE + l];
                     float d_large = -36.8f;
@@ -266,71 +276,64 @@ void screen_jk_tasks(ushort4 *shl_quartet_idx, int *batch_head, const int nbas,
 
     // Separate early exit checks for FP32 and FP64
     bool has_fp32 = __syncthreads_or(count_fp32 > 0);
-    bool has_fp64 = __syncthreads_or(count_fp64 > 0);
-
-    // Early exit when the entire block produced nothing
-    if (!has_fp32 && !has_fp64) {
-        return;
-    }
-
-    int offset_fp32 = 0;
-    int offset_fp64 = 0;
 
     // Only allocate offsets for active precision levels
     if (has_fp32) {
-        offset_fp32 = global_offset(batch_head+1, count_fp32);
-    }
-    if (has_fp64) {
-        offset_fp64 = global_offset(batch_head+2, -count_fp64) - 1;
-    }
-
-    // Use __ffsll() to efficiently iterate over set bits only
+        int offset_fp32 = global_offset(batch_head+1, count_fp32);
+        // Iterate over all possible (i,j,k,l) combinations
 #pragma unroll
-    for (int word_idx = 0; word_idx < mask_size; word_idx++) {
-        // Process FP32 bits only if this precision has work
-        if (has_fp32) {
-            uint64_t word_fp32 = mask_bits_fp32[word_idx];
-            while (word_fp32) {
-                const int bit_pos = __ffsll(word_fp32) - 1;  // __ffsll returns 1-based index
-                const uint64_t idx = (word_idx << 6) + bit_pos;
+        for (int i = 0; i < TILE; ++i) {
+#pragma unroll
+            for (int j = 0; j < TILE; ++j) {
+#pragma unroll
+                for (int k = 0; k < TILE; ++k) {
+#pragma unroll
+                    for (int l = 0; l < TILE; ++l) {
+                        const uint64_t idx = ((i * TILE + j) * TILE + k) * TILE + l;
+                        const uint64_t word = idx >> 6;
+                        const uint64_t bit = idx & 63;
+                        const uint64_t bitmask = 1ull << bit;
 
-                // Decode linear index back to (i, j, k, l)
-                const int i = idx / (TILE * TILE * TILE);
-                const int j = (idx / (TILE * TILE)) % TILE;
-                const int k = (idx / TILE) % TILE;
-                const int l = idx % TILE;
-
-                ushort4 sq;
-                sq.x = ish0 + i;
-                sq.y = jsh0 + j;
-                sq.z = ksh0 + k;
-                sq.w = lsh0 + l;
-
-                shl_quartet_idx[offset_fp32++] = sq;
-                word_fp32 &= word_fp32 - 1;  // Clear lowest set bit
+                        if (mask_bits_fp32[word] & bitmask) {
+                            ushort4 sq;
+                            sq.x = ish0 + i;
+                            sq.y = jsh0 + j;
+                            sq.z = ksh0 + k;
+                            sq.w = lsh0 + l;
+                            shl_quartet_idx[offset_fp32++] = sq;
+                        }
+                    }
+                }
             }
         }
+    }
 
-        // Process FP64 bits only if this precision has work
-        if (has_fp64) {
-            uint64_t word_fp64 = mask_bits_fp64[word_idx];
-            while (word_fp64) {
-                const int bit_pos = __ffsll(word_fp64) - 1;
-                const uint64_t idx = (word_idx << 6) + bit_pos;
+    bool has_fp64 = __syncthreads_or(count_fp64 > 0);
+    if (has_fp64) {
+        int offset_fp64 = global_offset(batch_head+2, -count_fp64) - 1;
+#pragma unroll
+        for (int i = 0; i < TILE; ++i) {
+#pragma unroll
+            for (int j = 0; j < TILE; ++j) {
+#pragma unroll
+                for (int k = 0; k < TILE; ++k) {
+#pragma unroll
+                    for (int l = 0; l < TILE; ++l) {
+                        const uint64_t idx = ((i * TILE + j) * TILE + k) * TILE + l;
+                        const uint64_t word = idx >> 6;
+                        const uint64_t bit = idx & 63;
+                        const uint64_t bitmask = 1ull << bit;
 
-                const int i = idx / (TILE * TILE * TILE);
-                const int j = (idx / (TILE * TILE)) % TILE;
-                const int k = (idx / TILE) % TILE;
-                const int l = idx % TILE;
-
-                ushort4 sq;
-                sq.x = ish0 + i;
-                sq.y = jsh0 + j;
-                sq.z = ksh0 + k;
-                sq.w = lsh0 + l;
-
-                shl_quartet_idx[offset_fp64--] = sq;
-                word_fp64 &= word_fp64 - 1;  // Clear lowest set bit
+                        if (mask_bits_fp64[word] & bitmask) {
+                            ushort4 sq;
+                            sq.x = ish0 + i;
+                            sq.y = jsh0 + j;
+                            sq.z = ksh0 + k;
+                            sq.w = lsh0 + l;
+                            shl_quartet_idx[offset_fp64--] = sq;
+                        }
+                    }
+                }
             }
         }
     }

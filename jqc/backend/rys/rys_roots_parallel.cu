@@ -19,17 +19,6 @@
 // Copyright 2025 PySCF developer.
 // Licensed under the Apache License, Version 2.0.
 
-// Type traits for vectorized loads
-template<typename T> struct VecType2 { };
-template<> struct VecType2<float> { using type = float2; };
-template<> struct VecType2<double> { using type = double2; };
-using DataTypeVec2 = typename VecType2<DataType>::type;
-
-template<typename T> struct VecType4 { };
-template<> struct VecType4<float> { using type = float4; };
-template<> struct VecType4<double> { using type = double4; };
-using DataTypeVec4 = typename VecType4<DataType>::type;
-
 constexpr int DEGREE = 13;
 constexpr int DEGREE1 = (DEGREE+1);
 constexpr int INTERVALS = 40;
@@ -59,13 +48,12 @@ static void rys_roots(DataType x, DataType *rw, int rt_id, const int stride, Dat
     }
     
     if (x < small_x) {
-        // Use DataTypeVec4 to load [R0, R1, W0, W1] for each root
-        const DataTypeVec4 *smallx_data = reinterpret_cast<const DataTypeVec4*>(ROOT_SMALLX_DATA);
+        const DataType *smallx_data = ROOT_SMALLX_DATA;
 #pragma unroll
         for (int i = rt_id; i < nroots; i += nthreads_per_sq)  {
-            const DataTypeVec4 vec4 = smallx_data[i];
-            DataType root = vec4.x + vec4.y * x;   // R0 + R1 * x
-            DataType weight = vec4.z + vec4.w * x; // W0 + W1 * x
+            const int base = i * 4;
+            DataType root = smallx_data[base] + smallx_data[base+1] * x;       // R0 + R1 * x
+            DataType weight = smallx_data[base+2] + smallx_data[base+3] * x;   // W0 + W1 * x
             if constexpr(rys_type > 0){
                 root *= theta_fac;
                 weight *= sqrt_theta_fac;
@@ -77,15 +65,16 @@ static void rys_roots(DataType x, DataType *rw, int rt_id, const int stride, Dat
     }
     
     if (x > large_x) {
-        const DataType inv_x = one / x;
-        const DataType t = SQRTPIE4 * sqrt(inv_x);
-        // Use DataTypeVec2 to load [R, W] for each root
-        const DataTypeVec2 *largex_data = reinterpret_cast<const DataTypeVec2*>(ROOT_LARGEX_DATA);
+        // Optimize using rsqrt: rsqrt(x) = 1/sqrt(x)
+        const DataType inv_sqrt_x = rsqrt(x);
+        const DataType inv_x = inv_sqrt_x * inv_sqrt_x;  // (1/sqrt(x))^2 = 1/x
+        const DataType t = SQRTPIE4 * inv_sqrt_x;
+        const DataType *largex_data = ROOT_LARGEX_DATA;
 #pragma unroll
         for (int i = rt_id; i < nroots; i += nthreads_per_sq)  {
-            const DataTypeVec2 vec2 = largex_data[i];
-            DataType root = vec2.x * inv_x;   // R * inv_x
-            DataType weight = vec2.y * t;     // W * t
+            const int base = i * 2;
+            DataType root = largex_data[base] * inv_x;     // R * inv_x
+            DataType weight = largex_data[base+1] * t;     // W * t
             if constexpr(rys_type > 0){
                 root *= theta_fac;
                 weight *= sqrt_theta_fac;
@@ -97,18 +86,21 @@ static void rys_roots(DataType x, DataType *rw, int rt_id, const int stride, Dat
     }
     
     if constexpr(nroots == 1) {
-        const DataType tt = sqrt(x);                       // 1 sqrt
-        const DataType erf_tt = erf(tt);                   // 1 erf
-        const DataType e = exp(-x);                        // 1 exp
+        // Optimize using rsqrt: rsqrt(x) = 1/sqrt(x)
+        const DataType inv_sqrt_x = rsqrt(x);
+        const DataType tt = x * inv_sqrt_x;  // x * (1/sqrt(x)) = sqrt(x)
+        const DataType erf_tt = erf(tt);
+        const DataType e = exp(-x);
 
-        // Combine inv_x and inv_tt calculations to reduce FLOPs
-        const DataType inv_x = one / x;
-        const DataType fmt0 = (SQRTPIE4 / tt) * erf_tt;  // Combined division and multiplication
-
+        // Derive inv_x from inv_sqrt_x to avoid division
+        const DataType inv_x = inv_sqrt_x * inv_sqrt_x;  // (1/sqrt(x))^2 = 1/x
+        const DataType fmt0 = SQRTPIE4 * inv_sqrt_x * erf_tt;
         DataType weight = fmt0;
+
+        // Optimize the final division: fmt1/fmt0 = (half*inv_x*(fmt0-e))/fmt0 = half*inv_x*(1-e/fmt0)
         const DataType fmt1 = half * inv_x * (fmt0 - e);
         DataType root = fmt1 / fmt0;
-        
+
         if constexpr(rys_type > 0){
             root *= theta_fac;
             weight *= sqrt_theta_fac;
@@ -123,38 +115,38 @@ static void rys_roots(DataType x, DataType *rw, int rt_id, const int stride, Dat
     const DataType u2 = u * two;
 
     // New layout: [NROOTS, INTERVALS, DEGREE1, 2 (interleaved root/weight)]
-    // Use DataTypeVec4 for vectorized loads of 4 consecutive values
 
 #pragma unroll
     for (int i = rt_id; i < nroots; i += nthreads_per_sq) {
         // Base address for interleaved root/weight data
         const int base = i * INTERVALS * DEGREE1 * 2 + it * DEGREE1 * 2;
-        const DataTypeVec4 *c_data = reinterpret_cast<const DataTypeVec4*>(ROOT_RW_DATA + base);
+        const DataType *c_data = ROOT_RW_DATA + base;
 
         // Initial load of coefficients DEGREE and DEGREE-1
-        // vec4 loads [root_{DEGREE-1}, weight_{DEGREE-1}, root_DEGREE, weight_DEGREE]
-        DataTypeVec4 vec4 = c_data[DEGREE/2];
-        DataType c0_r = vec4.z;  // root_DEGREE
-        DataType c1_r = vec4.x;  // root_{DEGREE-1}
-        DataType c0_w = vec4.w;  // weight_DEGREE
-        DataType c1_w = vec4.y;  // weight_{DEGREE-1}
+        DataType c0_r = c_data[DEGREE * 2];         // root_DEGREE
+        DataType c1_r = c_data[(DEGREE-1) * 2];     // root_{DEGREE-1}
+        DataType c0_w = c_data[DEGREE * 2 + 1];     // weight_DEGREE
+        DataType c1_w = c_data[(DEGREE-1) * 2 + 1]; // weight_{DEGREE-1}
 
 #pragma unroll
         for (int n = DEGREE-2; n > 0; n-=2) {
-            // Load 4 consecutive values: [root_{n-1}, weight_{n-1}, root_n, weight_n]
-            const DataTypeVec4 vec4 = c_data[(n-1)/2];
+            // Load root and weight values for n and n-1
+            const DataType root_n = c_data[n * 2];
+            const DataType weight_n = c_data[n * 2 + 1];
+            const DataType root_n1 = c_data[(n-1) * 2];
+            const DataType weight_n1 = c_data[(n-1) * 2 + 1];
 
             // Process root polynomial
-            const DataType c2_r = vec4.z - c1_r;     // root_n - c1_r
+            const DataType c2_r = root_n - c1_r;
             const DataType c3_r = c0_r + c1_r * u2;
             c1_r = c2_r + c3_r * u2;
-            c0_r = vec4.x - c3_r;                    // root_{n-1} - c3_r
+            c0_r = root_n1 - c3_r;
 
             // Process weight polynomial
-            const DataType c2_w = vec4.w - c1_w;     // weight_n - c1_w
+            const DataType c2_w = weight_n - c1_w;
             const DataType c3_w = c0_w + c1_w * u2;
             c1_w = c2_w + c3_w * u2;
-            c0_w = vec4.y - c3_w;                    // weight_{n-1} - c3_w
+            c0_w = weight_n1 - c3_w;
         }
 
         // Final polynomial evaluation and optional scaling

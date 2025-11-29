@@ -149,10 +149,10 @@ def update_frags(i, j, k, ell, dtype_str):
     vk = cp.zeros((nao, nao), dtype=np.float64)  # Always FP64 to match jk.py behavior
 
     tile_ij_mapping = (
-        tile_pairs[i, j][:2048] if (i, j) in tile_pairs else cp.array([], dtype=np.int32)
+        tile_pairs[i, j][:1024] if (i, j) in tile_pairs else cp.array([], dtype=np.int32)
     )
     tile_kl_mapping = (
-        tile_pairs[k, ell][:2048]
+        tile_pairs[k, ell][:1024]
         if (k, ell) in tile_pairs
         else cp.array([], dtype=np.int32)
     )
