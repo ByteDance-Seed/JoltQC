@@ -26,8 +26,6 @@ constexpr DataType one = 1.0;
 constexpr DataType zero = 0.0;
 
 // BASIS_STRIDE is the total stride: [coords (4), ce (BASIS_STRIDE-4)]
-// prim_stride is for ce pairs: (BASIS_STRIDE-4)/2
-constexpr int prim_stride = (BASIS_STRIDE - 4) / 2;
 constexpr int basis_stride = BASIS_STRIDE;
 
 // Coords are always 4: [x, y, z, ao_loc]

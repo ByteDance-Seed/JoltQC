@@ -309,6 +309,7 @@ local memory: {kernel.local_size_bytes:4d} Bytes"
         kernel(
             (blocks,),
             (nsq_per_block, nthreads_per_sq),
+            #(nthreads_per_sq, nsq_per_block),
             args,
             shared_mem=dynamic_shared_memory,
         )
