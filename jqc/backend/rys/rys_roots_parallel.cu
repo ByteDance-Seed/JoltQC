@@ -22,7 +22,7 @@
 constexpr int DEGREE = 13;
 constexpr int DEGREE1 = (DEGREE+1);
 constexpr int INTERVALS = 40;
-
+constexpr int DEGREE_FP64 = 5;
 constexpr DataType SQRTPIE4 = .8862269254527580136;
 constexpr DataType PIE4     = .7853981633974483096;
 
@@ -84,7 +84,7 @@ static void rys_roots(DataType x, DataType *rw, int rt_id, const int stride, Dat
         }
         return;
     }
-    
+    /*
     if constexpr(nroots == 1) {
         // Optimize using rsqrt: rsqrt(x) = 1/sqrt(x)
         const DataType inv_sqrt_x = rsqrt(x);
@@ -109,9 +109,10 @@ static void rys_roots(DataType x, DataType *rw, int rt_id, const int stride, Dat
         rw[stride] = weight;
         return;
     }
-
+    */
     const int it = (int)(x * .4f);
-    const DataType u = (x - it * DataType(2.5)) * DataType(0.8) - DataType(1.);
+    //const DataType u = (x - it * DataType(2.5)) * DataType(0.8) - DataType(1.);
+    const DataType u = DataType(0.8) * x - DataType(2 * it + 1);
     const DataType u2 = u * two;
 
     // New layout: [NROOTS, INTERVALS, DEGREE1, 2 (interleaved root/weight)]
@@ -122,36 +123,41 @@ static void rys_roots(DataType x, DataType *rw, int rt_id, const int stride, Dat
         const int base = i * INTERVALS * DEGREE1 * 2 + it * DEGREE1 * 2;
         const DataType *c_data = ROOT_RW_DATA + base;
 
-        // Initial load of coefficients DEGREE and DEGREE-1
-        DataType c0_r = c_data[DEGREE * 2];         // root_DEGREE
-        DataType c1_r = c_data[(DEGREE-1) * 2];     // root_{DEGREE-1}
-        DataType c0_w = c_data[DEGREE * 2 + 1];     // weight_DEGREE
-        DataType c1_w = c_data[(DEGREE-1) * 2 + 1]; // weight_{DEGREE-1}
-
+        // Evaluate Chebyshev series using Clenshaw's algorithm
+        // Use float for n >= DEGREE_FP64 for performance
+        float y2_r_f = 0;
+        float y1_r_f = 0;
+        float y2_w_f = 0;
+        float y1_w_f = 0;
+        float u2_f = u2;
 #pragma unroll
-        for (int n = DEGREE-2; n > 0; n-=2) {
-            // Load root and weight values for n and n-1
-            const DataType root_n = c_data[n * 2];
-            const DataType weight_n = c_data[n * 2 + 1];
-            const DataType root_n1 = c_data[(n-1) * 2];
-            const DataType weight_n1 = c_data[(n-1) * 2 + 1];
-
-            // Process root polynomial
-            const DataType c2_r = root_n - c1_r;
-            const DataType c3_r = c0_r + c1_r * u2;
-            c1_r = c2_r + c3_r * u2;
-            c0_r = root_n1 - c3_r;
-
-            // Process weight polynomial
-            const DataType c2_w = weight_n - c1_w;
-            const DataType c3_w = c0_w + c1_w * u2;
-            c1_w = c2_w + c3_w * u2;
-            c0_w = weight_n1 - c3_w;
+        for (int n = DEGREE; n >= DEGREE_FP64; n--) {
+            const float y0_r_f = (float)c_data[n * 2] + u2_f * y1_r_f - y2_r_f;
+            const float y0_w_f = (float)c_data[n * 2 + 1] + u2_f * y1_w_f - y2_w_f;
+            y2_r_f = y1_r_f;
+            y1_r_f = y0_r_f;
+            y2_w_f = y1_w_f;
+            y1_w_f = y0_w_f;
         }
 
-        // Final polynomial evaluation and optional scaling
-        DataType root_val = c0_r + c1_r*u;
-        DataType weight_val = c0_w + c1_w*u;
+        // Use DataType for n < DEGREE_FP64 for precision
+        DataType y2_r = y2_r_f;
+        DataType y1_r = y1_r_f;
+        DataType y2_w = y2_w_f;
+        DataType y1_w = y1_w_f;
+#pragma unroll
+        for (int n = DEGREE_FP64-1; n >= 1; n--) {
+            const DataType y0_r = c_data[n * 2] + u2 * y1_r - y2_r;
+            const DataType y0_w = c_data[n * 2 + 1] + u2 * y1_w - y2_w;
+            y2_r = y1_r;
+            y1_r = y0_r;
+            y2_w = y1_w;
+            y1_w = y0_w;
+        }
+
+        // Final polynomial evaluation: C_0 + u*y1 - y2
+        DataType root_val = c_data[0] + u * y1_r - y2_r;
+        DataType weight_val = c_data[1] + u * y1_w - y2_w;
 
         if constexpr(rys_type > 0){
             root_val *= theta_fac;
